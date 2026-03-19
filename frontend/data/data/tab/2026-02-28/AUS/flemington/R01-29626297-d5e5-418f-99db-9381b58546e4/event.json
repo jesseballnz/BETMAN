@@ -1,0 +1,1999 @@
+{
+  "header": {
+    "title": "Event Details: 29626297-d5e5-418f-99db-9381b58546e4",
+    "generated_time": "2026-02-28T09:59:07.882641282Z",
+    "url": "/affiliates/v1/racing/events/29626297-d5e5-418f-99db-9381b58546e4"
+  },
+  "params": {
+    "enc": "json",
+    "id": "29626297-d5e5-418f-99db-9381b58546e4",
+    "present_overlay": false,
+    "with_big_bets": false,
+    "with_live_bets": false,
+    "with_money_tracker": false,
+    "with_biggest_bet": false,
+    "will_pays": false,
+    "with_tote_trends_data": false,
+    "bet_type_filter": "",
+    "bets_limit": 10
+  },
+  "data": {
+    "race": {
+      "event_id": "29626297-d5e5-418f-99db-9381b58546e4",
+      "meeting_name": "Flemington",
+      "display_meeting_name": "Flemington",
+      "meeting_id": "e860db44-f669-4e5e-914a-138e423af71d",
+      "status": "Final",
+      "description": "Tab We're On (L)",
+      "advertised_start": 1772241300,
+      "actual_start": 1772241402,
+      "advertised_start_string": "2026-02-28 01:15:00 +0000 UTC",
+      "actual_start_string": "2026-02-28 01:16:42 +0000 UTC",
+      "race_date_nz": "2026-02-28",
+      "start_time_nz": "14:15:00 NZDT",
+      "race_number": 1,
+      "type": "T",
+      "start_type": "",
+      "country": "AUS",
+      "state": "VIC",
+      "distance": 1000,
+      "weather": "Fine",
+      "form_guide": "",
+      "comment": "We kick off Australian Guineas day with a competitive 2yo race down the straight, for which the Hayes yard holds the keys. JACARANDA (5) is the pick of their fillies, dominant over two rivals at Seymour on debut in good time, well backed in the Inglis Millennium last time, only beaten 1.2 lengths. Not sure that's the best 2yo form in the country but it should stack up well here. LA GITANA (7) debuted in the G3 Chairman's Stakes and ran a solid race behind impressive winner Big Sky. She'll be better for that and should take catching. GIN TWIST (6) has been third in both starts to date, beating home Blue Diamond winner Streisand in her latest. She should be right there again. LADHAR (8) resumes. It all came a bit soon for her on debut but she can do much better having jumped out well. THE TROUBLESHOOTER (4) has jumped out well for his debut and could surprise.",
+      "silk_base_url": "drr38safykj6s.cloudfront.net",
+      "track_condition": "Good",
+      "track_direction": "Left",
+      "silk_url": "https://cdn.prod.pricekinetics.com/silks/sprites/cerberus/betmakers-cmFjZToxOTM1Mjg2_SPRITE_64x64.png",
+      "entrant_count": 9,
+      "field_size": 8,
+      "positions_paid": 3,
+      "video_channels": [
+        "Trackside1"
+      ],
+      "video_channels_meta": {
+        "Live1": {
+          "RaceNo": 1,
+          "RaceType": "T",
+          "SlotType": "",
+          "SlotTitle": "",
+          "VenueName": "Flemington",
+          "CrossPoint": 144,
+          "RacePriority": "1",
+          "SlotDuration": "",
+          "SchedulerNote": "*[LISTED Race] Prize Money: $175,000",
+          "CrossPointName": "TBS 04",
+          "SlotDescription": "",
+          "UtcRaceStartTime": "2026-02-28T01:15:00Z",
+          "VenueCountryCode": "AU",
+          "VenueProviderName": "RACING.COM",
+          "DisplayRaceStartTime": "2026-02-28T11:15:00",
+          "SchedulerNotePriority": "Important"
+        }
+      },
+      "tips": [
+        "3a115f6b-1951-4e98-bd16-5f0f1060b3e4",
+        "f7958060-63db-4a4b-bcb5-19f45eda4849",
+        "10076c94-3c8a-4bc9-bb06-dd9cb0b9f0d3",
+        "3802b512-9b25-4eca-9122-86fdf0e98b89",
+        "9cc4ebf1-52e3-4b6a-86e0-6ae6d81ab4fd"
+      ],
+      "rail_position": "Out 2m Entire Circuit.",
+      "group": "Listed",
+      "prize_monies": {
+        "1st": 121800,
+        "2nd": 36540,
+        "3rd": 18270,
+        "4th": 9135,
+        "5th": 5075,
+        "6th": 4060,
+        "7th": 4060,
+        "8th": 4060,
+        "total_value": 203000
+      },
+      "track_home_straight": 0
+    },
+    "results": [
+      {
+        "position": 1,
+        "name": "Gin Twist",
+        "barrier": 4,
+        "runner_number": 6,
+        "margin_length": 1.8,
+        "entrant_id": "f16325b3-1859-49e9-b96a-598e0480e63f"
+      },
+      {
+        "position": 2,
+        "name": "La Gitana",
+        "barrier": 6,
+        "runner_number": 7,
+        "margin_length": 1.8,
+        "entrant_id": "37bc91dd-ea01-42c7-864a-44f80929a048"
+      },
+      {
+        "position": 3,
+        "name": "The Troubleshooter",
+        "barrier": 7,
+        "runner_number": 4,
+        "margin_length": 4.5,
+        "entrant_id": "9cc4ebf1-52e3-4b6a-86e0-6ae6d81ab4fd"
+      },
+      {
+        "position": 4,
+        "name": "Harry Met Sally",
+        "barrier": 1,
+        "runner_number": 1,
+        "margin_length": 5.5,
+        "entrant_id": "2f56a397-50fc-4af0-8651-7b57c255ef6c"
+      },
+      {
+        "position": 5,
+        "name": "Jacaranda",
+        "barrier": 2,
+        "runner_number": 5,
+        "margin_length": 6,
+        "entrant_id": "35f7b0b1-70f2-4300-9165-f5cbc25cfb49"
+      },
+      {
+        "position": 6,
+        "name": "Ladhar",
+        "barrier": 5,
+        "runner_number": 8,
+        "margin_length": 7.5,
+        "entrant_id": "5f9f64dc-ada4-4086-a36f-80aa831b74eb"
+      },
+      {
+        "position": 7,
+        "name": "Superwill",
+        "barrier": 8,
+        "runner_number": 3,
+        "margin_length": 8.5,
+        "entrant_id": "2b0e318c-05c6-4255-ae81-76b85145b804"
+      },
+      {
+        "position": 8,
+        "name": "Nikitria",
+        "barrier": 3,
+        "runner_number": 9,
+        "margin_length": 8.7,
+        "entrant_id": "50de7f47-9818-45f5-9999-2083a43bb776"
+      }
+    ],
+    "dividends": [
+      {
+        "id": "2921fa5f-b380-5bf1-bfcd-030e05015734",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Final",
+        "dividend": 1.4,
+        "pool_size": 30654.39,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          }
+        ],
+        "description": "6"
+      },
+      {
+        "id": "8f83cc24-e197-55e9-b9a2-07aea6bbdf03",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Interim",
+        "dividend": 1.4,
+        "pool_size": 30654.39,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          }
+        ],
+        "description": "6"
+      },
+      {
+        "id": "591467b4-0c98-5b1f-bdeb-06ca13ca79a7",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Final",
+        "dividend": 1.9,
+        "pool_size": 30654.39,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 7,
+            "position": 1
+          }
+        ],
+        "description": "7"
+      },
+      {
+        "id": "87ccaca6-d7f4-5b2c-93fc-13c89ecd39a9",
+        "tote": "NZ",
+        "product_name": "Pool Win",
+        "status": "Interim",
+        "dividend": 3.5,
+        "pool_size": 80549.79,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          }
+        ],
+        "description": "6"
+      },
+      {
+        "id": "945fe59f-aa7f-5d66-8cc3-7582d5eeb578",
+        "tote": "NZ",
+        "product_name": "Pool First4",
+        "status": "Interim",
+        "dividend": 1088.6,
+        "pool_size": 36730.34,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          },
+          {
+            "runner_number": 7,
+            "position": 2
+          },
+          {
+            "runner_number": 4,
+            "position": 3
+          },
+          {
+            "runner_number": 1,
+            "position": 4
+          }
+        ],
+        "description": "6:7:4:1"
+      },
+      {
+        "id": "24f138ee-3e12-5e90-b69c-e382fb71a1d7",
+        "tote": "NZ",
+        "product_name": "Pool First4",
+        "status": "Final",
+        "dividend": 1088.6,
+        "pool_size": 36730.34,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          },
+          {
+            "runner_number": 7,
+            "position": 2
+          },
+          {
+            "runner_number": 4,
+            "position": 3
+          },
+          {
+            "runner_number": 1,
+            "position": 4
+          }
+        ],
+        "description": "6:7:4:1"
+      },
+      {
+        "id": "7ee68f20-9bb0-5b23-bbbe-75a11299bdec",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Interim",
+        "dividend": 1.9,
+        "pool_size": 30654.39,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 7,
+            "position": 1
+          }
+        ],
+        "description": "7"
+      },
+      {
+        "id": "43005f8a-eb1e-5976-a5cd-aaab27d96bc3",
+        "tote": "NZ",
+        "product_name": "Pool Quinella",
+        "status": "Final",
+        "dividend": 8.6,
+        "pool_size": 29727.62,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          },
+          {
+            "runner_number": 7,
+            "position": 2
+          }
+        ],
+        "description": "6:7"
+      },
+      {
+        "id": "94487904-7245-5ee6-9f61-943c1466c4d0",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Final",
+        "dividend": 3.8,
+        "pool_size": 30654.39,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 4,
+            "position": 1
+          }
+        ],
+        "description": "4"
+      },
+      {
+        "id": "49f882f6-f1dc-5ef8-bdf6-d0dd47e44bcb",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Interim",
+        "dividend": 3.8,
+        "pool_size": 30654.39,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 4,
+            "position": 1
+          }
+        ],
+        "description": "4"
+      },
+      {
+        "id": "c3025307-4de1-569f-a416-9e3f02c4f50d",
+        "tote": "NZ",
+        "product_name": "Pool Trifecta",
+        "status": "Interim",
+        "dividend": 128.3,
+        "pool_size": 4588.35,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          },
+          {
+            "runner_number": 7,
+            "position": 2
+          },
+          {
+            "runner_number": 4,
+            "position": 3
+          }
+        ],
+        "description": "6:7:4"
+      },
+      {
+        "id": "cf6be055-a166-5a69-a273-316c4f98ed0c",
+        "tote": "NZ",
+        "product_name": "Pool Trifecta",
+        "status": "Final",
+        "dividend": 128.3,
+        "pool_size": 4588.35,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          },
+          {
+            "runner_number": 7,
+            "position": 2
+          },
+          {
+            "runner_number": 4,
+            "position": 3
+          }
+        ],
+        "description": "6:7:4"
+      },
+      {
+        "id": "7372e389-7d8e-5aab-a9d5-6f798a8ba44f",
+        "tote": "NZ",
+        "product_name": "Pool Quinella",
+        "status": "Interim",
+        "dividend": 8.6,
+        "pool_size": 29727.62,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          },
+          {
+            "runner_number": 7,
+            "position": 2
+          }
+        ],
+        "description": "6:7"
+      },
+      {
+        "id": "d0646181-2fa8-5c56-b0bd-21ec54f6d728",
+        "tote": "NZ",
+        "product_name": "Pool Win",
+        "status": "Final",
+        "dividend": 3.5,
+        "pool_size": 80549.79,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          }
+        ],
+        "description": "6"
+      }
+    ],
+    "substitutions": [
+      {
+        "entrant_id": "35f7b0b1-70f2-4300-9165-f5cbc25cfb49",
+        "tote": "NZ",
+        "product_name": "Pool Win"
+      }
+    ],
+    "favourite": {
+      "entrant_id": "35f7b0b1-70f2-4300-9165-f5cbc25cfb49",
+      "market_name": "Final Field",
+      "primary_market": true,
+      "name": "Jacaranda",
+      "is_scratched": false,
+      "gear": "[Cross-over Nose Band]",
+      "odds": {
+        "fixed_win": 3.2,
+        "fixed_place": 1.4,
+        "pool_win": 2.7,
+        "pool_place": 1.2
+      },
+      "scratch_time": 0,
+      "barrier": 2,
+      "runner_number": 5,
+      "prize_money": "75835",
+      "age": 2,
+      "sex": "F",
+      "colour": "B",
+      "silk_colours": "NAVY",
+      "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/jacaranda_64x64.png",
+      "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/jacaranda_128x128.png",
+      "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_5_64x64.png",
+      "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_5_128x128.png",
+      "form_comment": null,
+      "class_level": "",
+      "jockey": "Michael Dee",
+      "apprentice_indicator": "",
+      "allowance_weight": "",
+      "owners": "Coolmore (Mgr: T V Magnier), P Shanahan, Westerberg (Mgr: M Ryan) & Wynaus (Mgr: D Smith)",
+      "country": "AUS",
+      "trainer_name": "Ben, Will & Jd Hayes",
+      "last_twenty_starts": "15",
+      "sire": "HOME AFFAIRS (AUS)",
+      "dam": "GRACIE'S LASS (AUS)",
+      "breeding": "2 f HOME AFFAIRS (AUS)-GRACIE'S LASS (AUS)",
+      "weight": {
+        "allocated": "55",
+        "total": "55"
+      },
+      "favourite": false,
+      "mover": false,
+      "speedmap": {
+        "settling_lengths": 5,
+        "entrant_id": "35f7b0b1-70f2-4300-9165-f5cbc25cfb49"
+      },
+      "form_indicators": null,
+      "past_performances": {
+        "jockey": {
+          "number_of_starts": 1,
+          "number_of_wins": 1,
+          "number_of_placings": 0,
+          "number_of_seconds": 0,
+          "number_of_thirds": 0
+        }
+      },
+      "jockey_past_performances": {
+        "last_50_starts": {
+          "number_of_starts": 50,
+          "number_of_wins": 6,
+          "number_of_placings": 0,
+          "number_of_seconds": 8,
+          "number_of_thirds": 12
+        },
+        "trainer": {
+          "number_of_starts": 342,
+          "number_of_wins": 67,
+          "number_of_placings": 0,
+          "number_of_seconds": 34,
+          "number_of_thirds": 43
+        }
+      },
+      "fresh_90": {
+        "number_of_starts": 1,
+        "number_of_wins": 1,
+        "number_of_placings": 0,
+        "number_of_seconds": 0,
+        "number_of_thirds": 0,
+        "winning_distance": 0
+      },
+      "trainer_location": "Flemington",
+      "horse_id": 2369093,
+      "dam_sire": "Redoute's Choice",
+      "runner_win_history": [
+        {
+          "details": "1st up 01/26 Seymour MDN 2 56.0(3) 1:05"
+        }
+      ]
+    },
+    "runners": [
+      {
+        "entrant_id": "2f56a397-50fc-4af0-8651-7b57c255ef6c",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Harry Met Sally",
+        "is_scratched": false,
+        "gear": "Cross-over Nose Band ON",
+        "odds": {
+          "fixed_win": 18,
+          "fixed_place": 3.6,
+          "pool_win": 14,
+          "pool_place": 2.6
+        },
+        "scratch_time": 0,
+        "barrier": 1,
+        "runner_number": 1,
+        "prize_money": "4176",
+        "age": 2,
+        "sex": "G",
+        "colour": "B/BR",
+        "silk_colours": "OLIVE GREEN, WHITE ARMBANDS WITH BLUE OUTLINE AND STAR, BLUE CAP",
+        "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/harry-met-sally_64x64.png",
+        "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/harry-met-sally_128x128.png",
+        "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_1_64x64.png",
+        "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_1_128x128.png",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "Lachlan Neindorf",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "YES Bloodstock (Mgr: B F Sokolski), Jomara Bloodstock Ltd (Mgr: M P Carter), M C Scown, D Swiatlo, N Gold, Dr D Goldbloom & D Harris",
+        "country": "AUS",
+        "trainer_name": "Mark Walker",
+        "last_twenty_starts": "9x3",
+        "sire": "YES YES YES (AUS)",
+        "dam": "AGUEDA (AUS)",
+        "breeding": "2 g YES YES YES (AUS)-AGUEDA (AUS)",
+        "weight": {
+          "allocated": "57",
+          "total": "57"
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 3,
+          "entrant_id": "2f56a397-50fc-4af0-8651-7b57c255ef6c",
+          "label": "Off Midfield"
+        },
+        "form_indicators": null,
+        "past_performances": {
+          "jockey": {
+            "number_of_starts": 0,
+            "number_of_wins": 0,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 0
+          }
+        },
+        "jockey_past_performances": {
+          "last_50_starts": {
+            "number_of_starts": 50,
+            "number_of_wins": 6,
+            "number_of_placings": 0,
+            "number_of_seconds": 13,
+            "number_of_thirds": 6
+          },
+          "trainer": {
+            "number_of_starts": 8,
+            "number_of_wins": 0,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 1
+          }
+        },
+        "fresh_90": {
+          "number_of_starts": 2,
+          "number_of_wins": 0,
+          "number_of_placings": 1,
+          "number_of_seconds": 0,
+          "number_of_thirds": 1,
+          "winning_distance": 0
+        },
+        "trainer_location": "Cranbourne",
+        "horse_id": 2345256,
+        "dam_sire": "General Nediym",
+        "meta": null,
+        "flucs": [
+          23,
+          12,
+          18
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-25T04:02:08.408242528Z",
+              "fluc": 23
+            },
+            {
+              "timestamp": "2026-02-28T00:45:21.155155049Z",
+              "fluc": 12
+            },
+            {
+              "timestamp": "2026-02-28T01:15:40.50140544Z",
+              "fluc": 18
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-25T04:02:08.408242528Z",
+            "fluc": 23
+          },
+          "high": {
+            "timestamp": "2026-02-25T04:02:08.408242528Z",
+            "fluc": 23
+          },
+          "low": {
+            "timestamp": "2026-02-28T00:45:21.155155049Z",
+            "fluc": 12
+          },
+          "nine_am": {
+            "timestamp": "2026-02-25T04:02:08.408242528Z",
+            "fluc": 23
+          }
+        }
+      },
+      {
+        "entrant_id": "537fa61e-9c14-4bde-953f-83eccc2b5829",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Cyclotron",
+        "is_scratched": true,
+        "gear": "Lugging Bit FIRST TIME",
+        "odds": {
+          "fixed_win": 13,
+          "fixed_place": 3.2
+        },
+        "scratch_time": 1772141950,
+        "barrier": 7,
+        "runner_number": 2,
+        "prize_money": "0",
+        "age": 2,
+        "sex": "G",
+        "colour": "B/BR",
+        "silk_colours": "MAROON, WHITE CROSSED SASHES, GOLD ARMBANDS AND CAP",
+        "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/cyclotron_64x64.png",
+        "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/cyclotron_128x128.png",
+        "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_2_64x64.png",
+        "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_2_128x128.png",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "Harry Coffey",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Kildalton Park Racing (Mgr: D Gordon), Mystery Downs (Mgr: F W Cook), A Guoga, L H E Koh, C W Kwok, G Beck, W P M Benson, P M R Clancy, E C Cross, M J Davidson, Mrs C M Cook, P G Woods, A M Woods, J R Woods & B Hayes",
+        "country": "AUS",
+        "trainer_name": "Tony & Calvin Mcevoy",
+        "last_twenty_starts": "",
+        "sire": "HELLBENT (AUS)",
+        "dam": "GLAMARAMA (AUS)",
+        "breeding": "2 g HELLBENT (AUS)-GLAMARAMA (AUS)",
+        "weight": {
+          "allocated": "57",
+          "total": "57"
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {},
+        "form_indicators": [
+          {
+            "name": "Trainer / Jockey Combo",
+            "group": "Jockey_Trainer",
+            "negative": false,
+            "priority": 140
+          }
+        ],
+        "past_performances": {
+          "jockey": {
+            "number_of_starts": 0,
+            "number_of_wins": 0,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 0
+          }
+        },
+        "jockey_past_performances": {
+          "last_50_starts": {
+            "number_of_starts": 50,
+            "number_of_wins": 6,
+            "number_of_placings": 0,
+            "number_of_seconds": 4,
+            "number_of_thirds": 6
+          },
+          "trainer": {
+            "number_of_starts": 414,
+            "number_of_wins": 84,
+            "number_of_placings": 0,
+            "number_of_seconds": 60,
+            "number_of_thirds": 49
+          }
+        },
+        "fresh_90": {
+          "number_of_starts": 0,
+          "number_of_wins": 0,
+          "number_of_placings": 0,
+          "number_of_seconds": 0,
+          "number_of_thirds": 0,
+          "winning_distance": 0
+        },
+        "trainer_location": "Flemington",
+        "horse_id": 2348771,
+        "deduction": {
+          "win": 0.04,
+          "place": 0.04
+        },
+        "dam_sire": "Zoustar",
+        "picks": [
+          {
+            "name": "Jared Tims",
+            "rank": 4,
+            "selector_type": "trackside",
+            "comment": ""
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          12,
+          13
+        ],
+        "scr_time": "2026-02-26T21:39:10Z",
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-25T04:02:08.408225124Z",
+              "fluc": 12
+            },
+            {
+              "timestamp": "2026-02-26T01:16:40.067965712Z",
+              "fluc": 13
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-25T04:02:08.408225124Z",
+            "fluc": 12
+          },
+          "high": {
+            "timestamp": "2026-02-26T01:16:40.067965712Z",
+            "fluc": 13
+          },
+          "low": {
+            "timestamp": "2026-02-25T04:02:08.408225124Z",
+            "fluc": 12
+          },
+          "nine_am": {
+            "timestamp": "2026-02-26T01:16:40.067965712Z",
+            "fluc": 13
+          }
+        }
+      },
+      {
+        "entrant_id": "2b0e318c-05c6-4255-ae81-76b85145b804",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Superwill",
+        "is_scratched": false,
+        "gear": "",
+        "odds": {
+          "fixed_win": 23,
+          "fixed_place": 4.2,
+          "pool_win": 29,
+          "pool_place": 5
+        },
+        "scratch_time": 0,
+        "barrier": 8,
+        "runner_number": 3,
+        "prize_money": "0",
+        "age": 2,
+        "sex": "C",
+        "colour": "B",
+        "silk_colours": "BLACK, WHITE M, PINK AND WHITE STRIPED SLEEVES, PINK CAP, WHITE POM POM",
+        "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/superwill_64x64.png",
+        "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/superwill_128x128.png",
+        "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_3_64x64.png",
+        "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_3_128x128.png",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "Ben Allen",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "S P Morrissy, Dick & Morrissy Racing (Mgr: S P Morrissy), Mrs R J Morrissy, J M Richards & C J Dunn",
+        "country": "AUS",
+        "trainer_name": "L & T Corstens & W Larkin",
+        "last_twenty_starts": "",
+        "sire": "ST MARK'S BASILICA (FR)",
+        "dam": "MONTRACHET (AUS)",
+        "breeding": "2 c ST MARK'S BASILICA (FR)-MONTRACHET (AUS)",
+        "weight": {
+          "allocated": "57",
+          "total": "57"
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {},
+        "form_indicators": [
+          {
+            "name": "Recent Trial Winner",
+            "group": "Trial",
+            "negative": false,
+            "priority": 570
+          },
+          {
+            "name": "Jockey Flying",
+            "group": "Jockey",
+            "negative": false,
+            "priority": 160
+          },
+          {
+            "name": "Trainer / Jockey Combo",
+            "group": "Jockey_Trainer",
+            "negative": false,
+            "priority": 140
+          }
+        ],
+        "past_performances": {
+          "jockey": {
+            "number_of_starts": 0,
+            "number_of_wins": 0,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 0
+          }
+        },
+        "jockey_past_performances": {
+          "last_50_starts": {
+            "number_of_starts": 50,
+            "number_of_wins": 11,
+            "number_of_placings": 0,
+            "number_of_seconds": 5,
+            "number_of_thirds": 9
+          },
+          "trainer": {
+            "number_of_starts": 131,
+            "number_of_wins": 29,
+            "number_of_placings": 0,
+            "number_of_seconds": 16,
+            "number_of_thirds": 18
+          }
+        },
+        "fresh_90": {
+          "number_of_starts": 0,
+          "number_of_wins": 0,
+          "number_of_placings": 0,
+          "number_of_seconds": 0,
+          "number_of_thirds": 0,
+          "winning_distance": 0
+        },
+        "trainer_location": "Flemington",
+        "horse_id": 2387628,
+        "dam_sire": "Fastnet Rock",
+        "meta": null,
+        "flucs": [
+          27,
+          19,
+          23
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-25T04:02:08.408283387Z",
+              "fluc": 27
+            },
+            {
+              "timestamp": "2026-02-28T01:10:10.100102613Z",
+              "fluc": 19
+            },
+            {
+              "timestamp": "2026-02-28T01:15:14.467030464Z",
+              "fluc": 23
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-25T04:02:08.408283387Z",
+            "fluc": 27
+          },
+          "high": {
+            "timestamp": "2026-02-25T04:02:08.408283387Z",
+            "fluc": 27
+          },
+          "low": {
+            "timestamp": "2026-02-28T01:10:10.100102613Z",
+            "fluc": 19
+          },
+          "nine_am": {
+            "timestamp": "2026-02-25T04:02:08.408283387Z",
+            "fluc": 27
+          }
+        }
+      },
+      {
+        "entrant_id": "9cc4ebf1-52e3-4b6a-86e0-6ae6d81ab4fd",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "The Troubleshooter",
+        "is_scratched": false,
+        "gear": "",
+        "odds": {
+          "fixed_win": 16,
+          "fixed_place": 3.4,
+          "pool_win": 18.7,
+          "pool_place": 3.7
+        },
+        "scratch_time": 0,
+        "barrier": 7,
+        "runner_number": 4,
+        "prize_money": "0",
+        "age": 2,
+        "sex": "G",
+        "colour": "B",
+        "silk_colours": "BLACK, HOT PINK AND WHITE RIBBONS, WHITE STARS SLEEVES, HOT PINK CAP",
+        "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/the-troubleshooter_64x64.png",
+        "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/the-troubleshooter_128x128.png",
+        "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_4_64x64.png",
+        "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_4_128x128.png",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "Jye Mcneil",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "D Azzopardi, G Karisson, S Shultz, R Andrew, J Norwicki, N Lovell, P Stellini, K Dunstan, L Dunstan, G D Chapman, M P Chapman, S Richter, Chevron Racing, Greight Syndicate, Stark, The Maori Princess, Heidi Heidi Ho, Sneaky Investments, M Clohesy & McBossa",
+        "country": "AUS",
+        "trainer_name": "John Sadler",
+        "last_twenty_starts": "",
+        "sire": "I AM IMMORTAL (AUS)",
+        "dam": "ABSOLUTE PUZZLE (AUS)",
+        "breeding": "2 g I AM IMMORTAL (AUS)-ABSOLUTE PUZZLE (AUS)",
+        "weight": {
+          "allocated": "57",
+          "total": "57"
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {},
+        "form_indicators": [
+          {
+            "name": "Recent Trial Winner",
+            "group": "Trial",
+            "negative": false,
+            "priority": 570
+          }
+        ],
+        "past_performances": {
+          "jockey": {
+            "number_of_starts": 0,
+            "number_of_wins": 0,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 0
+          }
+        },
+        "jockey_past_performances": {
+          "last_50_starts": {
+            "number_of_starts": 50,
+            "number_of_wins": 7,
+            "number_of_placings": 0,
+            "number_of_seconds": 4,
+            "number_of_thirds": 7
+          },
+          "trainer": {
+            "number_of_starts": 69,
+            "number_of_wins": 6,
+            "number_of_placings": 0,
+            "number_of_seconds": 11,
+            "number_of_thirds": 9
+          }
+        },
+        "fresh_90": {
+          "number_of_starts": 0,
+          "number_of_wins": 0,
+          "number_of_placings": 0,
+          "number_of_seconds": 0,
+          "number_of_thirds": 0,
+          "winning_distance": 0
+        },
+        "trainer_location": "Pakenham OC",
+        "horse_id": 2383874,
+        "dam_sire": "Rubick",
+        "meta": null,
+        "flucs": [
+          21,
+          15,
+          17,
+          16
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-25T04:02:08.408239874Z",
+              "fluc": 21
+            },
+            {
+              "timestamp": "2026-02-28T01:13:59.150753619Z",
+              "fluc": 15
+            },
+            {
+              "timestamp": "2026-02-28T01:15:29.253207322Z",
+              "fluc": 17
+            },
+            {
+              "timestamp": "2026-02-28T01:16:31.557070259Z",
+              "fluc": 16
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-25T04:02:08.408239874Z",
+            "fluc": 21
+          },
+          "high": {
+            "timestamp": "2026-02-25T04:02:08.408239874Z",
+            "fluc": 21
+          },
+          "low": {
+            "timestamp": "2026-02-28T01:13:59.150753619Z",
+            "fluc": 15
+          },
+          "nine_am": {
+            "timestamp": "2026-02-25T04:02:08.408239874Z",
+            "fluc": 21
+          }
+        }
+      },
+      {
+        "entrant_id": "35f7b0b1-70f2-4300-9165-f5cbc25cfb49",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Jacaranda",
+        "is_scratched": false,
+        "gear": "[Cross-over Nose Band]",
+        "odds": {
+          "fixed_win": 3.2,
+          "fixed_place": 1.4,
+          "pool_win": 2.7,
+          "pool_place": 1.2
+        },
+        "scratch_time": 0,
+        "barrier": 2,
+        "runner_number": 5,
+        "prize_money": "75835",
+        "age": 2,
+        "sex": "F",
+        "colour": "B",
+        "silk_colours": "NAVY",
+        "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/jacaranda_64x64.png",
+        "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/jacaranda_128x128.png",
+        "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_5_64x64.png",
+        "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_5_128x128.png",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "Michael Dee",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Coolmore (Mgr: T V Magnier), P Shanahan, Westerberg (Mgr: M Ryan) & Wynaus (Mgr: D Smith)",
+        "country": "AUS",
+        "trainer_name": "Ben, Will & Jd Hayes",
+        "last_twenty_starts": "15",
+        "sire": "HOME AFFAIRS (AUS)",
+        "dam": "GRACIE'S LASS (AUS)",
+        "breeding": "2 f HOME AFFAIRS (AUS)-GRACIE'S LASS (AUS)",
+        "weight": {
+          "allocated": "55",
+          "total": "55"
+        },
+        "favourite": true,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 5,
+          "entrant_id": "35f7b0b1-70f2-4300-9165-f5cbc25cfb49",
+          "label": "Midfield"
+        },
+        "form_indicators": null,
+        "past_performances": {
+          "jockey": {
+            "number_of_starts": 1,
+            "number_of_wins": 1,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 0
+          }
+        },
+        "jockey_past_performances": {
+          "last_50_starts": {
+            "number_of_starts": 50,
+            "number_of_wins": 6,
+            "number_of_placings": 0,
+            "number_of_seconds": 8,
+            "number_of_thirds": 12
+          },
+          "trainer": {
+            "number_of_starts": 342,
+            "number_of_wins": 67,
+            "number_of_placings": 0,
+            "number_of_seconds": 34,
+            "number_of_thirds": 43
+          }
+        },
+        "fresh_90": {
+          "number_of_starts": 1,
+          "number_of_wins": 1,
+          "number_of_placings": 0,
+          "number_of_seconds": 0,
+          "number_of_thirds": 0,
+          "winning_distance": 0
+        },
+        "trainer_location": "Flemington",
+        "horse_id": 2369093,
+        "dam_sire": "Redoute's Choice",
+        "runner_win_history": [
+          {
+            "details": "1st up 01/26 Seymour MDN 2 56.0(3) 1:05"
+          }
+        ],
+        "picks": [
+          {
+            "name": "Jared Tims",
+            "rank": 2,
+            "selector_type": "trackside",
+            "comment": ""
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          3.8,
+          3.7,
+          3.2
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-25T04:02:08.408267555Z",
+              "fluc": 3.8
+            },
+            {
+              "timestamp": "2026-02-28T01:08:53.804383915Z",
+              "fluc": 3.7
+            },
+            {
+              "timestamp": "2026-02-28T01:14:29.253213183Z",
+              "fluc": 3.2
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-25T04:02:08.408267555Z",
+            "fluc": 3.8
+          },
+          "high": {
+            "timestamp": "2026-02-25T04:02:08.408267555Z",
+            "fluc": 3.8
+          },
+          "low": {
+            "timestamp": "2026-02-28T01:14:29.253213183Z",
+            "fluc": 3.2
+          },
+          "nine_am": {
+            "timestamp": "2026-02-25T04:02:08.408267555Z",
+            "fluc": 3.8
+          }
+        }
+      },
+      {
+        "entrant_id": "f16325b3-1859-49e9-b96a-598e0480e63f",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Gin Twist",
+        "is_scratched": false,
+        "gear": "[Ear Muffs (Pre-Race Only), Lugging Bit]",
+        "odds": {
+          "fixed_win": 3.5,
+          "fixed_place": 1.45,
+          "pool_win": 3.4,
+          "pool_place": 1.4
+        },
+        "scratch_time": 0,
+        "barrier": 4,
+        "runner_number": 6,
+        "prize_money": "30798",
+        "age": 2,
+        "sex": "F",
+        "colour": "B",
+        "silk_colours": "BROWN, WHITE CROSSED SASHES, STRIPED SLEEVES AND CAP",
+        "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/gin-twist_64x64.png",
+        "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/gin-twist_128x128.png",
+        "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_6_64x64.png",
+        "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_6_128x128.png",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "Luke Currie",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Lindsay Park Bloodstock (Mgr: Ms S Hayes), T Needham, M D Needham, Dr F Carnovale, J Molinaro, Ms A Molinaro, A J Day, P Foyster, Grigg Thoroughbreds (Mgr: S C Grigg), P T Heinz, E Mahony, D J Meredith, J Watkins, B S Wilson, H K Lee, T G McDonald & M R Smith",
+        "country": "AUS",
+        "trainer_name": "Ben, Will & Jd Hayes",
+        "last_twenty_starts": "33",
+        "sire": "HOME AFFAIRS (AUS)",
+        "dam": "TWIST TOPS (AUS)",
+        "breeding": "2 f HOME AFFAIRS (AUS)-TWIST TOPS (AUS)",
+        "weight": {
+          "allocated": "55",
+          "total": "55"
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 6,
+          "entrant_id": "f16325b3-1859-49e9-b96a-598e0480e63f",
+          "label": "Off Pace"
+        },
+        "form_indicators": null,
+        "past_performances": {
+          "jockey": {
+            "number_of_starts": 0,
+            "number_of_wins": 0,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 0
+          }
+        },
+        "jockey_past_performances": {
+          "last_50_starts": {
+            "number_of_starts": 50,
+            "number_of_wins": 8,
+            "number_of_placings": 0,
+            "number_of_seconds": 4,
+            "number_of_thirds": 7
+          },
+          "trainer": {
+            "number_of_starts": 263,
+            "number_of_wins": 43,
+            "number_of_placings": 0,
+            "number_of_seconds": 35,
+            "number_of_thirds": 26
+          }
+        },
+        "fresh_90": {
+          "number_of_starts": 1,
+          "number_of_wins": 0,
+          "number_of_placings": 1,
+          "number_of_seconds": 0,
+          "number_of_thirds": 1,
+          "winning_distance": 0
+        },
+        "trainer_location": "Flemington",
+        "horse_id": 2378216,
+        "dam_sire": "Beneteau",
+        "picks": [
+          {
+            "name": "Jared Tims",
+            "rank": 1,
+            "selector_type": "trackside",
+            "comment": ""
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          4.8,
+          3.9,
+          3.5
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-25T04:02:08.408437305Z",
+              "fluc": 4.8
+            },
+            {
+              "timestamp": "2026-02-28T00:46:47.953340607Z",
+              "fluc": 3.9
+            },
+            {
+              "timestamp": "2026-02-28T01:16:09.302670434Z",
+              "fluc": 3.5
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-25T04:02:08.408437305Z",
+            "fluc": 4.8
+          },
+          "high": {
+            "timestamp": "2026-02-25T04:02:08.408437305Z",
+            "fluc": 4.8
+          },
+          "low": {
+            "timestamp": "2026-02-28T01:16:09.302670434Z",
+            "fluc": 3.5
+          },
+          "nine_am": {
+            "timestamp": "2026-02-25T04:02:08.408437305Z",
+            "fluc": 4.8
+          }
+        }
+      },
+      {
+        "entrant_id": "37bc91dd-ea01-42c7-864a-44f80929a048",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "La Gitana",
+        "is_scratched": false,
+        "gear": "[Ear Muffs (Pre-Race Only), Lugging Bit]",
+        "odds": {
+          "fixed_win": 5,
+          "fixed_place": 1.7,
+          "pool_win": 5.9,
+          "pool_place": 1.8
+        },
+        "scratch_time": 0,
+        "barrier": 6,
+        "runner_number": 7,
+        "prize_money": "20880",
+        "age": 2,
+        "sex": "F",
+        "colour": "B",
+        "silk_colours": "ROYAL BLUE, PINK SASH AND CAP, ROYAL BLUE STAR",
+        "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/la-gitana_64x64.png",
+        "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/la-gitana_128x128.png",
+        "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_7_64x64.png",
+        "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_7_128x128.png",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "Ethan Brown",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "J A R Bester, D L O'Byrne, P Shanahan, M J Kirwan, M J O'Donnell, S M O'Donnell & Parsons Creek (Mgr: Mrs J O'Gorman)",
+        "country": "AUS",
+        "trainer_name": "Ben, Will & Jd Hayes",
+        "last_twenty_starts": "3",
+        "sire": "HOME AFFAIRS (AUS)",
+        "dam": "HIPS DON'T LIE (NZ)",
+        "breeding": "2 f HOME AFFAIRS (AUS)-HIPS DON'T LIE (NZ)",
+        "weight": {
+          "allocated": "55",
+          "total": "55"
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 8,
+          "entrant_id": "37bc91dd-ea01-42c7-864a-44f80929a048",
+          "label": "Leader"
+        },
+        "form_indicators": [
+          {
+            "name": "Jockey Flying",
+            "group": "Jockey",
+            "negative": false,
+            "priority": 160
+          },
+          {
+            "name": "Trainer / Jockey Combo",
+            "group": "Jockey_Trainer",
+            "negative": false,
+            "priority": 140
+          }
+        ],
+        "past_performances": {
+          "jockey": {
+            "number_of_starts": 0,
+            "number_of_wins": 0,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 0
+          }
+        },
+        "jockey_past_performances": {
+          "last_50_starts": {
+            "number_of_starts": 50,
+            "number_of_wins": 12,
+            "number_of_placings": 0,
+            "number_of_seconds": 2,
+            "number_of_thirds": 4
+          },
+          "trainer": {
+            "number_of_starts": 51,
+            "number_of_wins": 12,
+            "number_of_placings": 0,
+            "number_of_seconds": 6,
+            "number_of_thirds": 5
+          }
+        },
+        "fresh_90": {
+          "number_of_starts": 1,
+          "number_of_wins": 0,
+          "number_of_placings": 1,
+          "number_of_seconds": 0,
+          "number_of_thirds": 1,
+          "winning_distance": 0
+        },
+        "trainer_location": "Pakenham 3",
+        "horse_id": 2354203,
+        "dam_sire": "Stravinsky",
+        "picks": [
+          {
+            "name": "Jared Tims",
+            "rank": 3,
+            "selector_type": "trackside",
+            "comment": ""
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          4.5,
+          4.4,
+          5
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-25T04:02:08.40830041Z",
+              "fluc": 4.5
+            },
+            {
+              "timestamp": "2026-02-28T01:03:18.698847825Z",
+              "fluc": 4.4
+            },
+            {
+              "timestamp": "2026-02-28T01:14:44.251232338Z",
+              "fluc": 5
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-25T04:02:08.40830041Z",
+            "fluc": 4.5
+          },
+          "high": {
+            "timestamp": "2026-02-28T01:14:44.251232338Z",
+            "fluc": 5
+          },
+          "low": {
+            "timestamp": "2026-02-28T01:03:18.698847825Z",
+            "fluc": 4.4
+          },
+          "nine_am": {
+            "timestamp": "2026-02-25T04:02:08.40830041Z",
+            "fluc": 4.5
+          }
+        }
+      },
+      {
+        "entrant_id": "5f9f64dc-ada4-4086-a36f-80aa831b74eb",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Ladhar",
+        "is_scratched": false,
+        "gear": "Tongue Tie ON",
+        "odds": {
+          "fixed_win": 6,
+          "fixed_place": 1.9,
+          "pool_win": 6,
+          "pool_place": 1.8
+        },
+        "scratch_time": 0,
+        "barrier": 5,
+        "runner_number": 8,
+        "prize_money": "4640",
+        "age": 2,
+        "sex": "F",
+        "colour": "B",
+        "silk_colours": "ROYAL BLUE",
+        "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/ladhar_64x64.png",
+        "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/ladhar_128x128.png",
+        "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_8_64x64.png",
+        "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_8_128x128.png",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "Damian Lane",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Godolphin",
+        "country": "AUS",
+        "trainer_name": "Anthony & Sam Freedman",
+        "last_twenty_starts": "8x",
+        "sire": "EXCEED AND EXCEL (AUS)",
+        "dam": "LYRE (AUS)",
+        "breeding": "2 f EXCEED AND EXCEL (AUS)-LYRE (AUS)",
+        "weight": {
+          "allocated": "55",
+          "total": "55"
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 2,
+          "entrant_id": "5f9f64dc-ada4-4086-a36f-80aa831b74eb",
+          "label": "Backmarker"
+        },
+        "form_indicators": [
+          {
+            "name": "Jockey Flying",
+            "group": "Jockey",
+            "negative": false,
+            "priority": 160
+          },
+          {
+            "name": "Trainer / Jockey Combo",
+            "group": "Jockey_Trainer",
+            "negative": false,
+            "priority": 140
+          }
+        ],
+        "past_performances": {
+          "jockey": {
+            "number_of_starts": 0,
+            "number_of_wins": 0,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 0
+          }
+        },
+        "jockey_past_performances": {
+          "last_50_starts": {
+            "number_of_starts": 50,
+            "number_of_wins": 10,
+            "number_of_placings": 0,
+            "number_of_seconds": 3,
+            "number_of_thirds": 7
+          },
+          "trainer": {
+            "number_of_starts": 145,
+            "number_of_wins": 32,
+            "number_of_placings": 0,
+            "number_of_seconds": 23,
+            "number_of_thirds": 17
+          }
+        },
+        "fresh_90": {
+          "number_of_starts": 1,
+          "number_of_wins": 0,
+          "number_of_placings": 0,
+          "number_of_seconds": 0,
+          "number_of_thirds": 0,
+          "winning_distance": 0
+        },
+        "trainer_location": "Mornington",
+        "horse_id": 2354220,
+        "dam_sire": "Lonhro",
+        "picks": [
+          {
+            "name": "Jared Tims",
+            "rank": 5,
+            "selector_type": "trackside",
+            "comment": ""
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          5,
+          6.5,
+          5.5,
+          6
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-25T04:02:08.408426388Z",
+              "fluc": 5
+            },
+            {
+              "timestamp": "2026-02-28T00:47:53.252800698Z",
+              "fluc": 6.5
+            },
+            {
+              "timestamp": "2026-02-28T01:15:29.253226964Z",
+              "fluc": 5.5
+            },
+            {
+              "timestamp": "2026-02-28T01:16:31.557080784Z",
+              "fluc": 6
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-25T04:02:08.408426388Z",
+            "fluc": 5
+          },
+          "high": {
+            "timestamp": "2026-02-28T00:47:53.252800698Z",
+            "fluc": 6.5
+          },
+          "low": {
+            "timestamp": "2026-02-25T04:02:08.408426388Z",
+            "fluc": 5
+          },
+          "nine_am": {
+            "timestamp": "2026-02-25T04:02:08.408426388Z",
+            "fluc": 5
+          }
+        }
+      },
+      {
+        "entrant_id": "50de7f47-9818-45f5-9999-2083a43bb776",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Nikitria",
+        "is_scratched": false,
+        "gear": "Tongue Tie ON",
+        "odds": {
+          "fixed_win": 17,
+          "fixed_place": 3.5,
+          "pool_win": 16.9,
+          "pool_place": 4.7
+        },
+        "scratch_time": 0,
+        "barrier": 3,
+        "runner_number": 9,
+        "prize_money": "0",
+        "age": 2,
+        "sex": "F",
+        "colour": "B",
+        "silk_colours": "ROYAL BLUE, WHITE CROSS AND CHEVRON SLEEVES",
+        "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/nikitria_64x64.png",
+        "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/nikitria_128x128.png",
+        "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_9_64x64.png",
+        "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_9_128x128.png",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "Jordan Childs",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Mrs M Alysandratos, D Alysandratos, Mrs N Chhabra, R K Chhabra, Miss A Kennedy-McDonald, Mrs B R Johnstone, W F Johnstone, R Taylor, Mrs G P Dimitrakis, Mrs M Groidis, P Groidis, Mrs K Harrison, B J Harrison, Mrs J Traikos, H Traikos, Mrs A Lehmann & B R Lehmann",
+        "country": "AUS",
+        "trainer_name": "Clinton McDonald",
+        "last_twenty_starts": "",
+        "sire": "THE AUTUMN SUN (AUS)",
+        "dam": "MISSYBEEL (NZ)",
+        "breeding": "2 f THE AUTUMN SUN (AUS)-MISSYBEEL (NZ)",
+        "weight": {
+          "allocated": "55",
+          "total": "55"
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {},
+        "form_indicators": null,
+        "past_performances": {
+          "jockey": {
+            "number_of_starts": 0,
+            "number_of_wins": 0,
+            "number_of_placings": 0,
+            "number_of_seconds": 0,
+            "number_of_thirds": 0
+          }
+        },
+        "jockey_past_performances": {
+          "last_50_starts": {
+            "number_of_starts": 50,
+            "number_of_wins": 7,
+            "number_of_placings": 0,
+            "number_of_seconds": 8,
+            "number_of_thirds": 8
+          },
+          "trainer": {
+            "number_of_starts": 30,
+            "number_of_wins": 4,
+            "number_of_placings": 0,
+            "number_of_seconds": 2,
+            "number_of_thirds": 2
+          }
+        },
+        "fresh_90": {
+          "number_of_starts": 0,
+          "number_of_wins": 0,
+          "number_of_placings": 0,
+          "number_of_seconds": 0,
+          "number_of_thirds": 0,
+          "winning_distance": 0
+        },
+        "trainer_location": "Cranbourne",
+        "horse_id": 2386491,
+        "dam_sire": "Savabeel",
+        "meta": null,
+        "flucs": [
+          8,
+          9,
+          17
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-25T04:02:08.408214846Z",
+              "fluc": 8
+            },
+            {
+              "timestamp": "2026-02-28T00:45:17.955881504Z",
+              "fluc": 9
+            },
+            {
+              "timestamp": "2026-02-28T01:16:04.25792066Z",
+              "fluc": 17
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-25T04:02:08.408214846Z",
+            "fluc": 8
+          },
+          "high": {
+            "timestamp": "2026-02-28T01:16:04.25792066Z",
+            "fluc": 17
+          },
+          "low": {
+            "timestamp": "2026-02-25T04:02:08.408214846Z",
+            "fluc": 8
+          },
+          "nine_am": {
+            "timestamp": "2026-02-25T04:02:08.408214846Z",
+            "fluc": 8
+          }
+        }
+      }
+    ],
+    "derivatives": null,
+    "mover": {
+      "entrant_id": "10076c94-3c8a-4bc9-bb06-dd9cb0b9f0d3",
+      "market_name": "Live Racing",
+      "primary_market": false,
+      "name": "Gin Twist",
+      "is_scratched": false,
+      "gear": "[Ear Muffs (Pre-Race Only), Lugging Bit]",
+      "odds": {
+        "fixed_win": 1,
+        "fixed_place": 0
+      },
+      "scratch_time": 0,
+      "barrier": 4,
+      "runner_number": 6,
+      "prize_money": "30798",
+      "age": 2,
+      "sex": "F",
+      "colour": "B",
+      "silk_colours": "BROWN, WHITE CROSSED SASHES, STRIPED SLEEVES AND CAP",
+      "silk_url_64x64": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/gin-twist_64x64.png",
+      "silk_url_128x128": "https://cdn.prod.pricekinetics.com/silks/events/racing/betmakers-cmFjZToxOTM1Mjg2/gin-twist_128x128.png",
+      "alt_silk_url_64x64": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_6_64x64.png",
+      "alt_silk_url_128x128": "https://60vddugt52s3rdslo1hpoog5la.silks.betmakers.com/576475_1_6_128x128.png",
+      "form_comment": null,
+      "class_level": "",
+      "jockey": "Luke Currie",
+      "apprentice_indicator": "",
+      "allowance_weight": "",
+      "owners": "Lindsay Park Bloodstock (Mgr: Ms S Hayes), T Needham, M D Needham, Dr F Carnovale, J Molinaro, Ms A Molinaro, A J Day, P Foyster, Grigg Thoroughbreds (Mgr: S C Grigg), P T Heinz, E Mahony, D J Meredith, J Watkins, B S Wilson, H K Lee, T G McDonald & M R Smith",
+      "country": "AUS",
+      "trainer_name": "Ben, Will & Jd Hayes",
+      "last_twenty_starts": "33",
+      "sire": "HOME AFFAIRS (AUS)",
+      "dam": "TWIST TOPS (AUS)",
+      "breeding": "2 f HOME AFFAIRS (AUS)-TWIST TOPS (AUS)",
+      "weight": {
+        "allocated": "55",
+        "total": "55"
+      },
+      "favourite": false,
+      "mover": true,
+      "speedmap": {
+        "settling_lengths": 6,
+        "entrant_id": "10076c94-3c8a-4bc9-bb06-dd9cb0b9f0d3"
+      },
+      "form_indicators": null,
+      "past_performances": {
+        "jockey": {
+          "number_of_starts": 0,
+          "number_of_wins": 0,
+          "number_of_placings": 0,
+          "number_of_seconds": 0,
+          "number_of_thirds": 0
+        }
+      },
+      "jockey_past_performances": {
+        "last_50_starts": {
+          "number_of_starts": 50,
+          "number_of_wins": 8,
+          "number_of_placings": 0,
+          "number_of_seconds": 4,
+          "number_of_thirds": 7
+        },
+        "trainer": {
+          "number_of_starts": 263,
+          "number_of_wins": 43,
+          "number_of_placings": 0,
+          "number_of_seconds": 35,
+          "number_of_thirds": 26
+        }
+      },
+      "fresh_90": {
+        "number_of_starts": 1,
+        "number_of_wins": 0,
+        "number_of_placings": 1,
+        "number_of_seconds": 0,
+        "number_of_thirds": 1,
+        "winning_distance": 0
+      },
+      "trainer_location": "Flemington",
+      "horse_id": 2378216,
+      "dam_sire": "Beneteau"
+    },
+    "big_bets": null,
+    "live_bets": null,
+    "biggest_bet": null,
+    "money_tracker": null,
+    "tote_pools": [
+      {
+        "product_type": "Trifecta",
+        "total": 4588.35,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": true,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": false,
+        "commingled_info": false,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "3574",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0,
+        "tote_trends": {
+          "pool_total": 6117.8
+        }
+      },
+      {
+        "product_type": "Win",
+        "total": 80549.79,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": true,
+        "commingled_info": true,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "36100",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0
+      },
+      {
+        "product_type": "FirstFour",
+        "total": 36730.34,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": true,
+        "commingled_info": true,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "928",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0,
+        "tote_trends": {
+          "pool_total": 6617.7
+        }
+      },
+      {
+        "product_type": "Quinella",
+        "total": 29727.62,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": true,
+        "commingled_info": true,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "24000",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0
+      },
+      {
+        "product_type": "Place",
+        "total": 30654.39,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": true,
+        "commingled_info": true,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "11900",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0
+      },
+      {
+        "product_type": "RunningDouble",
+        "total": 2107,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": false,
+        "commingled_info": false,
+        "is_concession": true,
+        "win_investment": "8600",
+        "will_pay_live_units": 400,
+        "will_pay_current_leg": 1,
+        "tote_running_double": [
+          [
+            1,
+            2
+          ]
+        ],
+        "tote_trends": {
+          "pool_total": 2102,
+          "final_leg_start_time": "2026-02-28 14:45"
+        }
+      }
+    ],
+    "error": ""
+  }
+}

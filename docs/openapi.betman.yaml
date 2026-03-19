@@ -1,0 +1,89 @@
+openapi: 3.1.0
+info:
+  title: BETMAN API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+security:
+  - basicAuth: []
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /api/status:
+    get:
+      summary: Current status snapshot
+      responses:
+        '200':
+          description: Status JSON
+  /api/races:
+    get:
+      summary: Get races with optional filters
+      parameters:
+        - in: query
+          name: date
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - in: query
+          name: country
+          schema: { type: string }
+        - in: query
+          name: meeting
+          schema: { type: string }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 0, default: 200 }
+      responses:
+        '200':
+          description: Paginated race list
+  /api/suggested-bets:
+    get:
+      summary: Suggested bets from latest status
+      parameters:
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 0, default: 50 }
+      responses:
+        '200':
+          description: Paginated suggested bets
+  /api/interesting-runners:
+    get:
+      summary: Interesting runners from latest status
+      parameters:
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 0, default: 50 }
+      responses:
+        '200':
+          description: Paginated interesting runners
+  /api/ask-selection:
+    post:
+      summary: Ask AI about current selections
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question:
+                  type: string
+      responses:
+        '200':
+          description: AI/fallback answer

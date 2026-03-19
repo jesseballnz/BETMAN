@@ -1,0 +1,1449 @@
+{
+  "header": {
+    "title": "Event Details: 4a500688-f8e2-4c39-8ae2-03c0452de1e4",
+    "generated_time": "2026-02-28T09:56:04.65198598Z",
+    "url": "/affiliates/v1/racing/events/4a500688-f8e2-4c39-8ae2-03c0452de1e4"
+  },
+  "params": {
+    "enc": "json",
+    "id": "4a500688-f8e2-4c39-8ae2-03c0452de1e4",
+    "present_overlay": false,
+    "with_big_bets": false,
+    "with_live_bets": false,
+    "with_money_tracker": false,
+    "with_biggest_bet": false,
+    "will_pays": false,
+    "with_tote_trends_data": false,
+    "bet_type_filter": "",
+    "bets_limit": 10
+  },
+  "data": {
+    "race": {
+      "event_id": "4a500688-f8e2-4c39-8ae2-03c0452de1e4",
+      "meeting_name": "Taree",
+      "display_meeting_name": "Taree",
+      "meeting_id": "ac39bc3d-0396-4aad-a484-902d5aed98ae",
+      "status": "Final",
+      "description": "Ladbrokes Big Bets Copy Now",
+      "advertised_start": 1772236500,
+      "actual_start": 1772236558,
+      "advertised_start_string": "2026-02-27 23:55:00 +0000 UTC",
+      "actual_start_string": "2026-02-27 23:55:58 +0000 UTC",
+      "race_date_nz": "2026-02-28",
+      "start_time_nz": "12:55:00 NZDT",
+      "race_number": 6,
+      "type": "G",
+      "start_type": "",
+      "country": "AUS",
+      "state": "NSW",
+      "distance": 300,
+      "weather": "showers",
+      "form_guide": "",
+      "comment": "KING KERMARO (6) is a quick beginner who took advantage of the inside draw, flying the boxes and leading throughout to score (17.40) at this track in Grade 5 over 300m. Has an impeccable record here. Ran one of the fastest times on the program in his latest win. In form and can go on with it. REMISSION RUN (2) turned in a better effort at this track last start, finishing second behind Fabio Zed (17.68) in a Grade 4/5. Settled off speed and worked to the line nicely. Winning chance. SACRIFICE (3) has a strong record this journey here with two wins and a minor from six starts. Hit the frame latest (17.70) when second at this track in a Grade 5. Looks a key chance on best figures. COMING THROUGH (1) should be thereabouts despite an unplaced run here most recently.",
+      "silk_base_url": "drr38safykj6s.cloudfront.net",
+      "track_condition": "Good",
+      "track_direction": "Left",
+      "silk_url": "https://www.tab.co.nz/images/sprites/greyhound-silks-standard.png",
+      "entrant_count": 8,
+      "field_size": 7,
+      "positions_paid": 2,
+      "video_channels": [
+        "Trackside2"
+      ],
+      "video_channels_meta": {
+        "Live1": {
+          "RaceNo": 6,
+          "RaceType": "G",
+          "SlotType": "",
+          "SlotTitle": "",
+          "VenueName": "Taree",
+          "CrossPoint": 141,
+          "RacePriority": "1",
+          "SlotDuration": "",
+          "SchedulerNote": "P1 (Country)",
+          "CrossPointName": "Main - TBS 01",
+          "SlotDescription": "",
+          "UtcRaceStartTime": "2026-02-27T23:55:00Z",
+          "VenueCountryCode": "AU",
+          "VenueProviderName": "GRNSW",
+          "DisplayRaceStartTime": "2026-02-28T09:55:00",
+          "SchedulerNotePriority": "Information"
+        }
+      },
+      "tips": [
+        "c59c4ea6-65e4-406a-a469-350dd50d338b",
+        "af498c29-ffca-4a54-9bcb-79d92614c2cf",
+        "ddd7974a-5dc9-4700-82de-c10a89038a00",
+        "f00520f0-84c5-444c-a2a6-b9eee7040586"
+      ],
+      "rail_position": "",
+      "group": "",
+      "prize_monies": {
+        "1st": 1015,
+        "2nd": 290,
+        "3rd": 174,
+        "4th": 87,
+        "total_value": 1566
+      },
+      "track_home_straight": 0
+    },
+    "results": [
+      {
+        "position": 1,
+        "name": "Sacrifice",
+        "barrier": 3,
+        "runner_number": 3,
+        "margin_length": 2.25,
+        "entrant_id": "ddd7974a-5dc9-4700-82de-c10a89038a00"
+      },
+      {
+        "position": 2,
+        "name": "King Kermaro",
+        "barrier": 6,
+        "runner_number": 6,
+        "margin_length": 2.25,
+        "entrant_id": "c59c4ea6-65e4-406a-a469-350dd50d338b"
+      },
+      {
+        "position": 3,
+        "name": "Coming Through",
+        "barrier": 1,
+        "runner_number": 1,
+        "margin_length": 6.25,
+        "entrant_id": "f00520f0-84c5-444c-a2a6-b9eee7040586"
+      },
+      {
+        "position": 4,
+        "name": "Flying Minter",
+        "barrier": 4,
+        "runner_number": 4,
+        "margin_length": 7.5,
+        "entrant_id": "2df944b0-6db1-4d6f-a427-72fe0dab4e87"
+      },
+      {
+        "position": 5,
+        "name": "Remission Run",
+        "barrier": 2,
+        "runner_number": 2,
+        "margin_length": 8.5,
+        "entrant_id": "af498c29-ffca-4a54-9bcb-79d92614c2cf"
+      },
+      {
+        "position": 6,
+        "name": "Tigress Wink",
+        "barrier": 7,
+        "runner_number": 7,
+        "margin_length": 11.5,
+        "entrant_id": "2c1b0de4-ceb7-4800-ac77-8dc16015b61f"
+      },
+      {
+        "position": 7,
+        "name": "Kingsbrae Maggie",
+        "barrier": 8,
+        "runner_number": 8,
+        "margin_length": 13.25,
+        "entrant_id": "b2051d48-f7b8-4e2f-bffc-01d911a451f4"
+      }
+    ],
+    "dividends": [
+      {
+        "id": "92f53362-b593-5a34-8116-ca4c5a7ef54e",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Interim",
+        "dividend": 1.4,
+        "pool_size": 534.57,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          }
+        ],
+        "description": "6"
+      },
+      {
+        "id": "2e0760ac-fa8d-56b3-a64a-e2b9191bca97",
+        "tote": "NZ",
+        "product_name": "Pool Quinella",
+        "status": "Interim",
+        "dividend": 13.1,
+        "pool_size": 786.56,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          },
+          {
+            "runner_number": 6,
+            "position": 2
+          }
+        ],
+        "description": "3:6"
+      },
+      {
+        "id": "500067d9-c2a7-59a1-82cf-19dc57e41600",
+        "tote": "NZ",
+        "product_name": "Pool First4",
+        "status": "Interim",
+        "dividend": 505,
+        "pool_size": 2667.9,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          },
+          {
+            "runner_number": 6,
+            "position": 2
+          },
+          {
+            "runner_number": 1,
+            "position": 3
+          },
+          {
+            "runner_number": 4,
+            "position": 4
+          }
+        ],
+        "description": "3:6:1:4"
+      },
+      {
+        "id": "a22647ee-905a-51b6-ac93-5111c72ca569",
+        "tote": "NZ",
+        "product_name": "Pool Quinella",
+        "status": "Final",
+        "dividend": 13.1,
+        "pool_size": 786.56,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          },
+          {
+            "runner_number": 6,
+            "position": 2
+          }
+        ],
+        "description": "3:6"
+      },
+      {
+        "id": "c82d1552-4ed1-5fe3-acc0-24d9240d3f58",
+        "tote": "NZ",
+        "product_name": "Pool Win",
+        "status": "Final",
+        "dividend": 4.1,
+        "pool_size": 1716.11,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          }
+        ],
+        "description": "3"
+      },
+      {
+        "id": "1bee643d-5465-546b-abf0-993fc9715a26",
+        "tote": "NZ",
+        "product_name": "Pool Trifecta",
+        "status": "Interim",
+        "dividend": 138.4,
+        "pool_size": 409.8,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          },
+          {
+            "runner_number": 6,
+            "position": 2
+          },
+          {
+            "runner_number": 1,
+            "position": 3
+          }
+        ],
+        "description": "3:6:1"
+      },
+      {
+        "id": "3199b038-74fa-5b16-9f4e-3905c112c6bd",
+        "tote": "NZ",
+        "product_name": "Pool Win",
+        "status": "Interim",
+        "dividend": 4.1,
+        "pool_size": 1716.11,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          }
+        ],
+        "description": "3"
+      },
+      {
+        "id": "6e7ef874-53ce-5801-842a-df217edeac53",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Interim",
+        "dividend": 3.5,
+        "pool_size": 534.57,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          }
+        ],
+        "description": "3"
+      },
+      {
+        "id": "de4b0740-1f0f-55c8-856f-79fd866abdd9",
+        "tote": "NZ",
+        "product_name": "Pool First4",
+        "status": "Final",
+        "dividend": 505,
+        "pool_size": 2667.9,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          },
+          {
+            "runner_number": 6,
+            "position": 2
+          },
+          {
+            "runner_number": 1,
+            "position": 3
+          },
+          {
+            "runner_number": 4,
+            "position": 4
+          }
+        ],
+        "description": "3:6:1:4"
+      },
+      {
+        "id": "e05530f4-42fc-5071-ab85-923d96627ada",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Final",
+        "dividend": 1.4,
+        "pool_size": 534.57,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 6,
+            "position": 1
+          }
+        ],
+        "description": "6"
+      },
+      {
+        "id": "7d140ffb-553d-587f-a7ff-c7f63f4fae07",
+        "tote": "NZ",
+        "product_name": "Pool Place",
+        "status": "Final",
+        "dividend": 3.5,
+        "pool_size": 534.57,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          }
+        ],
+        "description": "3"
+      },
+      {
+        "id": "d9f94b07-abea-547d-b565-e1ab138dbf2a",
+        "tote": "NZ",
+        "product_name": "Pool Trifecta",
+        "status": "Final",
+        "dividend": 138.4,
+        "pool_size": 409.8,
+        "jackpot_size": 0,
+        "positions": [
+          {
+            "runner_number": 3,
+            "position": 1
+          },
+          {
+            "runner_number": 6,
+            "position": 2
+          },
+          {
+            "runner_number": 1,
+            "position": 3
+          }
+        ],
+        "description": "3:6:1"
+      }
+    ],
+    "substitutions": [
+      {
+        "entrant_id": "af498c29-ffca-4a54-9bcb-79d92614c2cf",
+        "tote": "NZ",
+        "product_name": "Pool Win"
+      }
+    ],
+    "favourite": {
+      "entrant_id": "af498c29-ffca-4a54-9bcb-79d92614c2cf",
+      "market_name": "Final Field",
+      "primary_market": true,
+      "name": "Remission Run",
+      "is_scratched": false,
+      "gear": "",
+      "best_time": "17.40",
+      "odds": {
+        "fixed_win": 3.4,
+        "fixed_place": 1.45,
+        "pool_win": 3.9,
+        "pool_place": 2.5
+      },
+      "scratch_time": 0,
+      "barrier": 2,
+      "runner_number": 2,
+      "prize_money": "6798",
+      "age": 2,
+      "sex": "D",
+      "colour": "BLU",
+      "silk_colours": "",
+      "silk_url_64x64": "",
+      "silk_url_128x128": "",
+      "form_comment": null,
+      "class_level": "",
+      "jockey": "",
+      "apprentice_indicator": "",
+      "allowance_weight": "",
+      "owners": "Richard Milton",
+      "country": "AUS",
+      "trainer_name": "Richard Milton",
+      "last_twenty_starts": "2172265162",
+      "sire": "KOBLENZ (AUS)",
+      "dam": "TIGRESS EYE (AUS)",
+      "breeding": "d KOBLENZ (AUS)-TIGRESS EYE (AUS)",
+      "weight": {
+        "allocated": "",
+        "total": ""
+      },
+      "favourite": false,
+      "mover": false,
+      "speedmap": {
+        "settling_lengths": 5,
+        "entrant_id": "af498c29-ffca-4a54-9bcb-79d92614c2cf"
+      },
+      "form_indicators": null,
+      "past_performances": null,
+      "jockey_past_performances": null,
+      "trainer_location": "Coolongolook",
+      "horse_id": 2331378,
+      "runner_win_history": [
+        {
+          "details": "4th up 01/26 Taree Super Track GR 5 (1) 0:17"
+        }
+      ]
+    },
+    "runners": [
+      {
+        "entrant_id": "f00520f0-84c5-444c-a2a6-b9eee7040586",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Coming Through",
+        "is_scratched": false,
+        "gear": "",
+        "best_time": "17.52",
+        "odds": {
+          "fixed_win": 6,
+          "fixed_place": 1.85,
+          "pool_win": 6.7,
+          "pool_place": 4
+        },
+        "scratch_time": 0,
+        "barrier": 1,
+        "runner_number": 1,
+        "prize_money": "2726",
+        "age": 2,
+        "sex": "D",
+        "colour": "RED/FWN",
+        "silk_colours": "",
+        "silk_url_64x64": "",
+        "silk_url_128x128": "",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Richard Milton",
+        "country": "AUS",
+        "trainer_name": "Richard Milton",
+        "last_twenty_starts": "4572153264",
+        "sire": "KOBLENZ (AUS)",
+        "dam": "TIGRESS EYE (AUS)",
+        "breeding": "d KOBLENZ (AUS)-TIGRESS EYE (AUS)",
+        "weight": {
+          "allocated": "",
+          "total": ""
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 2,
+          "entrant_id": "f00520f0-84c5-444c-a2a6-b9eee7040586",
+          "label": "Backmarker"
+        },
+        "form_indicators": null,
+        "past_performances": null,
+        "jockey_past_performances": null,
+        "trainer_location": "Coolongolook",
+        "horse_id": 2357014,
+        "runner_win_history": [
+          {
+            "details": "1st up 01/26 Taree Super Track GR 5 (5) 0:17"
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          7,
+          8,
+          6
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-27T20:15:23.23381958Z",
+              "fluc": 7
+            },
+            {
+              "timestamp": "2026-02-27T23:47:00.633739364Z",
+              "fluc": 8
+            },
+            {
+              "timestamp": "2026-02-27T23:55:16.431924457Z",
+              "fluc": 6
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-27T20:15:23.23381958Z",
+            "fluc": 7
+          },
+          "high": {
+            "timestamp": "2026-02-27T23:47:00.633739364Z",
+            "fluc": 8
+          },
+          "low": {
+            "timestamp": "2026-02-27T23:55:16.431924457Z",
+            "fluc": 6
+          },
+          "nine_am": {
+            "timestamp": "2026-02-27T20:15:23.23381958Z",
+            "fluc": 7
+          }
+        }
+      },
+      {
+        "entrant_id": "af498c29-ffca-4a54-9bcb-79d92614c2cf",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Remission Run",
+        "is_scratched": false,
+        "gear": "",
+        "best_time": "17.40",
+        "odds": {
+          "fixed_win": 3.4,
+          "fixed_place": 1.45,
+          "pool_win": 3.9,
+          "pool_place": 2.5
+        },
+        "scratch_time": 0,
+        "barrier": 2,
+        "runner_number": 2,
+        "prize_money": "6798",
+        "age": 2,
+        "sex": "D",
+        "colour": "BLU",
+        "silk_colours": "",
+        "silk_url_64x64": "",
+        "silk_url_128x128": "",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Richard Milton",
+        "country": "AUS",
+        "trainer_name": "Richard Milton",
+        "last_twenty_starts": "2172265162",
+        "sire": "KOBLENZ (AUS)",
+        "dam": "TIGRESS EYE (AUS)",
+        "breeding": "d KOBLENZ (AUS)-TIGRESS EYE (AUS)",
+        "weight": {
+          "allocated": "",
+          "total": ""
+        },
+        "favourite": true,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 5,
+          "entrant_id": "af498c29-ffca-4a54-9bcb-79d92614c2cf",
+          "label": "Midfield"
+        },
+        "form_indicators": null,
+        "past_performances": null,
+        "jockey_past_performances": null,
+        "trainer_location": "Coolongolook",
+        "horse_id": 2331378,
+        "runner_win_history": [
+          {
+            "details": "4th up 01/26 Taree Super Track GR 5 (1) 0:17"
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          2.9,
+          2.7,
+          3.4
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-27T20:15:23.233661097Z",
+              "fluc": 2.9
+            },
+            {
+              "timestamp": "2026-02-27T23:51:11.1782725Z",
+              "fluc": 2.7
+            },
+            {
+              "timestamp": "2026-02-27T23:55:46.529347676Z",
+              "fluc": 3.4
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-27T20:15:23.233661097Z",
+            "fluc": 2.9
+          },
+          "high": {
+            "timestamp": "2026-02-27T23:55:46.529347676Z",
+            "fluc": 3.4
+          },
+          "low": {
+            "timestamp": "2026-02-27T23:51:11.1782725Z",
+            "fluc": 2.7
+          },
+          "nine_am": {
+            "timestamp": "2026-02-27T20:15:23.233661097Z",
+            "fluc": 2.9
+          }
+        }
+      },
+      {
+        "entrant_id": "ddd7974a-5dc9-4700-82de-c10a89038a00",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Sacrifice",
+        "is_scratched": false,
+        "gear": "",
+        "best_time": "17.44",
+        "odds": {
+          "fixed_win": 4.4,
+          "fixed_place": 1.6,
+          "pool_win": 4.1,
+          "pool_place": 3.5
+        },
+        "scratch_time": 0,
+        "barrier": 3,
+        "runner_number": 3,
+        "prize_money": "2633",
+        "age": 3,
+        "sex": "B",
+        "colour": "FWN",
+        "silk_colours": "",
+        "silk_url_64x64": "",
+        "silk_url_128x128": "",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "James Goddard",
+        "country": "AUS",
+        "trainer_name": "James Goddard",
+        "last_twenty_starts": "fx0x157x42",
+        "sire": "BEAST UNLEASHED (AUS)",
+        "dam": "ENTWINED (AUS)",
+        "breeding": "b BEAST UNLEASHED (AUS)-ENTWINED (AUS)",
+        "weight": {
+          "allocated": "",
+          "total": ""
+        },
+        "favourite": false,
+        "mover": true,
+        "speedmap": {
+          "settling_lengths": 5,
+          "entrant_id": "ddd7974a-5dc9-4700-82de-c10a89038a00",
+          "label": "Midfield"
+        },
+        "form_indicators": null,
+        "past_performances": null,
+        "jockey_past_performances": null,
+        "trainer_location": "Kundle Kundle",
+        "horse_id": 2226803,
+        "runner_win_history": [
+          {
+            "details": "1st up 09/25 Taree Super Track GR 5 (1) 0:17"
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          6.5,
+          5,
+          4.2,
+          4.4
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-27T20:15:23.233832225Z",
+              "fluc": 6.5
+            },
+            {
+              "timestamp": "2026-02-27T23:50:46.179786577Z",
+              "fluc": 5
+            },
+            {
+              "timestamp": "2026-02-27T23:53:56.476555921Z",
+              "fluc": 4.2
+            },
+            {
+              "timestamp": "2026-02-27T23:55:41.480954603Z",
+              "fluc": 4.4
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-27T20:15:23.233832225Z",
+            "fluc": 6.5
+          },
+          "high": {
+            "timestamp": "2026-02-27T20:15:23.233832225Z",
+            "fluc": 6.5
+          },
+          "low": {
+            "timestamp": "2026-02-27T23:53:56.476555921Z",
+            "fluc": 4.2
+          },
+          "nine_am": {
+            "timestamp": "2026-02-27T20:15:23.233832225Z",
+            "fluc": 6.5
+          }
+        }
+      },
+      {
+        "entrant_id": "2df944b0-6db1-4d6f-a427-72fe0dab4e87",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Flying Minter",
+        "is_scratched": false,
+        "gear": "",
+        "best_time": "17.55",
+        "odds": {
+          "fixed_win": 12,
+          "fixed_place": 2.5,
+          "pool_win": 9.5,
+          "pool_place": 2.7
+        },
+        "scratch_time": 0,
+        "barrier": 4,
+        "runner_number": 4,
+        "prize_money": "4918",
+        "age": 2,
+        "sex": "B",
+        "colour": "BDL",
+        "silk_colours": "",
+        "silk_url_64x64": "",
+        "silk_url_128x128": "",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Meredith Verhagen",
+        "country": "AUS",
+        "trainer_name": "Meredith Verhagen",
+        "last_twenty_starts": "3655243148",
+        "sire": "ASTON RUPEE (AUS)",
+        "dam": "MINTER FLY (AUS)",
+        "breeding": "b ASTON RUPEE (AUS)-MINTER FLY (AUS)",
+        "weight": {
+          "allocated": "",
+          "total": ""
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 5,
+          "entrant_id": "2df944b0-6db1-4d6f-a427-72fe0dab4e87",
+          "label": "Midfield"
+        },
+        "form_indicators": null,
+        "past_performances": null,
+        "jockey_past_performances": null,
+        "trainer_location": "Raymond Terrace",
+        "horse_id": 2354329,
+        "runner_win_history": [
+          {
+            "details": "4th up 02/26 Taree Super Track GR 5 (2) 0:17"
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          10,
+          13,
+          12
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-27T20:15:23.233804511Z",
+              "fluc": 10
+            },
+            {
+              "timestamp": "2026-02-27T23:53:16.548210338Z",
+              "fluc": 13
+            },
+            {
+              "timestamp": "2026-02-27T23:53:46.48845439Z",
+              "fluc": 12
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-27T20:15:23.233804511Z",
+            "fluc": 10
+          },
+          "high": {
+            "timestamp": "2026-02-27T23:53:16.548210338Z",
+            "fluc": 13
+          },
+          "low": {
+            "timestamp": "2026-02-27T20:15:23.233804511Z",
+            "fluc": 10
+          },
+          "nine_am": {
+            "timestamp": "2026-02-27T20:15:23.233804511Z",
+            "fluc": 10
+          }
+        }
+      },
+      {
+        "entrant_id": "7e989ee8-3f29-4962-9539-ef06732763d8",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Vacant Box",
+        "is_scratched": true,
+        "gear": "",
+        "best_time": "",
+        "odds": {
+          "fixed_win": 0,
+          "fixed_place": 0
+        },
+        "scratch_time": 1771990644,
+        "barrier": 5,
+        "runner_number": 5,
+        "prize_money": "0",
+        "age": 0,
+        "sex": "U",
+        "colour": "",
+        "silk_colours": "",
+        "silk_url_64x64": "",
+        "silk_url_128x128": "",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "",
+        "country": "",
+        "trainer_name": "No Trainer",
+        "last_twenty_starts": "",
+        "sire": "",
+        "dam": "",
+        "breeding": " -",
+        "weight": {
+          "allocated": "",
+          "total": ""
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {},
+        "form_indicators": null,
+        "past_performances": null,
+        "jockey_past_performances": null,
+        "trainer_location": "",
+        "meta": null,
+        "flucs": [],
+        "scr_time": "2026-02-25T03:37:24Z",
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [],
+          "open": {
+            "timestamp": "0001-01-01T00:00:00Z",
+            "fluc": 0
+          },
+          "high": {
+            "timestamp": "0001-01-01T00:00:00Z",
+            "fluc": 0
+          },
+          "low": {
+            "timestamp": "0001-01-01T00:00:00Z",
+            "fluc": 0
+          },
+          "nine_am": {
+            "timestamp": "0001-01-01T00:00:00Z",
+            "fluc": 0
+          }
+        }
+      },
+      {
+        "entrant_id": "c59c4ea6-65e4-406a-a469-350dd50d338b",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "King Kermaro",
+        "is_scratched": false,
+        "gear": "",
+        "best_time": "17.40",
+        "odds": {
+          "fixed_win": 4.4,
+          "fixed_place": 1.6,
+          "pool_win": 4.9,
+          "pool_place": 1.4
+        },
+        "scratch_time": 0,
+        "barrier": 6,
+        "runner_number": 6,
+        "prize_money": "3903",
+        "age": 1,
+        "sex": "D",
+        "colour": "WH/BLU",
+        "silk_colours": "",
+        "silk_url_64x64": "",
+        "silk_url_128x128": "",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Darryl Burke",
+        "country": "AUS",
+        "trainer_name": "Danial Stone",
+        "last_twenty_starts": "473211",
+        "sire": "HOOKED ON SCOTCH (AUS)",
+        "dam": "KERMARO (AUS)",
+        "breeding": "d HOOKED ON SCOTCH (AUS)-KERMARO (AUS)",
+        "weight": {
+          "allocated": "",
+          "total": ""
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 7,
+          "entrant_id": "c59c4ea6-65e4-406a-a469-350dd50d338b",
+          "label": "Pace"
+        },
+        "form_indicators": [
+          {
+            "name": "Going for the Hat-Trick ",
+            "group": "Last_Start_Winner",
+            "negative": false,
+            "priority": 130
+          },
+          {
+            "name": "Unbeaten The Track / Distance",
+            "group": "Track_Distance",
+            "negative": false,
+            "priority": 50
+          },
+          {
+            "name": "Unbeaten at the Track",
+            "group": "Track",
+            "negative": false,
+            "priority": 10
+          }
+        ],
+        "past_performances": null,
+        "jockey_past_performances": null,
+        "trainer_location": "JONES ISLAND",
+        "horse_id": 2381951,
+        "runner_win_history": [
+          {
+            "details": "5th up 02/26 Taree Super Track MDN (8) 0:18"
+          },
+          {
+            "details": "6th up 02/26 Taree Super Track GR 5 (1) 0:17"
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          4,
+          5,
+          4.4
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-27T20:15:23.233404448Z",
+              "fluc": 4
+            },
+            {
+              "timestamp": "2026-02-27T23:51:46.183814553Z",
+              "fluc": 5
+            },
+            {
+              "timestamp": "2026-02-27T23:55:55.278173505Z",
+              "fluc": 4.4
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-27T20:15:23.233404448Z",
+            "fluc": 4
+          },
+          "high": {
+            "timestamp": "2026-02-27T23:51:46.183814553Z",
+            "fluc": 5
+          },
+          "low": {
+            "timestamp": "2026-02-27T20:15:23.233404448Z",
+            "fluc": 4
+          },
+          "nine_am": {
+            "timestamp": "2026-02-27T20:15:23.233404448Z",
+            "fluc": 4
+          }
+        }
+      },
+      {
+        "entrant_id": "2c1b0de4-ceb7-4800-ac77-8dc16015b61f",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Tigress Wink",
+        "is_scratched": false,
+        "gear": "",
+        "best_time": "17.51",
+        "odds": {
+          "fixed_win": 10,
+          "fixed_place": 2.35,
+          "pool_win": 10.4,
+          "pool_place": 5.4
+        },
+        "scratch_time": 0,
+        "barrier": 7,
+        "runner_number": 7,
+        "prize_money": "3184",
+        "age": 2,
+        "sex": "B",
+        "colour": "BL",
+        "silk_colours": "",
+        "silk_url_64x64": "",
+        "silk_url_128x128": "",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Richard Milton",
+        "country": "AUS",
+        "trainer_name": "Richard Milton",
+        "last_twenty_starts": "1657275143",
+        "sire": "KOBLENZ (AUS)",
+        "dam": "TIGRESS EYE (AUS)",
+        "breeding": "b KOBLENZ (AUS)-TIGRESS EYE (AUS)",
+        "weight": {
+          "allocated": "",
+          "total": ""
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 4,
+          "entrant_id": "2c1b0de4-ceb7-4800-ac77-8dc16015b61f",
+          "label": "Midfield"
+        },
+        "form_indicators": null,
+        "past_performances": null,
+        "jockey_past_performances": null,
+        "trainer_location": "Coolongolook",
+        "horse_id": 2352831,
+        "runner_win_history": [
+          {
+            "details": "4th up 01/26 Taree Super Track GR 5 (1) 0:17"
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          8,
+          9,
+          11,
+          10
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-27T20:15:23.233826892Z",
+              "fluc": 8
+            },
+            {
+              "timestamp": "2026-02-27T23:51:46.183807276Z",
+              "fluc": 9
+            },
+            {
+              "timestamp": "2026-02-27T23:54:35.482230969Z",
+              "fluc": 11
+            },
+            {
+              "timestamp": "2026-02-27T23:54:36.52461858Z",
+              "fluc": 10
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-27T20:15:23.233826892Z",
+            "fluc": 8
+          },
+          "high": {
+            "timestamp": "2026-02-27T23:54:35.482230969Z",
+            "fluc": 11
+          },
+          "low": {
+            "timestamp": "2026-02-27T20:15:23.233826892Z",
+            "fluc": 8
+          },
+          "nine_am": {
+            "timestamp": "2026-02-27T20:15:23.233826892Z",
+            "fluc": 8
+          }
+        }
+      },
+      {
+        "entrant_id": "b2051d48-f7b8-4e2f-bffc-01d911a451f4",
+        "market_name": "Final Field",
+        "primary_market": true,
+        "name": "Kingsbrae Maggie",
+        "is_scratched": false,
+        "gear": "",
+        "best_time": "17.53",
+        "odds": {
+          "fixed_win": 7,
+          "fixed_place": 2,
+          "pool_win": 8,
+          "pool_place": 5.3
+        },
+        "scratch_time": 0,
+        "barrier": 8,
+        "runner_number": 8,
+        "prize_money": "4524",
+        "age": 2,
+        "sex": "B",
+        "colour": "BL",
+        "silk_colours": "",
+        "silk_url_64x64": "",
+        "silk_url_128x128": "",
+        "form_comment": null,
+        "class_level": "",
+        "jockey": "",
+        "apprentice_indicator": "",
+        "allowance_weight": "",
+        "owners": "Arron Watson",
+        "country": "AUS",
+        "trainer_name": "Arron Watson",
+        "last_twenty_starts": "5x1x315383",
+        "sire": "TYPHOON SAMMY (AUS)",
+        "dam": "LIL MACIE BREEZE (AUS)",
+        "breeding": "b TYPHOON SAMMY (AUS)-LIL MACIE BREEZE (AUS)",
+        "weight": {
+          "allocated": "",
+          "total": ""
+        },
+        "favourite": false,
+        "mover": false,
+        "speedmap": {
+          "settling_lengths": 7,
+          "entrant_id": "b2051d48-f7b8-4e2f-bffc-01d911a451f4",
+          "label": "Pace"
+        },
+        "form_indicators": null,
+        "past_performances": null,
+        "jockey_past_performances": null,
+        "trainer_location": "Taree",
+        "horse_id": 2289464,
+        "runner_win_history": [
+          {
+            "details": "2nd up 12/25 Taree Super Track GR 5 (6) 0:17"
+          }
+        ],
+        "meta": null,
+        "flucs": [
+          4.6,
+          5,
+          7
+        ],
+        "scr_time": null,
+        "competitor_id": "",
+        "ride_guide_exists": false,
+        "ride_guide_thumbnail": "",
+        "ride_guide_file": "",
+        "flucs_with_timestamp": {
+          "last_six": [
+            {
+              "timestamp": "2026-02-27T20:15:23.23382519Z",
+              "fluc": 4.6
+            },
+            {
+              "timestamp": "2026-02-27T23:50:01.190604292Z",
+              "fluc": 5
+            },
+            {
+              "timestamp": "2026-02-27T23:55:11.429333412Z",
+              "fluc": 7
+            }
+          ],
+          "open": {
+            "timestamp": "2026-02-27T20:15:23.23382519Z",
+            "fluc": 4.6
+          },
+          "high": {
+            "timestamp": "2026-02-27T23:55:11.429333412Z",
+            "fluc": 7
+          },
+          "low": {
+            "timestamp": "2026-02-27T20:15:23.23382519Z",
+            "fluc": 4.6
+          },
+          "nine_am": {
+            "timestamp": "2026-02-27T20:15:23.23382519Z",
+            "fluc": 4.6
+          }
+        }
+      }
+    ],
+    "derivatives": null,
+    "mover": {
+      "entrant_id": "ddd7974a-5dc9-4700-82de-c10a89038a00",
+      "market_name": "Final Field",
+      "primary_market": true,
+      "name": "Sacrifice",
+      "is_scratched": false,
+      "gear": "",
+      "best_time": "17.44",
+      "odds": {
+        "fixed_win": 4.4,
+        "fixed_place": 1.6,
+        "pool_win": 4.1,
+        "pool_place": 3.5
+      },
+      "scratch_time": 0,
+      "barrier": 3,
+      "runner_number": 3,
+      "prize_money": "2633",
+      "age": 3,
+      "sex": "B",
+      "colour": "FWN",
+      "silk_colours": "",
+      "silk_url_64x64": "",
+      "silk_url_128x128": "",
+      "form_comment": null,
+      "class_level": "",
+      "jockey": "",
+      "apprentice_indicator": "",
+      "allowance_weight": "",
+      "owners": "James Goddard",
+      "country": "AUS",
+      "trainer_name": "James Goddard",
+      "last_twenty_starts": "fx0x157x42",
+      "sire": "BEAST UNLEASHED (AUS)",
+      "dam": "ENTWINED (AUS)",
+      "breeding": "b BEAST UNLEASHED (AUS)-ENTWINED (AUS)",
+      "weight": {
+        "allocated": "",
+        "total": ""
+      },
+      "favourite": false,
+      "mover": true,
+      "speedmap": {
+        "settling_lengths": 5,
+        "entrant_id": "ddd7974a-5dc9-4700-82de-c10a89038a00"
+      },
+      "form_indicators": null,
+      "past_performances": null,
+      "jockey_past_performances": null,
+      "trainer_location": "Kundle Kundle",
+      "horse_id": 2226803,
+      "runner_win_history": [
+        {
+          "details": "1st up 09/25 Taree Super Track GR 5 (1) 0:17"
+        }
+      ]
+    },
+    "big_bets": null,
+    "live_bets": null,
+    "biggest_bet": null,
+    "money_tracker": null,
+    "tote_pools": [
+      {
+        "product_type": "Win",
+        "total": 1716.11,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": true,
+        "commingled_info": true,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "1000",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0
+      },
+      {
+        "product_type": "Place",
+        "total": 534.57,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": true,
+        "commingled_info": true,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "700",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0
+      },
+      {
+        "product_type": "Trifecta",
+        "total": 409.8,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": true,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": false,
+        "commingled_info": false,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "296",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0,
+        "tote_trends": {
+          "pool_total": 493.9
+        }
+      },
+      {
+        "product_type": "Quinella",
+        "total": 786.56,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": true,
+        "commingled_info": true,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "1700",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0
+      },
+      {
+        "product_type": "FirstFour",
+        "total": 2667.9,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": true,
+        "commingled_info": true,
+        "is_concession": false,
+        "is_final": true,
+        "win_investment": "72",
+        "will_pay_live_units": 0,
+        "will_pay_current_leg": 0,
+        "tote_trends": {
+          "pool_total": 559.1
+        }
+      },
+      {
+        "product_type": "Quadrella",
+        "total": 202.28,
+        "status": "CLOSED",
+        "guarantee": 0,
+        "brought_forward": 0,
+        "terminating": false,
+        "jackpot": 0,
+        "leg": 0,
+        "is_commingled": true,
+        "commingled_info": true,
+        "is_concession": false,
+        "win_investment": "0",
+        "will_pay_live_units": 5.18,
+        "will_pay_current_leg": 3,
+        "quaddie": [
+          5,
+          6,
+          7,
+          8
+        ],
+        "tote_trends": {
+          "final_leg_start_time": "2026-02-28 13:28"
+        }
+      }
+    ],
+    "error": ""
+  }
+}

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1b26" />
+      <stop offset="100%" stop-color="#051524" />
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#13283b" />
+      <stop offset="100%" stop-color="#0b1b2b" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="720" rx="32" fill="url(#bg)" />
+  <text x="60" y="90" fill="#6df7ff" font-size="42" font-family="'Inter', 'SF Pro Display', sans-serif" font-weight="600">Meeting Workspace</text>
+  <text x="60" y="135" fill="#7f9db8" font-size="20" font-family="'Inter', 'SF Pro Display', sans-serif">Live pills, track filters, WHY tags, and confidence meters in one board.</text>
+
+  <!-- meeting pills -->
+  <g transform="translate(60, 170)">
+    <rect width="340" height="60" rx="16" fill="#1c3349" stroke="#1f8ef1" stroke-width="2" opacity="0.9" />
+    <text x="24" y="38" fill="#f4fbff" font-size="22" font-family="'Inter', sans-serif">Matamata • R7 • Heavy 9</text>
+    <rect x="360" width="220" height="60" rx="16" fill="#1c3349" opacity="0.65" />
+    <text x="384" y="38" fill="#9cc4ff" font-size="20" font-family="'Inter', sans-serif">Grafton • Soft 5</text>
+    <rect x="600" width="220" height="60" rx="16" fill="#1c3349" opacity="0.45" />
+    <text x="624" y="38" fill="#6b92b8" font-size="20" font-family="'Inter', sans-serif">Tauherenikau • Good 3</text>
+  </g>
+
+  <!-- race table -->
+  <g transform="translate(60, 260)">
+    <rect width="520" height="380" rx="26" fill="url(#card)" stroke="#21364a" stroke-width="2" />
+    <text x="32" y="56" fill="#fefefe" font-size="26" font-family="'Inter', sans-serif" font-weight="600">Race Snapshot</text>
+    <text x="32" y="92" fill="#7f9db8" font-size="18" font-family="'Inter', sans-serif">Jump in 12m · 1400m · Track bias: Rail in 4m</text>
+
+    <g font-family="'Roboto Mono', 'SFMono-Regular', monospace" font-size="18" fill="#bcd7ff">
+      <text x="32" y="140">1. Not So Unusual  —  p 29.6%  —  WHY STRONG</text>
+      <text x="32" y="176">2. Poukawa         —  p 21.4%  —  WHY VALUE</text>
+      <text x="32" y="212">3. Psyclone        —  p 14.2%  —  WHY EXOTIC</text>
+      <text x="32" y="248">4. Plain Sailing   —  p 9.8%   —  saver only</text>
+    </g>
+
+    <g font-family="'Inter', sans-serif" font-size="18">
+      <text x="32" y="300" fill="#94f7c0">Edge: +7.4 pts vs market</text>
+      <text x="32" y="332" fill="#f7e596">Risk: tempo collapse / wide draw</text>
+      <text x="32" y="364" fill="#a9b6c7">Invalidation: rail downgrade, late drift &gt;20%</text>
+    </g>
+  </g>
+
+  <!-- bet queue -->
+  <g transform="translate(620, 260)">
+    <rect width="520" height="380" rx="26" fill="url(#card)" stroke="#21364a" stroke-width="2" />
+    <text x="32" y="56" fill="#fefefe" font-size="26" font-family="'Inter', sans-serif" font-weight="600">Bet Queue</text>
+    <text x="32" y="92" fill="#7f9db8" font-size="18" font-family="'Inter', sans-serif">Stake guardrails &amp; timer windows</text>
+
+    <g font-family="'Inter', sans-serif" font-size="18" fill="#d9e8ff">
+      <rect x="32" y="118" width="456" height="72" rx="18" fill="#1c2c3f" />
+      <text x="52" y="164">Tauherenikau R7 · Not So Unusual · $12 @ 2.95</text>
+      <text x="52" y="138" fill="#76ffb2" font-size="16">Window: 15m · AI confidence 8.4 / 10</text>
+
+      <rect x="32" y="208" width="456" height="72" rx="18" fill="#1c2c3f" opacity="0.9" />
+      <text x="52" y="254">Orange R1 · Leila Belle · $8 @ 3.1</text>
+      <text x="52" y="228" fill="#ffe478" font-size="16">Window: 42m · WHY Value</text>
+
+      <rect x="32" y="298" width="456" height="72" rx="18" fill="#1c2c3f" opacity="0.75" />
+      <text x="52" y="344">Grafton R3 · Always A Rainbow · $10 @ 1.35</text>
+      <text x="52" y="318" fill="#fcb0ff" font-size="16">Window: 71m · Hedge ready</text>
+    </g>
+  </g>
+</svg>

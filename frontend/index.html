@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BETMAN</title>
+  <link rel="stylesheet" href="styles.css?v=20260319-1222" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand" style="display:flex;align-items:center;gap:10px">
+          <img src="assets/logo.png" alt="Betman" class="brand-logo" />
+          <span class="brand-tag betman-green">Signal # Racing Ops</span>
+        </div>
+        <div class="top-status-grid">
+          <div class="status-pill" id="apiStatusPublic">API Status —</div>
+          <div class="status-pill" id="authUserPill" role="button" tabindex="0" title="View Auth settings">Authenticated User —</div>
+          <div class="status-pill" id="lastUpdated">Last update —</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="top-control-grid">
+          <button id="helpTopBtn" class="btn btn-ghost compact-btn" type="button" onclick="window.location.href='/?page=help'">Help</button>
+          <button id="themeToggleBtn" class="btn btn-ghost compact-btn">Light Mode</button>
+          <div class="ai-model-control ai-model-topbar">
+            <label for="aiModelSelect">AI Model</label>
+            <select id="aiModelSelect" class="ai-model-select">
+              <option>Loading…</option>
+            </select>
+            <div id="aiModelWarning" class="ai-model-note" style="display:none"></div>
+          </div>
+          <button id="authManageToggle" class="btn btn-ghost compact-btn">Auth</button>
+          <button id="logoutBtn" class="btn btn-ghost compact-btn">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <section id="aiChatPanel" class="ai-chat hidden" aria-hidden="true">
+      <div class="ai-chat-head">
+        <strong>Ask AI about selections</strong>
+        <div class="btn-row" style="margin-top:0">
+          <button id="aiChatNewSession" class="btn btn-ghost compact-btn">New Session</button>
+          <button id="aiChatPrint" class="btn btn-ghost compact-btn">Print</button>
+          <button id="aiChatClose" class="btn btn-ghost compact-btn">Close</button>
+        </div>
+      </div>
+      <div id="aiSelectionBasket" class="ai-basket hidden" aria-live="polite"></div>
+      <div class="ai-format-row">
+        <button id="aiFormatRace" class="btn btn-ghost compact-btn">Race Context</button>
+        <button id="aiFormatTwoRace" class="btn btn-ghost compact-btn">2-Race Multi</button>
+        <button id="aiFormatThreeRace" class="btn btn-ghost compact-btn">3-Race Multi</button>
+        <button id="aiFormatFourRace" class="btn btn-ghost compact-btn">4-Race Multi</button>
+        <button id="aiFormatSameRace" class="btn btn-ghost compact-btn">Same-Race Multi</button>
+        <button id="aiFormatH2H" class="btn btn-ghost compact-btn">H2H</button>
+      </div>
+      <div class="ai-format-row">
+        <input id="aiScenarioName" type="text" placeholder="Scenario name" style="flex:1;min-width:120px" />
+        <button id="aiScenarioSave" class="btn btn-ghost compact-btn">Save Set</button>
+        <select id="aiScenarioSelect" style="min-width:130px"></select>
+        <button id="aiScenarioLoad" class="btn btn-ghost compact-btn">Load</button>
+      </div>
+      <div id="aiChatMessages" class="ai-chat-messages"></div>
+      <div class="ai-chat-input-row">
+        <input id="aiChatInput" type="text" placeholder="Why is this the top pick?" />
+        <button id="aiChatAnalyzeBasket" class="btn btn-ghost">Analyze Basket</button>
+        <button id="aiChatSend" class="btn">Ask</button>
+      </div>
+    </section>
+
+    <section class="section" id="raceFiltersSection">
+      <h3>Race Filters</h3>
+      <div class="filters">
+        <select id="countrySelect">
+          <option value="NZ">NZ</option>
+          <option value="AUS">AUS</option>
+          <option value="HK">HKG</option>
+          <option value="ALL">ALL</option>
+        </select>
+        <select id="meetingSelect">
+          <option value="ALL">All Meetings</option>
+        </select>
+        <input id="meetingSearchInput" type="search" placeholder="Search meeting or 'Meeting R4'" style="width:min(220px,100%);background:#0f1b26;border:1px solid #1c2a3d;color:var(--text);padding:6px 8px;border-radius:8px;margin-left:8px" />
+        <button id="meetingSearchBtn" class="btn btn-ghost compact-btn" style="margin-left:6px">Jump</button>
+        <span id="meetingSearchHint" class="sub" style="margin-left:8px"></span>
+        <div class="pill-group">
+          <button class="pill" data-day="today">Today</button>
+          <button class="pill" data-day="tomorrow">Tomorrow</button>
+        </div>
+        <select id="whyFilter">
+          <option value="ALL">WHY: All</option>
+          <option value="STRONG">WHY: Strong Signal</option>
+          <option value="VALUE">WHY: Odds</option>
+          <option value="LONG">WHY: Long</option>
+          <option value="EXOTIC">WHY: Exotic</option>
+        </select>
+        <div class="refresh-meta" id="refreshMeta">—</div>
+      </div>
+
+      <h3 class="mt-14" style="margin-top:28px">Bet Window Configuration</h3>
+      <div class="filters" style="margin-top:14px">
+        <label for="betWindowInput" class="sub">Window (mins)</label>
+        <input id="betWindowInput" type="number" min="1" max="3600" step="1" value="1800" style="width:min(120px,100%);background:#0f1b26;border:1px solid #1c2a3d;color:var(--text);padding:6px 8px;border-radius:8px" />
+        <button id="saveBetWindowBtn" class="btn btn-ghost compact-btn">Save Window</button>
+        <span id="betWindowHint" class="sub">Current: 1800m</span>
+      </div>
+    </section>
+
+    <nav class="page-nav">
+      <button class="page-tab active" data-page="workspace">Meeting Workspace</button>
+      <button class="page-tab" data-page="suggested">Suggested Bets</button>
+      <button class="page-tab" data-page="multis">Multis</button>
+      <button class="page-tab" data-page="movers">Market Movers</button>
+      <button class="page-tab" data-page="interesting">Interesting Runners</button>
+      <button class="page-tab" data-page="plans">Bet Plans</button>
+      <button class="page-tab" data-page="strategy">Strategy</button>
+      <button class="page-tab" data-page="bakeoff">Model Bakeoff</button>
+      <button class="page-tab" data-page="performance">Performance</button>
+    </nav>
+
+    <section class="section page-section" data-page="plans">
+      <h3 class="mt-6">Next Suggested Bets</h3>
+      <div class="sub" id="nextRaceCountdown" style="margin-bottom:8px">Next race: —</div>
+      <div class="table" id="nextPlannedTable"></div>
+    </section>
+
+    <section class="section page-section" data-page="suggested" style="display:none">
+      <div class="section-head">
+        <h3>Suggested Bets (Signal #)</h3>
+        <div class="section-actions">
+          <button id="openStrategyBtn" class="btn btn-ghost compact-btn">Strategy</button>
+        </div>
+      </div>
+      <div class="table" id="suggestedTable"></div>
+    </section>
+
+    <section class="section page-section" data-page="strategy" style="display:none">
+      <div class="section-head">
+        <h3>Strategy Builder</h3>
+        <div class="section-actions">
+          <select id="strategyTypeSelect">
+            <option value="win">Win</option>
+            <option value="odds">Odds Runner</option>
+            <option value="ew">EW</option>
+            <option value="long">Long</option>
+            <option value="blended">Blended (1-3 bets / race)</option>
+            <option value="exotics">Exotics (TOP2/TOP3/Trifecta)</option>
+          </select>
+          <label class="sub" style="display:flex;gap:6px;align-items:center">
+            <input id="strategyAiToggle" type="checkbox" /> AI Filter
+          </label>
+          <button id="strategyBuildBtn" class="btn">Build Strategy</button>
+          <button id="strategyPrintBtn" class="btn btn-ghost">Print Strategy</button>
+        </div>
+      </div>
+      <div class="sub" id="strategyMeetingLabel">Meeting: —</div>
+      <div id="strategySummary" class="strategy-summary"></div>
+      <div id="strategyOutput" class="strategy-output"></div>
+      <div id="strategyAiSummary" class="analysis-body" style="margin-top:12px"></div>
+    </section>
+
+    <section class="section page-section" data-page="workspace" style="display:none">
+      <div class="section-head mt-14">
+        <h3>Meeting Workspace</h3>
+      </div>
+      <div id="meetingIntelPanel" class="analysis" style="margin-bottom:10px;display:none"></div>
+      <div class="scroller" id="meetingList"></div>
+      <div class="scroller" id="racesScroller"></div>
+      <div class="analysis" id="analysisPanel">
+        <div class="analysis-header">
+          <h4 id="analysisTitle">Select a race</h4>
+          <div class="btn-row">
+            <button id="analysisSimulationLaunch" class="btn" data-launch-ai="true">ODDS &amp; AI ENGINE</button>
+            <button id="analysisSpeedToggle" class="btn btn-ghost" type="button">Speed Analysis</button>
+            <button id="pickAiMultiBtn" class="btn btn-ghost">Pick 2‑Race Multi</button>
+            <button id="pickAiMulti3Btn" class="btn btn-ghost">Pick 3‑Race Multi</button>
+            <button id="pickAiMulti4Btn" class="btn btn-ghost">Pick 4‑Race Multi</button>
+          </div>
+        </div>
+        <div id="analysisProcessingHint" class="analysis-hint" style="display:none">AI processing…</div>
+        <div id="aiCooldownTimer" class="analysis-meta" style="display:none"></div>
+        <div id="analysisBody" class="analysis-body">Click a race to load analysis.</div>
+      </div>
+    </section>
+
+    <section class="section page-section" data-page="multis" style="display:none">
+      <h3>Multis</h3>
+      <div class="table" id="multisTable"></div>
+    </section>
+
+    <section class="section page-section" data-page="movers" style="display:none">
+      <h3>Market Movers</h3>
+      <div class="table" id="moversTable"></div>
+    </section>
+
+    <section class="section page-section" data-page="interesting" style="display:none">
+      <h3>Interesting Runners</h3>
+      <div class="table" id="interestingTable"></div>
+    </section>
+
+    <section class="section page-section" data-page="bakeoff" style="display:none">
+      <div class="section-head">
+        <h3>Model Bakeoff</h3>
+        <div class="section-actions">
+          <button id="refreshBakeoffBtn" class="btn btn-ghost compact-btn">Refresh</button>
+          <button id="testAllModelsBtn" class="btn btn-ghost compact-btn">Test All Models</button>
+          <button id="runFullSoakBtn" class="btn btn-ghost compact-btn">Run Bakeoff (Full Soak)</button>
+        </div>
+      </div>
+      <div id="bakeoffRunIndicator" class="bakeoff-run-indicator" aria-live="polite"></div>
+      <div class="analysis-body">
+        <div id="bakeoffSummary" class="sub">Loading bakeoff leaderboard…</div>
+        <div id="bakeoffModelCoverage" class="bakeoff-models"></div>
+        <div class="table" id="bakeoffTable"></div>
+        <div id="bakeoffTestResults" class="bakeoff-test-results sub"></div>
+        <div id="bakeoffAutoTune" class="perf-section perf-wide" style="margin-top:12px"></div>
+        <div class="sub" style="margin-top:10px">To run a new bakeoff, execute <code>npm run bakeoff</code> on the server. Results are saved under <code>bakeoff/results/</code>.</div>
+      </div>
+    </section>
+
+    <section class="section page-section" data-page="performance" style="display:none">
+      <div class="section-head">
+        <h3>Performance</h3>
+        <div class="section-actions">
+          <button id="refreshPerformanceBtn" class="btn btn-ghost compact-btn">Refresh</button>
+          <button id="trainModelsBtn" class="btn btn-ghost compact-btn">Train Models</button>
+        </div>
+      </div>
+      <div id="roiAdminHint" class="perf-hint" style="display:none">ROI figures are visible to admin only.</div>
+
+      <div class="perf-section perf-wide bet-plan-section">
+        <div class="bet-plan-head">
+          <div>
+            <h4>BET PLAN Performance</h4>
+            <div class="sub">True measure of BETMAN: realised performance from the Bet Plan queue.</div>
+            <div class="sub" id="betPlanPerformanceNote"></div>
+          </div>
+          <div class="btn-row bet-plan-tabs">
+            <button class="btn btn-ghost compact-btn bet-plan-tab active" data-window="day">Day</button>
+            <button class="btn btn-ghost compact-btn bet-plan-tab" data-window="week">Week</button>
+            <button class="btn btn-ghost compact-btn bet-plan-tab" data-window="month">Month</button>
+          </div>
+        </div>
+        <div id="betPlanPerformanceMetrics"></div>
+        <div id="betPlanPerformanceBreakdown" class="bet-plan-breakdown"></div>
+        <div id="betPlanPerformanceTable" class="table"></div>
+      </div>
+
+      <div class="perf-section perf-wide">
+        <h4>Confidence Based Bets</h4>
+        <div id="perfConfidenceBets"></div>
+      </div>
+
+      <div class="perf-visuals">
+        <div class="perf-section perf-feel">
+          <h4>Feel Good Meter</h4>
+          <div class="feel-meter">
+            <canvas id="feelGoodChart" height="180"></canvas>
+            <div class="feel-meter-value" id="feelGoodScore">—</div>
+            <div class="feel-meter-sub" id="feelGoodNote">Awaiting data</div>
+          </div>
+        </div>
+        <div class="perf-section perf-chart" data-roi-only>
+          <h4>30D ROI (Rec)</h4>
+          <canvas id="roiTrendChart"></canvas>
+        </div>
+        <div class="perf-section perf-chart">
+          <h4>30D Win Rate</h4>
+          <canvas id="winRateTrendChart"></canvas>
+        </div>
+        <div class="perf-section perf-return">
+          <div class="perf-logo-line">
+            <img src="assets/logo.png" alt="BETMAN" />
+          </div>
+          <h4>BETMAN RETURN</h4>
+          <div class="return-meter">
+            <div class="return-bar"><span id="betmanReturnBar"></span></div>
+            <div class="return-value" id="betmanReturnValue">—</div>
+            <div class="return-sub" id="betmanReturnSub">Invested: —</div>
+          </div>
+        </div>
+      </div>
+      <div class="perf-dashboard">
+        <div class="perf-section">
+          <h4>Latest Day Snapshot</h4>
+          <div class="perf-kpi-block">
+            <div class="perf-kpis">
+              <div class="perf-card">
+                <div class="label">Latest Day</div>
+                <div id="perfLatestPeriod" class="value">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">Total Bets</div>
+                <div id="perfTotalBets" class="value">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label" title="Across all bets">Win Rate (All Bets)</div>
+                <div id="perfWinRate" class="value win-metric">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">Avg Daily Win-Rate</div>
+                <div id="perfAvgDailyWinRate" class="value win-metric">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">Win Pick %</div>
+                <div id="perfWinPickPct" class="value win-metric">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">Best Strategy (30D)</div>
+                <div id="perfBestStrategyTile" class="value">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">Win % (30D)</div>
+                <div id="perfWinTypePct" class="value win-metric">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">Odds % (30D)</div>
+                <div id="perfOddsTypePct" class="value win-metric">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">EW % (30D)</div>
+                <div id="perfEwTypePct" class="value win-metric">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">Long % (30D)</div>
+                <div id="perfLongTypePct" class="value win-metric">—</div>
+              </div>
+            </div>
+            <div id="perfLatestSnapshotTable" class="table"></div>
+            <div class="perf-block-title" data-roi-only>Returns</div>
+            <div class="perf-hint" data-roi-only>ROI = (sum of bet profits ÷ total stake). Rec odds, unit stake. Race wins don’t change ROI; only bet results do.</div>
+            <div class="perf-kpis perf-kpis-secondary" data-roi-only>
+              <div class="perf-card">
+                <div class="label">ROI (Tote)</div>
+                <div id="perfRoiTote" class="value">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">ROI (Rec)</div>
+                <div id="perfRoiRec" class="value">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">ROI (Fixed)</div>
+                <div id="perfRoiFixed" class="value">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">ROI (SP)</div>
+                <div id="perfRoiSp" class="value">—</div>
+              </div>
+              <div class="perf-card">
+                <div class="label">ROI (EW)</div>
+                <div id="perfRoiEw" class="value">—</div>
+              </div>
+            </div>
+            <div class="perf-block-title">Exotics</div>
+            <div class="perf-hint">Exotics are excluded from main ROI. Hit rate shown until payouts are captured.</div>
+            <div class="perf-kpis perf-kpis-secondary">
+              <div class="perf-card">
+                <div class="label">Exotic Hit Rate</div>
+                <div id="perfExoticHit" class="value">—</div>
+              </div>
+              <div class="perf-card" data-roi-only>
+                <div class="label">Exotic ROI</div>
+                <div id="perfExoticRoi" class="value">—</div>
+              </div>
+            </div>
+            <div id="perfExoticsTable" class="table"></div>
+          </div>
+        </div>
+        <div class="perf-insights">
+          <div class="perf-section win">
+            <h4>Performance Summary</h4>
+            <div id="perfSummary" class="table"></div>
+          </div>
+          <div class="perf-section win">
+            <h4>30 Day Best BETMAN Strategy (Win / Odds Runner / EW)</h4>
+            <div id="perfBestStrategy" class="table"></div>
+          </div>
+        </div>
+      </div>
+      <div class="perf-grid">
+        <div class="perf-section perf-wide" data-roi-only>
+          <h4>Bet Plans ROI (AI choices)</h4>
+          <div id="perfBetPlansRoi" class="table"></div>
+        </div>
+        <div class="perf-section">
+          <h4>Daily</h4>
+          <div class="sub" id="perfDailyNote"></div>
+          <div id="perfDailyTable" class="table"></div>
+        </div>
+        <div class="perf-section">
+          <h4>Weekly (week starts Monday 08:00)</h4>
+          <div id="perfWeeklyTable" class="table"></div>
+        </div>
+        <div class="perf-section">
+          <h4>Monthly</h4>
+          <div id="perfMonthlyTable" class="table"></div>
+        </div>
+        <div class="perf-section perf-wide">
+          <h4>Bet Performance (Win / Odds / EW / Long)</h4>
+          <div class="hero-tiles">
+            <div class="hero-group">
+              <div class="hero-title">Day</div>
+              <div class="perf-kpis">
+                <div class="perf-card"><div class="label">Win %</div><div id="heroDayWin" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Odds %</div><div id="heroDayOdds" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">EW %</div><div id="heroDayEw" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Long %</div><div id="heroDayLong" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Exotic %</div><div id="heroDayExotic" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Settled Races</div><div id="heroDayRacesRun" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Settled Won</div><div id="heroDayRacesWon" class="value win-metric">—</div></div>
+              </div>
+            </div>
+            <div class="hero-group">
+              <div class="hero-title">Week</div>
+              <div class="perf-kpis">
+                <div class="perf-card"><div class="label">Win %</div><div id="heroWeekWin" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Odds %</div><div id="heroWeekOdds" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">EW %</div><div id="heroWeekEw" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Long %</div><div id="heroWeekLong" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Exotic %</div><div id="heroWeekExotic" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Settled Races</div><div id="heroWeekRacesRun" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Settled Won</div><div id="heroWeekRacesWon" class="value win-metric">—</div></div>
+              </div>
+            </div>
+            <div class="hero-group">
+              <div class="hero-title">Month</div>
+              <div class="perf-kpis">
+                <div class="perf-card"><div class="label">Win %</div><div id="heroMonthWin" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Odds %</div><div id="heroMonthOdds" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">EW %</div><div id="heroMonthEw" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Long %</div><div id="heroMonthLong" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Exotic %</div><div id="heroMonthExotic" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Settled Races</div><div id="heroMonthRacesRun" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Settled Won</div><div id="heroMonthRacesWon" class="value win-metric">—</div></div>
+              </div>
+            </div>
+            <div class="hero-group">
+              <div class="hero-title">Year</div>
+              <div class="perf-kpis">
+                <div class="perf-card"><div class="label">Win %</div><div id="heroYearWin" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Odds %</div><div id="heroYearOdds" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">EW %</div><div id="heroYearEw" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Long %</div><div id="heroYearLong" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Exotic %</div><div id="heroYearExotic" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Settled Races</div><div id="heroYearRacesRun" class="value win-metric">—</div></div>
+                <div class="perf-card"><div class="label">Settled Won</div><div id="heroYearRacesWon" class="value win-metric">—</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="perf-section">
+          <h4>Pick Breakdown (latest day)</h4>
+          <div id="perfPickTable" class="table"></div>
+        </div>
+        <div class="perf-section">
+          <h4>Exotic Breakdown (latest day)</h4>
+          <div id="perfExoticTable" class="table"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section page-section" data-page="help" style="display:none">
+      <h3>BETMAN Help</h3>
+      <div class="analysis-body">
+        <p><b>What BETMAN is:</b> a signal and analysis platform. It gives structured opinions, not guaranteed outcomes.</p>
+
+        <h4>1) Quick Start</h4>
+        <ol>
+          <li>Select <b>Country</b> and <b>Day</b>, then choose a <b>Meeting</b> in Meeting Workspace.</li>
+          <li>Click a race card to load race analysis.</li>
+          <li>Use tabs for Suggested, Multis, Market Movers, Interesting Runners, and Bet Plans.</li>
+          <li>Open AI Chat (floating button) and drag runners in for bespoke analysis.</li>
+        </ol>
+
+        <h4>2) Tab Guide</h4>
+        <ul>
+          <li><b>Meeting Workspace:</b> race selection, race analysis, and multi previews.</li>
+          <li><b>Suggested Bets:</b> model-led selections with Signal score and edge context.</li>
+          <li><b>Multis:</b> exotic/cross-race multi structures with signal strength.</li>
+          <li><b>Market Movers:</b> runners firming/drifting across 1m/5m/30m/1h/5h horizons.</li>
+          <li><b>Interesting Runners:</b> notable profiles and planned/value flags.</li>
+          <li><b>Bet Plans:</b> next queue of suggested opportunities in current window.</li>
+        </ul>
+
+        <h4>3) AI Chat Modes</h4>
+        <ul>
+          <li><b>Race Context:</b> single-race ranked view + risks.</li>
+          <li><b>2/3/4-Race Multi:</b> cross-race structures with combined logic.</li>
+          <li><b>Same-Race Multi:</b> same-race structure analysis.</li>
+          <li><b>H2H:</b> head-to-head matchup analysis.</li>
+        </ul>
+        <p><b>Important:</b> Same-Race/H2H outputs include joint likelihood blocks when data is available.</p>
+
+        <h4>4) Signal + Risk Reading</h4>
+        <ul>
+          <li><b>Signal:</b> higher = stronger model confidence profile.</li>
+          <li><b>Implied %:</b> what the market is pricing from odds (<code>100 / odds</code>).</li>
+          <li><b>Model %:</b> BETMAN's simulated probability estimate from race inputs.</li>
+          <li><b>Edge:</b> <code>Model % - Implied %</code>. Positive edge = potential value, negative edge = potentially overbet.</li>
+          <li><b>Risk labels:</b> low / medium / high.</li>
+          <li><b>Invalidation points:</b> when conditions no longer support the play.</li>
+        </ul>
+        <p class="sub">Hover the <b>?</b> hints and table headers in Meeting Workspace for plain-language explanations. Focus on the <b>Edge line</b> in Edge Visualisation: it is the clearest read on where price and model diverge.</p>
+        <p class="sub">Signal status labels: <b>Qualified</b> means it passed all policy checks; <b>Forced</b> means fallback logic was used to keep an operator-facing pick on screen.</p>
+
+        <h4>5) Account & Users</h4>
+        <ul>
+          <li>Open <b>Auth</b> to manage credentials.</li>
+          <li>Admins can create/delete users and reset passwords.</li>
+          <li>New user onboarding requires: <b>Name + Email + Password</b> plus verification gate.</li>
+        </ul>
+
+        <h4>6) Troubleshooting</h4>
+        <ul>
+          <li>If data looks stale, use <b>Refresh</b>.</li>
+          <li>If a tab looks empty, confirm meeting selection and country/day filters.</li>
+          <li>If behavior looks old after updates, hard refresh browser cache.</li>
+          <li>If AI cannot fetch web context, retry in 30–60 seconds.</li>
+        </ul>
+
+        <p class="sub" style="margin-top:10px">Decision standard: Verdict → Evidence → Risk → Action/Pass. If edge is weak or invalidation triggers, pass.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <h3>Recent Activity</h3>
+      <div class="activity" id="activity"></div>
+    </section>
+  </div>
+
+  <div style="display:none" aria-hidden="true">
+    <span id="stakePerRace"></span>
+    <span id="exoticStakePerRace"></span>
+    <span id="earlyWindowMin"></span>
+    <button id="increaseBtn"></button>
+    <button id="decreaseBtn"></button>
+    <button id="increaseExoticBtn"></button>
+    <button id="decreaseExoticBtn"></button>
+    <button id="increaseWindowBtn"></button>
+    <button id="decreaseWindowBtn"></button>
+  </div>
+
+  <button id="aiChatToggleFloating" class="ai-chat-fab" title="Open AI Chat">AI Chat</button>
+
+  <div id="strategyPrintModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" id="strategyPrintModalBackdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="strategyPrintModalTitle" style="max-width:1100px;height:86vh;display:flex;flex-direction:column;gap:10px">
+      <div class="analysis-header" style="margin:0">
+        <h4 id="strategyPrintModalTitle">Strategy Print Preview</h4>
+        <div class="btn-row" style="width:auto">
+          <button id="strategyPrintDownloadBtn" class="btn btn-ghost" type="button">Download</button>
+          <button id="strategyPrintRenderBtn" class="btn" type="button">Print / Save PDF</button>
+          <button id="strategyPrintModalClose" class="btn btn-ghost" type="button">Close</button>
+        </div>
+      </div>
+      <iframe id="strategyPrintFrame" title="Strategy Print Preview" style="flex:1;border:1px solid var(--border-soft);border-radius:10px;background:#fff"></iframe>
+    </div>
+  </div>
+
+  <div id="summaryModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" id="summaryModalBackdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="summaryModalTitle">
+      <div class="analysis-header">
+        <h4 id="summaryModalTitle">Bet Summary</h4>
+        <button id="summaryModalClose" class="btn btn-ghost">Close</button>
+      </div>
+      <div id="summaryModalBody" class="analysis-body"></div>
+    </div>
+  </div>
+
+  <div id="authModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" id="authModalBackdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" style="max-width:520px">
+      <div class="analysis-header">
+        <h4 id="authModalTitle">User & Password</h4>
+        <button id="authModalClose" class="btn btn-ghost">Close</button>
+      </div>
+      <div class="analysis-body">
+        <div style="margin-bottom:10px"><b>Change My Password</b></div>
+        <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="selfCurrentPassword" type="password" placeholder="Current password" /></div>
+        <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="selfNewPassword" type="password" placeholder="New password (min 8 chars)" /></div>
+        <button id="selfChangePasswordBtn" class="btn btn-ghost">Update My Password</button>
+
+        <div id="adminAuthBlock" style="margin-top:16px">
+          <div style="margin-bottom:10px"><b>Admin User Management</b></div>
+          <div id="adminPermissionNotice" class="sub" style="display:none;margin-bottom:8px">Admin credentials required. Enter the admin username/password below to unlock user controls.</div>
+          <div class="btn-row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
+            <button class="btn btn-ghost compact-btn admin-tab-btn" data-admin-tab="create">Create User</button>
+            <button class="btn btn-ghost compact-btn admin-tab-btn" data-admin-tab="password">Change Password</button>
+            <button class="btn btn-ghost compact-btn admin-tab-btn" data-admin-tab="delete">Delete User</button>
+            <button class="btn btn-ghost compact-btn admin-tab-btn" data-admin-tab="admin">Admin Credentials</button>
+          </div>
+
+          <div class="admin-tab-panel" data-admin-panel="create" style="display:none">
+            <div class="ai-chat-input-row" style="margin-bottom:8px">
+              <select id="createUserPlanType" style="width:100%">
+                <option value="single">Single User</option>
+                <option value="commercial">Commercial</option>
+              </select>
+            </div>
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="createUserFirstName" type="text" placeholder="First name" /></div>
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="createUserLastName" type="text" placeholder="Last name" /></div>
+            <div class="sub" style="margin:0 0 8px">— OR —</div>
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="createUserCompanyName" type="text" placeholder="Company name" /></div>
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="createUserEmail" type="email" placeholder="Email address" /></div>
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="createUserPassword" type="password" placeholder="Password (min 8 chars)" /></div>
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="createUserVerification" type="text" placeholder="Type VERIFY to confirm identity check" /></div>
+            <label class="sub" style="display:flex;gap:8px;align-items:center;margin:0 0 8px">
+              <input id="createUserVerified" type="checkbox" /> I verified this user out-of-band (call/text/video)
+            </label>
+            <button id="createUserBtn" class="btn btn-ghost">Create User</button>
+          </div>
+
+          <div class="admin-tab-panel" data-admin-panel="password" style="display:none">
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="changeUserUsername" type="text" placeholder="Username" /></div>
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="changeUserPassword" type="password" placeholder="New password (min 8 chars)" /></div>
+            <button id="changeUserPasswordBtn" class="btn btn-ghost">Change Password</button>
+          </div>
+
+          <div class="admin-tab-panel" data-admin-panel="delete" style="display:none">
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="deleteUserUsername" type="text" placeholder="Username to delete" /></div>
+            <button id="deleteUserBtn" class="btn btn-ghost">Delete User</button>
+          </div>
+
+          <div class="admin-tab-panel" data-admin-panel="admin" style="display:none">
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="authUsername" type="text" placeholder="New admin username" /></div>
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="authCurrentPassword" type="password" placeholder="Current admin password" /></div>
+            <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="authNewPassword" type="password" placeholder="New admin password (min 8 chars)" /></div>
+            <button id="authSaveBtn" class="btn">Save Admin Credentials</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+  <script src="perf-utils.js?v=20260318-2120"></script>
+  <script src="app.js?v=20260319-1501"></script>
+</body>
+</html>

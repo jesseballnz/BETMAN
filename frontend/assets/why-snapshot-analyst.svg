@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#030b16" />
+      <stop offset="100%" stop-color="#101f33" />
+    </linearGradient>
+    <linearGradient id="bubbleAI" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#17c9ff" />
+      <stop offset="100%" stop-color="#47ffb0" />
+    </linearGradient>
+    <linearGradient id="bubbleUser" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1c2b3d" />
+      <stop offset="100%" stop-color="#111c2b" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="720" rx="32" fill="url(#bg2)" />
+  <text x="60" y="90" fill="#fefefe" font-size="42" font-family="'Inter', 'SF Pro Display', sans-serif" font-weight="600">AI Analyst Conversation</text>
+  <text x="60" y="135" fill="#8ab5ff" font-size="20" font-family="'Inter', 'SF Pro Display', sans-serif">Drag runners → choose format (Same-Race, Multi, H2H) → get probabilities, risks, invalidations.</text>
+
+  <!-- screen mock -->
+  <g transform="translate(60, 180)">
+    <rect width="1080" height="480" rx="34" fill="#060e18" stroke="#19283b" stroke-width="2" />
+    <rect x="32" y="32" width="260" height="416" rx="24" fill="#0b1724" />
+    <text x="52" y="74" fill="#7bd3ff" font-size="18" font-family="'Inter', sans-serif">Selections Basket</text>
+    <rect x="52" y="96" width="220" height="56" rx="16" fill="#12283f" />
+    <text x="72" y="130" fill="#fefefe" font-size="18" font-family="'Inter', sans-serif">Tauherenikau R7</text>
+    <text x="72" y="154" fill="#94a8c7" font-size="14" font-family="'Inter', sans-serif">Not So Unusual · Poukawa</text>
+
+    <rect x="52" y="168" width="220" height="56" rx="16" fill="#12283f" opacity="0.85" />
+    <text x="72" y="202" fill="#fefefe" font-size="18" font-family="'Inter', sans-serif">Orange R1</text>
+    <text x="72" y="226" fill="#94a8c7" font-size="14" font-family="'Inter', sans-serif">Leila Belle</text>
+
+    <rect x="52" y="240" width="220" height="56" rx="16" fill="#12283f" opacity="0.65" />
+    <text x="72" y="274" fill="#fefefe" font-size="18" font-family="'Inter', sans-serif">Grafton R3</text>
+    <text x="72" y="298" fill="#94a8c7" font-size="14" font-family="'Inter', sans-serif">Always A Rainbow</text>
+
+    <text x="52" y="348" fill="#647b97" font-size="16" font-family="'Inter', sans-serif">Format</text>
+    <rect x="52" y="364" width="220" height="36" rx="18" fill="#162d44" stroke="#1f8ef1" />
+    <text x="72" y="388" fill="#9fd8ff" font-size="16" font-family="'Inter', sans-serif">Same-Race Multi</text>
+    <rect x="52" y="410" width="220" height="36" rx="18" fill="#111c2b" />
+    <text x="72" y="434" fill="#7089a5" font-size="16" font-family="'Inter', sans-serif">H2H</text>
+
+    <!-- Chat area -->
+    <g transform="translate(320, 32)">
+      <rect width="728" height="416" rx="26" fill="#0c1826" />
+      <!-- user bubble -->
+      <rect x="36" y="36" width="360" height="84" rx="20" fill="url(#bubbleUser)" />
+      <text x="56" y="72" fill="#fefefe" font-size="20" font-family="'Inter', sans-serif">Explain Tauherenikau R7 Same-Race Multi</text>
+      <text x="56" y="100" fill="#9fb4ce" font-size="16" font-family="'Inter', sans-serif">Need best structure + risk flags.</text>
+
+      <!-- ai bubble -->
+      <rect x="332" y="136" width="360" height="190" rx="22" fill="url(#bubbleAI)" opacity="0.95" />
+      <text x="352" y="170" fill="#032033" font-size="18" font-family="'Inter', sans-serif" font-weight="600">AI Analyst</text>
+      <text x="352" y="198" fill="#032033" font-size="16" font-family="'Inter', sans-serif">Verdict: Back Not So Unusual over Poukawa.</text>
+      <text x="352" y="222" fill="#032033" font-size="15" font-family="'Inter', sans-serif">Win%: 29.6 vs 21.4 | Joint likelihood: 18.7%</text>
+      <text x="352" y="246" fill="#032033" font-size="15" font-family="'Inter', sans-serif">Edge: +6.8 pts vs market at $3.00 / $4.20.</text>
+      <text x="352" y="270" fill="#032033" font-size="15" font-family="'Inter', sans-serif">Risk: hot rail lanes 1-2, tempo collapse chance.</text>
+      <text x="352" y="294" fill="#032033" font-size="15" font-family="'Inter', sans-serif">Invalidation: downgrade to Heavy 10 or late drift &gt;25%.</text>
+
+      <!-- button row -->
+      <rect x="36" y="340" width="200" height="48" rx="16" fill="#1f8ef1" />
+      <text x="72" y="372" fill="#fefefe" font-size="18" font-family="'Inter', sans-serif">Ask Follow-up</text>
+      <rect x="256" y="340" width="200" height="48" rx="16" fill="#17263a" stroke="#2f425a" />
+      <text x="292" y="372" fill="#9fb4ce" font-size="18" font-family="'Inter', sans-serif">Copy to Queue</text>
+    </g>
+  </g>
+</svg>

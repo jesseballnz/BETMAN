@@ -1,0 +1,107 @@
+{
+  "book": "draftkings",
+  "updatedAt": "2026-03-08T10:30:00+13:00",
+  "events": [
+    {
+      "id": "nba-2026-03-08-lal-den",
+      "league": "NBA",
+      "home": "Denver Nuggets",
+      "away": "Los Angeles Lakers",
+      "start": "2026-03-08T19:30:00-07:00",
+      "lines": {
+        "spread": {
+          "home": -5.5,
+          "away": 5.5,
+          "price": -110
+        },
+        "total": {
+          "line": 228.5,
+          "over": -108,
+          "under": -112
+        },
+        "moneyline": {
+          "home": -215,
+          "away": 180
+        },
+        "props": [
+          {
+            "market": "Player Points",
+            "runner": "Nikola Jokic",
+            "line": 26.5,
+            "over": -115,
+            "under": 100
+          },
+          {
+            "market": "Player Rebounds",
+            "runner": "Anthony Davis",
+            "line": 12.5,
+            "over": -105,
+            "under": -115
+          }
+        ]
+      }
+    },
+    {
+      "id": "nfl-2026-09-10-kc-bal",
+      "league": "NFL",
+      "home": "Baltimore Ravens",
+      "away": "Kansas City Chiefs",
+      "start": "2026-09-10T20:20:00-04:00",
+      "lines": {
+        "spread": {
+          "home": -3.0,
+          "away": 3.0,
+          "price": -110
+        },
+        "total": {
+          "line": 49.5,
+          "over": -105,
+          "under": -115
+        },
+        "moneyline": {
+          "home": -160,
+          "away": 140
+        }
+      }
+    },
+    {
+      "id": "ufc-2026-03-15-pereira-adesanya",
+      "league": "UFC",
+      "home": "Alex Pereira",
+      "away": "Israel Adesanya",
+      "start": "2026-03-15T22:00:00-07:00",
+      "lines": {
+        "spread": {
+          "home": -1.5,
+          "away": 1.5,
+          "price": -105
+        },
+        "total": {
+          "line": 4.5,
+          "over": -120,
+          "under": 100
+        },
+        "moneyline": {
+          "home": -135,
+          "away": 115
+        },
+        "props": [
+          {
+            "market": "Method of Victory",
+            "runner": "Pereira KO/TKO",
+            "line": null,
+            "over": -105,
+            "under": null
+          },
+          {
+            "market": "Fight to Go Distance",
+            "runner": "Yes",
+            "line": null,
+            "over": 140,
+            "under": -160
+          }
+        ]
+      }
+    }
+  ]
+}

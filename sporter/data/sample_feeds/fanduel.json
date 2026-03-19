@@ -1,0 +1,89 @@
+{
+  "book": "fanduel",
+  "updatedAt": "2026-03-08T10:31:00+13:00",
+  "events": [
+    {
+      "id": "nba-2026-03-08-lal-den",
+      "league": "NBA",
+      "home": "Denver Nuggets",
+      "away": "Los Angeles Lakers",
+      "start": "2026-03-08T19:30:00-07:00",
+      "lines": {
+        "spread": {
+          "home": -6.0,
+          "away": 6.0,
+          "price": -108
+        },
+        "total": {
+          "line": 229.5,
+          "over": -110,
+          "under": -110
+        },
+        "moneyline": {
+          "home": -205,
+          "away": 172
+        },
+        "props": [
+          {
+            "market": "Player Assists",
+            "runner": "LeBron James",
+            "line": 8.5,
+            "over": -120,
+            "under": 105
+          }
+        ]
+      }
+    },
+    {
+      "id": "epl-2026-03-09-ars-liv",
+      "league": "EPL",
+      "home": "Arsenal",
+      "away": "Liverpool",
+      "start": "2026-03-09T15:00:00Z",
+      "lines": {
+        "moneyline": {
+          "home": 140,
+          "draw": 245,
+          "away": 185
+        },
+        "total": {
+          "line": 2.75,
+          "over": -102,
+          "under": -118
+        }
+      }
+    },
+    {
+      "id": "ufc-2026-03-15-pereira-adesanya",
+      "league": "UFC",
+      "home": "Alex Pereira",
+      "away": "Israel Adesanya",
+      "start": "2026-03-15T22:00:00-07:00",
+      "lines": {
+        "spread": {
+          "home": -1.5,
+          "away": 1.5,
+          "price": -108
+        },
+        "total": {
+          "line": 4.5,
+          "over": -115,
+          "under": 105
+        },
+        "moneyline": {
+          "home": -140,
+          "away": 120
+        },
+        "props": [
+          {
+            "market": "Round Betting",
+            "runner": "Adesanya R4",
+            "line": null,
+            "over": 900,
+            "under": null
+          }
+        ]
+      }
+    }
+  ]
+}

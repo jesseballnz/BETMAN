@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BETMAN — Signal Platform</title>
+  <link rel="stylesheet" href="landing.css?v=20260315-0658" />
+</head>
+<body class="landing-page">
+  <div class="landing-app">
+    <header class="topbar">
+      <div class="brand" style="display:flex;align-items:center;gap:10px">
+        <img src="assets/logo.png" alt="Betman" class="brand-logo" />
+        <span>Signal # Racing Ops</span>
+      </div>
+      <div class="topbar-links">
+        <a class="topbar-link" href="/why">Why BETMAN?</a>
+      </div>
+    </header>
+
+    <section class="login-hero">
+      <div class="login-hero-overlay">
+        <p class="hero-tag">Live racing edge</p>
+        <h2>Discipline meets speed.</h2>
+        <p>BETMAN fuses simulations, live odds, and AI guardrails so you can act faster than the public tote.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="betman-green">Welcome to BETMAN</h2>
+      <p class="sub betman-green">Institutional-style racing signals, market-move intelligence, and AI-assisted race analysis.</p>
+
+      <div class="landing-card" style="margin-top:12px">
+        <h3>Pricing</h3>
+        <div class="pricing-grid">
+          <a id="singlePaymentLink" class="pricing-card pricing-card-single" href="#" target="_blank" rel="noopener">
+            <div class="pricing-card-photo"><img src="assets/race-hero-01.jpg" alt="Racegoers celebrating a win" loading="lazy" /></div>
+            <div class="plan-label">Single User</div>
+            <div class="plan-price">$9.95<span class="plan-cycle"> / week</span></div>
+            <div class="plan-note">Click card to subscribe</div>
+          </a>
+          <a id="commercialPaymentLink" class="pricing-card pricing-card-commercial" href="#" target="_blank" rel="noopener">
+            <div class="pricing-card-photo"><img src="assets/race-hero-02.jpg" alt="Derby crowd celebrating with style" loading="lazy" /></div>
+            <div class="plan-label">Commercial</div>
+            <div class="plan-price">$250<span class="plan-cycle"> / month</span></div>
+            <div class="plan-note">Click card to subscribe</div>
+          </a>
+          <a id="testerPaymentLink" class="pricing-card pricing-card-tester" href="https://buy.stripe.com/aFa00j9wO4jYbn26egcZa02" target="_blank" rel="noopener">
+            <div class="pricing-card-photo"><img src="assets/race-hero-03.jpg" alt="Trackside punters lifting the energy" loading="lazy" /></div>
+            <div class="plan-label">BETMAN Tester</div>
+            <div class="plan-price">Free<span class="plan-cycle"> / signup</span></div>
+            <div class="plan-note">Click card to start testing</div>
+          </a>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr;gap:16px;margin-top:14px">
+        <div class="landing-card">
+          <h3>Log in</h3>
+          <div class="sub" style="margin-bottom:8px">New users: subscribe on Stripe first (pick Single User, Commercial, or Tester above). After checkout the account exists with a blank password — click <em>Set / Reset Password</em> to create one, then log in with that email + password.</div>
+          <form id="loginForm" autocomplete="on">
+            <div class="input-row" style="margin-bottom:8px"><input id="loginUsername" name="username" type="text" placeholder="Email or username" autocomplete="username" /></div>
+            <div class="input-row" style="margin-bottom:8px"><input id="loginPassword" name="password" type="password" placeholder="Password" autocomplete="current-password" /></div>
+            <div class="login-actions">
+              <button id="loginBtn" class="btn" type="submit">Log In</button>
+              <button id="requestSetupBtn" class="btn btn-ghost" type="button">Set / Reset Password</button>
+            </div>
+            <div id="loginMsg" class="sub" style="margin-top:8px"></div>
+          </form>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const cleanBase = `${window.location.protocol}//${window.location.host}`;
+
+    const api = async (path, payload, timeoutMs = 12000) => {
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), timeoutMs);
+      try {
+        const url = new URL(path, cleanBase).toString();
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload || {}),
+          signal: ctrl.signal,
+          credentials: 'same-origin'
+        });
+        const body = await r.json().catch(()=>({}));
+        return { ok: r.ok, body };
+      } finally { clearTimeout(t); }
+    };
+
+    async function loadPricingLinks(){
+      try {
+        const r = await fetch(new URL('/api/pricing', cleanBase).toString(), { credentials: 'same-origin' });
+        const p = await r.json().catch(()=>({}));
+        const s = document.getElementById('singlePaymentLink');
+        const c = document.getElementById('commercialPaymentLink');
+        const t = document.getElementById('testerPaymentLink');
+        if (s) {
+          if (p?.single?.paymentLink) s.href = p.single.paymentLink;
+          else s.style.display = 'none';
+        }
+        if (c) {
+          if (p?.commercial?.paymentLink) c.href = p.commercial.paymentLink;
+          else c.style.display = 'none';
+        }
+        if (t) {
+          if (p?.tester?.paymentLink) t.href = p.tester.paymentLink;
+          else t.style.display = 'none';
+        }
+      } catch {}
+    }
+
+    async function doLogin(){
+      const usernameInput = document.getElementById('loginUsername').value || '';
+      const username = usernameInput;
+      const usernameCheck = usernameInput.trim();
+      const password = document.getElementById('loginPassword').value;
+      const msg = document.getElementById('loginMsg');
+      if (!usernameCheck || !password) {
+        msg.textContent = 'Enter username/email and password.';
+        return;
+      }
+      msg.textContent = 'Signing in…';
+      try {
+        const r = await fetch(new URL('/api/login', cleanBase).toString(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+          credentials: 'same-origin'
+        });
+        const body = await r.json().catch(()=>({}));
+        if (!r.ok || !body?.ok) {
+          if (body?.error === 'subscription_required' && body?.paymentLink) {
+            msg.innerHTML = `Subscription required. <a href="${body.paymentLink}" target="_blank" rel="noopener">Activate ${body.planType || 'plan'}</a> then log in again.`;
+          } else if (body?.error === 'password_setup_required' && body?.setupLink) {
+            msg.innerHTML = `Password setup required. <a href="${body.setupLink}">Set your password</a> then log in.`;
+          } else {
+            msg.textContent = `Login failed: ${body?.error || r.status}`;
+          }
+          return;
+        }
+        msg.textContent = 'Login successful. Redirecting…';
+        try {
+          const returnTo = sessionStorage.getItem('betmanAuthReturn');
+          if (returnTo) {
+            sessionStorage.removeItem('betmanAuthReturn');
+            window.location.href = returnTo;
+            return;
+          }
+        } catch {}
+        window.location.href = '/';
+      } catch (e) {
+        msg.textContent = `Login request failed: ${e?.message || 'network error'}.`;
+      }
+    }
+
+    function initPricingPhotoRotation(){
+      const racePhotoPool = [
+        'assets/race-hero-01.jpg',
+        'assets/race-hero-02.jpg',
+        'assets/race-hero-03.jpg',
+        'assets/race-hero-04.jpg',
+        'assets/race-hero-05.jpg',
+        'assets/race-hero-06.jpg'
+      ];
+      const imgEls = Array.from(document.querySelectorAll('.pricing-card-photo img'));
+      if (!imgEls.length) return;
+      imgEls.forEach((img)=>{
+        img.dataset.currentPhoto = img.getAttribute('src') || '';
+      });
+      let tick = Math.floor(Math.random() * racePhotoPool.length);
+      const applyPhotos = ()=>{
+        imgEls.forEach((img, idx)=>{
+          const nextSrc = racePhotoPool[(tick + idx) % racePhotoPool.length];
+          if (img.dataset.currentPhoto === nextSrc) return;
+          img.dataset.currentPhoto = nextSrc;
+          img.style.opacity = '0';
+          const handle = ()=>{
+            img.style.opacity = '1';
+            img.removeEventListener('load', handle);
+          };
+          img.addEventListener('load', handle);
+          img.src = nextSrc;
+        });
+      };
+      applyPhotos();
+      setInterval(()=>{
+        tick = (tick + 1) % racePhotoPool.length;
+        applyPhotos();
+      }, 9000);
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', (e)=>{ e.preventDefault(); doLogin(); });
+    document.getElementById('loginBtn').addEventListener('click', doLogin);
+
+    document.getElementById('requestSetupBtn').addEventListener('click', async ()=>{
+      const emailInput = document.getElementById('loginUsername').value || '';
+      const email = emailInput;
+      const emailCheck = emailInput.trim();
+      const msg = document.getElementById('loginMsg');
+      if (!emailCheck) { msg.textContent = 'Enter your account email first, then click Set / Reset Password.'; return; }
+      msg.textContent = 'Requesting setup link…';
+      try {
+        const res = await api('/api/password-setup-link', { email }, 15000);
+        if (!res.ok || !res.body?.ok) {
+          if (res.body?.error === 'subscription_required' && res.body?.paymentLink) {
+            msg.innerHTML = `Subscription required. <a href="${res.body.paymentLink}" target="_blank" rel="noopener">Activate plan</a> then request password setup.`;
+          } else {
+            msg.textContent = `Setup request failed: ${res.body?.error || 'unknown_error'}`;
+          }
+          return;
+        }
+        msg.innerHTML = `Setup link ready: <a href="${res.body.setupLink}">Open set-password page</a>`;
+      } catch {
+        msg.textContent = 'Setup request failed. Please retry.';
+      }
+    });
+
+    document.getElementById('loginPassword').addEventListener('keydown', (e)=>{ if (e.key === 'Enter') doLogin(); });
+    document.getElementById('loginUsername').addEventListener('keydown', (e)=>{ if (e.key === 'Enter') doLogin(); });
+    loadPricingLinks();
+    initPricingPhotoRotation();
+
+  </script>
+</body>
+</html>

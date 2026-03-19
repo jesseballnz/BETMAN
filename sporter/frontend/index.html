@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sportr</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <img src="/assets/logo.png" alt="Sportr" class="brand-logo" />
+        <div>
+          <div class="brand-title">Sportr · Multi-Sport Ops</div>
+          <span>Signal discipline for spreads, totals, props</span>
+        </div>
+      </div>
+      <div class="top-right">
+        <div class="status-pill" id="schedulePill">Schedule —</div>
+        <div class="status-pill" id="marketPill">Markets —</div>
+      </div>
+    </header>
+
+    <section class="section" id="filterSection">
+      <h3>Market Filters</h3>
+      <div class="filters">
+        <div class="filter">
+          <label for="sportFilter">Sport</label>
+          <select id="sportFilter">
+            <option value="ALL">All</option>
+          </select>
+        </div>
+        <div class="filter">
+          <label for="betWindowInput">Bet window (hrs)</label>
+          <div class="filter-row">
+            <input type="number" id="betWindowInput" min="1" max="96" value="12" />
+            <button id="applyWindowBtn" class="btn btn-ghost compact-btn">Save</button>
+          </div>
+          <small>Filters events that start within the next X hours (keeps in-play for 60m).</small>
+        </div>
+      </div>
+    </section>
+
+    <nav class="page-nav">
+      <button class="page-tab active" data-page="marketBoard">Market Board</button>
+      <button class="page-tab" data-page="edgeBoard">Edge Board</button>
+      <button class="page-tab" data-page="scheduleBoard">Schedule</button>
+    </nav>
+
+    <section class="section page-section" data-page="marketBoard">
+      <div class="section-head">
+        <h3>Market Board</h3>
+      </div>
+      <div id="overviewCards" class="overview-grid"></div>
+      <div class="panel">
+        <div class="panel-head">
+          <h4>Market Moves</h4>
+        </div>
+        <div id="marketMoves"></div>
+      </div>
+    </section>
+
+    <section class="section page-section" data-page="edgeBoard" style="display:none">
+      <div class="section-head">
+        <h3>Edge Board</h3>
+      </div>
+      <div class="edge-toolbar">
+        <div class="edge-toggle-group">
+          <span>Bias</span>
+          <div class="segmented-control" id="edgeModeToggle">
+            <button type="button" class="segmented-btn" data-edge-mode="overlay">Overlays</button>
+            <button type="button" class="segmented-btn" data-edge-mode="fade">Fades</button>
+            <button type="button" class="segmented-btn" data-edge-mode="all">All</button>
+          </div>
+        </div>
+        <div class="edge-toolbar-hint">Overlays = positive edge (book lagging). Fades = negative edge (book rich).</div>
+      </div>
+      <div id="edgeBoard" class="edge-grid"></div>
+    </section>
+
+    <section class="section page-section" data-page="scheduleBoard" style="display:none">
+      <div class="section-head">
+        <h3>Upcoming Schedule</h3>
+      </div>
+      <div id="schedule"></div>
+    </section>
+  </div>
+
+  <aside id="eventDrawer" aria-hidden="true">
+    <div class="drawer-header">
+      <div>
+        <h3 id="drawerTitle">Select an event</h3>
+        <p id="drawerMeta"></p>
+      </div>
+      <button id="drawerClose" class="btn btn-ghost compact-btn">Close</button>
+    </div>
+    <div class="drawer-content">
+      <div class="drawer-card">
+        <h4>Consensus</h4>
+        <div id="drawerConsensus" class="drawer-consensus"></div>
+      </div>
+      <div class="drawer-card">
+        <h4>Books</h4>
+        <div id="drawerBooks"></div>
+      </div>
+      <div class="drawer-card">
+        <h4>Props</h4>
+        <div id="drawerProps" class="drawer-props"></div>
+      </div>
+    </div>
+  </aside>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

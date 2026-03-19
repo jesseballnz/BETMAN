@@ -1,0 +1,58 @@
+[
+  {
+    "id": "race-win-core",
+    "question": "Ashburton R8: Give top 3 win chances with percentages, edge vs market, and one-line bet decision.",
+    "mustInclude": ["%", "edge", "bet"],
+    "maxChars": 2200,
+    "contextFile": "tests/rw1-shatin-r11.txt"
+  },
+  {
+    "id": "race-pass-discipline",
+    "question": "If there is no edge in Ashburton R9, explicitly say PASS and explain why in 3 bullets.",
+    "mustInclude": ["PASS", "edge"],
+    "maxChars": 1800,
+    "contextFile": "tests/rw2-port-macquarie-r1.txt"
+  },
+  {
+    "id": "multi-structure",
+    "question": "Build a 3-leg multi from current NZ races only. Include leg probabilities, combined probability, and invalidation points.",
+    "mustInclude": ["combined", "probability", "invalidation"],
+    "maxChars": 2600,
+    "contextFile": "tests/rw3-nz-multi.txt"
+  },
+  {
+    "id": "market-movers-read",
+    "question": "Interpret latest market movers: separate firmers vs drifters and tell me what is signal vs noise.",
+    "mustInclude": ["firm", "drift", "signal", "noise"],
+    "maxChars": 2200,
+    "contextFile": "tests/rw5-market-movers.txt"
+  },
+  {
+    "id": "risk-controls",
+    "question": "Recommend stake sizing for one win bet and one each-way bet under strict drawdown control.",
+    "mustInclude": ["stake", "risk", "drawdown"],
+    "maxChars": 2000,
+    "contextFile": "tests/rw4-stake-risk.txt"
+  },
+  {
+    "id": "fast-brief",
+    "question": "In 5 lines max: best current NZ race angle and why.",
+    "mustInclude": ["NZ"],
+    "maxChars": 900,
+    "contextFile": "tests/rw8-fast-brief.txt"
+  },
+  {
+    "id": "contradiction-handling",
+    "question": "If one runner has strong form but terrible map/track fit, how do you resolve the conflict? Apply to one live race.",
+    "mustInclude": ["form", "map", "track"],
+    "maxChars": 2200,
+    "contextFile": "tests/rw6-conflict.txt"
+  },
+  {
+    "id": "decision-format",
+    "question": "Give final decision in this format exactly: Decision | Stake | Confidence% | Invalidation.",
+    "mustInclude": ["Decision", "Stake", "Confidence", "Invalidation"],
+    "maxChars": 1200,
+    "contextFile": "tests/rw7-decision.txt"
+  }
+]

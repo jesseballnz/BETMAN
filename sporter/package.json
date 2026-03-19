@@ -1,0 +1,12 @@
+{
+  "name": "sporter",
+  "version": "0.1.0",
+  "description": "Standalone sports betting intelligence workspace",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/sporter_server.js",
+    "test": "node --test tests/api.test.js",
+    "poll": "node scripts/live_poll_loop.js"
+  },
+  "dependencies": {}
+}

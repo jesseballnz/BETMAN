@@ -1,0 +1,34 @@
+# Secrets & local env
+.env
+.env.*
+secrets/
+
+# Runtime state
+memory/
+bakeoff/results/
+
+# Local heavy/dev artifacts
+venv/
+node_modules/
+trash/
+tmp/
+.openclaw/
+$PLAYWRIGHT_STORAGE_DIR/
+.DS_Store
+screenshots/
+creds
+
+# Generated datasets (keep source scripts instead)
+data/tab/
+data/loveracing/
+frontend/data/pool/
+frontend/data/ai-chat-memory.json
+frontend/data/races-20*.json
+frontend/data/success_*.json
+sporter/data/cache/
+sporter/memory/
+
+# Logs / caches
+*.log
+__pycache__/
+betcha-poll-state-*.json
