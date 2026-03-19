@@ -5110,8 +5110,8 @@ function renderBestStrategy(daily){
     el.innerHTML = '<div class="sub">No data yet.</div>';
     return;
   }
-  let rows = ['win','odds_runner','ew'].map(key => {
-    const r = agg.pick[key];
+  let rows = ['win','odds_runner','ew','long'].map(key => {
+    const r = key === 'long' ? (agg.long || {}) : (agg.pick[key] || {});
     const stakeUnits = r.stake_units ?? r.bets;
     const roiStakeUnits = r.roi_stake_units ?? stakeUnits;
     const roiRec = roiStakeUnits ? r.profit_rec / roiStakeUnits : null;
@@ -5138,7 +5138,25 @@ function renderBestStrategy(daily){
     };
   });
 
-  const rowsWithBets = rows.filter(r => r.bets > 0);
+  const exotic = {
+    key: 'exotic',
+    bets: Number(agg.exotic_bets || 0),
+    stakeUnits: Number(agg.exotic_stake || 0),
+    roiStakeUnits: Number(agg.exotic_stake || 0),
+    roiSpStakeUnits: 0,
+    roiToteStakeUnits: Number(agg.exotic_stake || 0),
+    winRate: Number(agg.exotic_hit_rate),
+    roiRec: null,
+    roiSp: null,
+    roiTote: Number.isFinite(Number(agg.exotic_roi_tote)) ? Number(agg.exotic_roi_tote) : null,
+    profit_rec: 0,
+    profit_sp: 0,
+    profit_tote: Number(agg.exotic_profit || 0),
+    wins: null
+  };
+  if (exotic.bets > 0) rows.push(exotic);
+
+  const rowsWithBets = rows.filter(r => r.bets > 0 && r.key !== 'exotic');
   if (rowsWithBets.length) {
     const combo = rowsWithBets.reduce((acc, r) => {
       acc.bets += r.bets;
@@ -5173,6 +5191,7 @@ function renderBestStrategy(daily){
     if (key === 'odds_runner') return 'Odds Runner';
     if (key === 'ew') return 'Each Way';
     if (key === 'long') return 'Long Odds';
+    if (key === 'exotic') return 'Exotics';
     if (key === 'combo') return 'Win + Odds Runner + Each Way';
     return key.toUpperCase();
   };
