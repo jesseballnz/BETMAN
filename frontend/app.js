@@ -429,7 +429,7 @@ let racesCache = [];
 let selectedRace = null;
 let selectedRaceKey = null;
 
-const CONFIDENCE_SIGNAL_THRESHOLD = 30;
+const CONFIDENCE_SIGNAL_THRESHOLD = 40;
 let confidenceBaseStakeUnit = 1;
 let confidenceBoostStakeUnit = 2;
 let stakePerRace = 10;
