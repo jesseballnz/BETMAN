@@ -4466,7 +4466,10 @@ if (url.pathname === '/api/ask-selection') {
         ok: true,
         providerDefault: resolveAiProvider(),
         ollamaBase: resolvedBase,
-        ollamaModels: (Array.isArray(models) && models.length) ? models : fallbackOllama,
+        ollamaModels: Array.from(new Set([
+          ...((Array.isArray(models) && models.length) ? models : []),
+          ...fallbackOllama
+        ].filter(Boolean))),
         ...basePayload
       }))
       .catch(() => okJson(res, {
