@@ -4180,10 +4180,10 @@ function renderPerformanceTable(targetId, data, opts = {}){
       const longPick = r.long_breakdown || {};
       return `<tr>
         <td data-label="Period">${key}</td>
-        <td data-label="Win">${buildCell('Win', picks.win)}</td>
-        <td data-label="Odds">${buildCell('Odds Runner', picks.odds_runner)}</td>
-        <td data-label="EW">${buildCell('EW', picks.ew)}</td>
-        <td data-label="Long">${buildCell('Long', longPick)}</td>
+        <td data-label="Win Strategy">${buildCell('Win Strategy', picks.win)}</td>
+        <td data-label="Odds Runner">${buildCell('Odds Runner', picks.odds_runner)}</td>
+        <td data-label="Each Way">${buildCell('Each Way', picks.ew)}</td>
+        <td data-label="Long Odds">${buildCell('Long Odds', longPick)}</td>
       </tr>`;
     }).join('');
     el.innerHTML = `
@@ -4191,10 +4191,10 @@ function renderPerformanceTable(targetId, data, opts = {}){
         <thead>
           <tr>
             <th>Period</th>
-            <th>Win</th>
+            <th>Win Strategy</th>
             <th>Odds Runner</th>
-            <th>EW</th>
-            <th>Long</th>
+            <th>Each Way</th>
+            <th>Long Odds</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -4215,8 +4215,8 @@ function renderPerformanceTable(targetId, data, opts = {}){
       const pickTotal = winBets + oddsBets + ewBets;
       mixCells = `
         <td data-label="Win Bet %">${fmtPct(pickTotal ? winBets / pickTotal : null)}</td>
-        <td data-label="Odds %">${fmtPct(pickTotal ? oddsBets / pickTotal : null)}</td>
-        <td data-label="EW %">${fmtPct(pickTotal ? ewBets / pickTotal : null)}</td>`;
+        <td data-label="Odds Runner %">${fmtPct(pickTotal ? oddsBets / pickTotal : null)}</td>
+        <td data-label="Each Way %">${fmtPct(pickTotal ? ewBets / pickTotal : null)}</td>`;
     }
     let exoticCells = '';
     if (withExotics) {
@@ -4243,7 +4243,7 @@ function renderPerformanceTable(targetId, data, opts = {}){
       ${roiCells}
     </tr>`;
   }).join('');
-  const mixHeaders = withMix ? '<th>Win Bet %</th><th>Odds %</th><th>EW %</th>' : '';
+  const mixHeaders = withMix ? '<th>Win Strategy %</th><th>Odds Runner %</th><th>Each Way %</th>' : '';
   const exoticHeaders = withExotics
     ? `<th>Exotic Bets</th><th>Exotic Hit Rate</th>${showRoi ? '<th>Exotic ROI</th>' : ''}`
     : '';
