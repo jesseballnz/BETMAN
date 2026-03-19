@@ -1609,20 +1609,6 @@ function renderMarketMovers(rows){
   const normalizeRaceNumber = (val) => String(val || '').replace(/^R/i,'').trim();
   const selectedRaceNumPref = selectedRace ? String(selectedRace.race_number || selectedRace.race || '').replace(/^R/i,'').trim() : '';
   const selectedMeetingKeyPref = selectedRace ? normalizeMeetingKey(selectedRace.meeting || '') : '';
-  if (selectedMeetingKeyPref && selectedRaceNumPref) {
-    const selectedRaceMovers = meetingUpcomingMovers.filter(r => normalizeMeetingKey(r.meeting) === selectedMeetingKeyPref && normalizeRaceNumber(r.race) === selectedRaceNumPref);
-    if (selectedRaceMovers.length) {
-      const hasSelectedFirmers = selectedRaceMovers.some(r => Number(r.pctMove || 0) <= 0);
-      const hasSelectedDrifters = selectedRaceMovers.some(r => Number(r.pctMove || 0) > 0);
-      if (moversMode === 'firmers' && !hasSelectedFirmers && hasSelectedDrifters) {
-        moversMode = 'drifters';
-        localStorage.setItem('moversMode', moversMode);
-      } else if (moversMode === 'drifters' && !hasSelectedDrifters && hasSelectedFirmers) {
-        moversMode = 'firmers';
-        localStorage.setItem('moversMode', moversMode);
-      }
-    }
-  }
   const totalFirmersRaw = upcomingRaw.filter(r => Number(r.pctMove || 0) <= 0).length;
   const totalDriftersRaw = upcomingRaw.filter(r => Number(r.pctMove || 0) > 0).length;
 
