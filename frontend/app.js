@@ -1584,6 +1584,23 @@ function renderMarketMovers(rows){
     moversMode = 'firmers';
     localStorage.setItem('moversMode', moversMode);
   }
+
+  const selectedRaceNumPref = selectedRace ? String(selectedRace.race_number || selectedRace.race || '').replace(/^R/i,'').trim() : '';
+  const selectedMeetingKeyPref = selectedRace ? normalizeMeetingKey(selectedRace.meeting || '') : '';
+  if (selectedMeetingKeyPref && selectedRaceNumPref) {
+    const selectedRaceMovers = meetingUpcomingMovers.filter(r => normalizeMeetingKey(r.meeting) === selectedMeetingKeyPref && normalizeRaceNumber(r.race) === selectedRaceNumPref);
+    if (selectedRaceMovers.length) {
+      const hasSelectedFirmers = selectedRaceMovers.some(r => Number(r.pctMove || 0) <= 0);
+      const hasSelectedDrifters = selectedRaceMovers.some(r => Number(r.pctMove || 0) > 0);
+      if (moversMode === 'firmers' && !hasSelectedFirmers && hasSelectedDrifters) {
+        moversMode = 'drifters';
+        localStorage.setItem('moversMode', moversMode);
+      } else if (moversMode === 'drifters' && !hasSelectedDrifters && hasSelectedFirmers) {
+        moversMode = 'firmers';
+        localStorage.setItem('moversMode', moversMode);
+      }
+    }
+  }
   const totalFirmersRaw = upcomingRaw.filter(r => Number(r.pctMove || 0) <= 0).length;
   const totalDriftersRaw = upcomingRaw.filter(r => Number(r.pctMove || 0) > 0).length;
 
@@ -2156,7 +2173,13 @@ function whyCategoryMatch(row, why, opts = {}){
   const exotic = ['top2','top3','top4','trifecta','multi'].includes(type);
   if (why === 'EXOTIC') return allowExotic ? exotic : false;
   if (exotic) return false;
-  if (why === 'STRONG') return Number.isFinite(signal) && signal >= 60;
+  if (why === 'STRONG') {
+    if (Number.isFinite(signal) && signal >= 60) return true;
+    const winProb = Number.isFinite(Number(row?.win_p)) ? Number(row.win_p) : parseReasonWinProb(row?.reason);
+    const shortFav = Number.isFinite(odds) && odds > 0 && odds <= 3.2;
+    const favContext = /favourite|favorite|market\s+leader|short\s+price/.test(reason);
+    return shortFav && ((Number.isFinite(winProb) && winProb >= 22) || favContext);
+  }
   if (why === 'VALUE') return (type === 'ew') || rowHasValueEdge(row) || /value|odds|long-odds/.test(reason);
   if (why === 'LONG') return rowMatchesLongProfile(row);
   return true;
