@@ -4136,6 +4136,11 @@ function fmtRoi(val){
   return `${sign}${(val * 100).toFixed(1)}%`;
 }
 
+function fmtRoiZero(val){
+  const n = Number.isFinite(val) ? val : 0;
+  return fmtRoi(n);
+}
+
 function fmtUnits(val){
   if (!Number.isFinite(val)) return '—';
   const sign = val > 0 ? '+' : '';
@@ -4229,7 +4234,7 @@ function renderPerformanceTable(targetId, data, opts = {}){
         ${roiCell}`;
     }
     const roiCells = showRoi
-      ? `<td data-label="ROI Tote">${fmtRoi(r.roi_tote)}</td>
+      ? `<td data-label="ROI Tote">${fmtRoiZero(r.roi_tote)}</td>
       <td data-label="ROI Rec">${fmtRoi(r.roi_rec)}</td>
       <td data-label="ROI SP">${fmtRoi(r.roi_sp)}</td>
       <td data-label="ROI EW">${fmtRoi(r.roi_ew)}</td>`
@@ -4489,7 +4494,7 @@ function renderPickBreakdown(latest){
     const r = data[key] || {};
     const label = key === 'odds_runner' ? 'Odds Runner' : key.toUpperCase();
     const roiCells = showRoi
-      ? `<td data-label="ROI Tote">${fmtRoi(r.roi_tote)}</td>
+      ? `<td data-label="ROI Tote">${fmtRoiZero(r.roi_tote)}</td>
       <td data-label="ROI Rec">${fmtRoi(r.roi_rec)}</td>
       <td data-label="ROI SP">${fmtRoi(r.roi_sp)}</td>
       <td data-label="ROI EW">${fmtRoi(r.roi_ew)}</td>`
@@ -4584,7 +4589,7 @@ function renderExoticBreakdown(latest){
   const showRoi = !!isAdminUser;
   const rows = ['top2','top3','top4','trifecta'].map(key => {
     const r = data[key] || {};
-    const roiCell = showRoi ? `<td data-label="ROI Tote">${fmtRoi(r.roi_tote)}</td>` : '';
+    const roiCell = showRoi ? `<td data-label="ROI Tote">${fmtRoiZero(r.roi_tote)}</td>` : '';
     return `<tr>
       <td data-label="Exotic">${key.toUpperCase()}</td>
       <td data-label="Bets">${r.bets ?? 0}</td>
@@ -4973,13 +4978,13 @@ function renderPerformanceSummary(daily){
           <td data-label="Win Rate">${fmtPct(winRate)}</td>
           <td data-label="ROI Rec">${fmtRoi(roiRec)}</td>
           <td data-label="ROI SP">${fmtRoi(roiSp)}</td>
-          <td data-label="ROI Tote">${fmtRoi(roiTote)}</td>
+          <td data-label="ROI Tote">${fmtRoiZero(roiTote)}</td>
         </tr>
       </tbody>
     </table>
     <div class="perf-summary-meta">
       <div>Bet Mix — Win: <b>${fmtPct(winBetPct)}</b> · Odds: <b>${fmtPct(oddsBetPct)}</b> · EW: <b>${fmtPct(ewBetPct)}</b></div>
-      <div>ROI Line — Rec: <b>${fmtRoi(roiRec)}</b> · SP: <b>${fmtRoi(roiSp)}</b> · Tote: <b>${fmtRoi(roiTote)}</b></div>
+      <div>ROI Line — Rec: <b>${fmtRoi(roiRec)}</b> · SP: <b>${fmtRoi(roiSp)}</b> · Tote: <b>${fmtRoiZero(roiTote)}</b></div>
     </div>
     <div class="perf-summary-meta">
       <div>Net Rec P/L: <b>${fmtUnits(agg.roi_rec_profit)}</b></div>
@@ -5063,7 +5068,7 @@ function renderBestStrategy(daily){
   const roiCells = (row) => showRoi
     ? `<td data-label="ROI Rec">${fmtRoi(row.roiRec)}</td>
           <td data-label="ROI SP">${fmtRoi(row.roiSp)}</td>
-          <td data-label="ROI Tote">${fmtRoi(row.roiTote)}</td>`
+          <td data-label="ROI Tote">${fmtRoiZero(row.roiTote)}</td>`
     : '';
   const tableRows = rows.map(row => {
     const star = row.key === bestKey ? ' ⭐' : '';
@@ -5258,7 +5263,7 @@ async function loadPerformance(){
     $('perfTotalBets').textContent = latestDaily.total_bets ?? '—';
     $('perfWinRate').textContent = fmtPct(latestDaily.win_rate);
     $('perfWinPickPct').textContent = fmtPct(latestDaily.pick_breakdown?.win?.win_rate);
-    $('perfRoiTote').textContent = fmtRoi(latestDaily.roi_tote);
+    $('perfRoiTote').textContent = fmtRoiZero(latestDaily.roi_tote);
     $('perfRoiRec').textContent = fmtRoi(latestDaily.roi_rec);
     $('perfRoiFixed').textContent = fmtRoi(latestDaily.roi_rec);
     $('perfRoiSp').textContent = fmtRoi(latestDaily.roi_sp);
