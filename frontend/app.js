@@ -749,10 +749,12 @@ async function loadStatus(){
     setTableLoading('moversTable', 'Loading market movers…');
     if (meta) meta.textContent = 'Refreshing…';
     let data = null;
+    let apiLiveOk = false;
     try {
       const apiRes = await fetchLocal('./api/status', { cache: 'no-store' });
       if (apiRes.ok) {
         data = await apiRes.json();
+        apiLiveOk = true;
       }
     } catch (err) {
       console.warn('status_api_failed', err?.message || err);
@@ -806,7 +808,7 @@ async function loadStatus(){
       el.style.color = ok ? '#c5ff00' : '#ff8a8a';
       el.style.borderColor = ok ? 'rgba(102,245,161,.35)' : 'rgba(255,107,107,.35)';
     };
-    setPill('apiStatusPublic', 'API Status', data.apiStatusPublic || data.apiStatus);
+    setPill('apiStatusPublic', 'API Status', apiLiveOk ? 'OK' : (data.apiStatusPublic || data.apiStatus));
 
     latestSuggestedBets = (data.suggestedBets || []).map(sanitizeSuggestedRow);
     latestAiCompare = data.aiBetComparison || [];
