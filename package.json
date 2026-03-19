@@ -9,7 +9,9 @@
     "bakeoff": "node scripts/model_bakeoff.js",
     "bakeoff:quick": "BAKEOFF_MODE=quick node scripts/model_bakeoff.js",
     "models:test": "node scripts/model_sanity_test.js",
-    "pool:intel": "node scripts/info_pooler.js"
+    "pool:intel": "node scripts/info_pooler.js",
+    "jobs:once": "bash scripts/jobs_once.sh",
+    "jobs:run": "bash scripts/jobs_runner.sh"
   },
   "keywords": [],
   "author": "",
