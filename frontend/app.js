@@ -7504,9 +7504,10 @@ function renderAnalysis(race, modeOverride){
       trend600: trend?.last600,
       forecast600: fc?.last600,
       improving600: improving?.last600,
+      hasSource: !!(lr?.sectionals || lr?.domestic_rating || ra?.available || ra?.trial_indicator || Number.isFinite(raLast600) || r?.form_comment),
       sortVal: l600
     };
-  }).filter(row => [row.first400, row.last800, row.last600, row.forecast600, row.rating].some(v => v != null));
+  }).filter(row => row.hasSource || [row.first400, row.last800, row.last600, row.forecast600, row.rating].some(v => v != null));
 
   speedRows.sort((a,b)=> (Number.isFinite(a.sortVal) ? a.sortVal : 999) - (Number.isFinite(b.sortVal) ? b.sortVal : 999));
   let usesForecastFallback = false;
