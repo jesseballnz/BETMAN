@@ -386,7 +386,12 @@ function getPgPool(){
   if (pgPool) return pgPool;
   try {
     const { Pool } = require('pg');
-    pgPool = new Pool({ connectionString: DB_URL });
+    pgPool = new Pool({
+      connectionString: DB_URL,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000
+    });
     return pgPool;
   } catch (e) {
     console.error('Postgres disabled: pg module unavailable or init failed:', e.message);

@@ -19,6 +19,16 @@ const fetchLocal = async (u, opts = {}) => {
   }
   return res;
 };
+function fetchWithTimeout(url, opts = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const signal = opts.signal
+    ? (() => { opts.signal.addEventListener('abort', () => controller.abort()); return controller.signal; })()
+    : controller.signal;
+  return fetchLocal(url, { ...opts, signal })
+    .then(res => { clearTimeout(timer); return res; })
+    .catch(err => { clearTimeout(timer); throw err; });
+}
 const BETMAN_BUILD = '20260319-0936';
 const STRATEGY_MIN_BETS = 30;
 const SIGNAL_GLOSSARY = {
@@ -176,7 +186,10 @@ function renderAnalysisVisuals(){
 function setTableLoading(id, text='Loading…'){
   const el = $(id);
   if (!el) return;
-  el.innerHTML = `<div class='row'><div style='grid-column:1/-1'>${text}</div></div>`;
+  // Only show loading placeholder if table is currently empty — never clear existing data
+  if (!el.innerHTML.trim() || el.innerHTML.includes('no data') || el.children.length === 0) {
+    el.innerHTML = `<div class='row'><div style='grid-column:1/-1'>${text}</div></div>`;
+  }
 }
 
 function setBakeoffRunIndicator(state, message){
@@ -1849,16 +1862,23 @@ function inheritMoveTags(meeting, race, runner){
 
 function renderInteresting(rows){
   const table = $('interestingTable');
+  const filtered = filterInterestingByWhy(rows || []);
+  let scoped = filtered
+    .filter(r => meetingMatches(r.meeting))
+    .filter(selectionIsUpcoming);
+  // Don't clear existing content if we have nothing new to show
+  if (!scoped.length && table.children.length > 1) {
+    // Still try fallback before giving up
+    if (selectedMeeting && selectedMeeting !== 'ALL') {
+      const fallback = buildFallbackInterestingRows(selectedMeeting);
+      if (!fallback.length) return;
+    } else { return; }
+  }
   table.innerHTML = '';
   const header = document.createElement('div');
   header.className='row header';
   header.innerHTML = `<div>Race</div><div>Runner</div><div>AI Commentary</div><div>Odds</div><div class='right'>Jumps In</div>`;
   table.appendChild(header);
-
-  const filtered = filterInterestingByWhy(rows || []);
-  let scoped = filtered
-    .filter(r => meetingMatches(r.meeting))
-    .filter(selectionIsUpcoming);
 
   if (!scoped.length && selectedMeeting && selectedMeeting !== 'ALL') {
     const fallback = buildFallbackInterestingRows(selectedMeeting);
@@ -2320,8 +2340,10 @@ function baseSuggestedRows(rows){
 
 function renderSuggested(rows){
   const table = $('suggestedTable');
-  table.innerHTML = '';
   const mainRows = baseSuggestedRows(rows);
+  // Don't clear existing content if we have nothing new to show
+  if (!mainRows.length && table.children.length > 1) return;
+  table.innerHTML = '';
 
   if (!mainRows.length) {
     const empty = document.createElement('div');
@@ -2434,12 +2456,14 @@ function exoticSignalScore(row){
 function renderMultis(rows){
   const table = $('multisTable');
   if (!table) return;
-  table.innerHTML = '';
   const multiRows = (rows || [])
     .filter(r => isMultiType(r.type))
     .filter(r => meetingMatches(r.meeting))
     .slice()
     .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
+  // Don't clear existing content if we have nothing new to show
+  if (!multiRows.length && table.children.length > 1) return;
+  table.innerHTML = '';
 
   if (!multiRows.length) {
     const empty = document.createElement('div');
@@ -3688,9 +3712,11 @@ function updateNextRaceCountdown(rows){
 function renderNextPlanned(rows){
   const table = $('nextPlannedTable');
   if (!table) return;
-  table.innerHTML = '';
   const scoped = baseSuggestedRows(rows)
     .filter(r => jumpsInToMinutes(r.jumpsIn) <= Number(earlyWindowMin || 180));
+  // Don't clear existing content if we have nothing new to show
+  if (!scoped.length && table.children.length > 1) return;
+  table.innerHTML = '';
   updateNextRaceCountdown(scoped);
   const top = scoped.slice(0,5);
   if (!top.length) {
@@ -3752,9 +3778,10 @@ function renderNextPlanned(rows){
 function renderBets(rows){
   const table = $('betsTable');
   if (!table) return;
-  table.innerHTML = '';
-
   const ordered = (rows || []).slice().sort((a,b)=> String(a.sortTime||a.eta||'').localeCompare(String(b.sortTime||b.eta||'')));
+  // Don't clear existing content if we have nothing new to show
+  if (!ordered.length && table.children.length > 1) return;
+  table.innerHTML = '';
   if (!ordered.length) {
     const previewPool = baseSuggestedRows(latestSuggestedBets || [])
       .filter(r => jumpsInToMinutes(r.jumpsIn) <= Number(aiWindowMin || 10));
@@ -10235,7 +10262,13 @@ loadRaces().then(()=>{
   }
   restoreLastRaceSelection();
 });
-setInterval(async ()=>{ await loadStake(); await loadStatus(); }, 60000);
+let _pollRunning = false;
+setInterval(async ()=>{
+  if (_pollRunning) return;
+  _pollRunning = true;
+  try { await loadStake(); await loadStatus(); } catch {}
+  _pollRunning = false;
+}, 60000);
 setInterval(()=>{ if (isAdminUser) { triggerPerformancePoll(false); loadPerformance(); } }, 5 * 60 * 1000);
 setInterval(tickQueuedCountdowns, 1000);
 
