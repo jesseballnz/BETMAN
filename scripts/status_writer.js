@@ -28,6 +28,31 @@ function getArg(name, def){
   return process.argv[idx].split('=').slice(1).join('=') || def;
 }
 
+function parseReasonWinProb(reason){
+  const raw = String(reason || '');
+  const patterns = [
+    /(\d+(?:\.\d+)?)\s*%\s*(?:win|chance|prob|probability)/i,
+    /win\s*(?:prob|probability)?\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%/i,
+    /model\s*(?:win\s*)?[:=]?\s*(\d+(?:\.\d+)?)\s*%/i
+  ];
+  for (const re of patterns) {
+    const m = raw.match(re);
+    if (m) {
+      const v = Number(m[1]);
+      if (Number.isFinite(v)) return v;
+    }
+  }
+  return NaN;
+}
+
+function inferSignalPct(row){
+  const direct = Number(row?.confidenceSignalPct ?? row?.win_p ?? row?.signal_score);
+  if (Number.isFinite(direct)) return direct;
+  const parsed = parseReasonWinProb(row?.reason);
+  if (Number.isFinite(parsed)) return parsed;
+  return NaN;
+}
+
 const ROOT = path.resolve(__dirname, '..');
 const WORKSPACE_ROOT = path.resolve(ROOT, '..');
 const defaultStatePath = path.join(ROOT, 'memory', 'racing-poll-state.json');
@@ -645,6 +670,30 @@ status.marketOddsSnapshot = nextSnap;
 status.marketOddsHistory = nextHistory;
 status.marketOddsOpening = nextOpening;
 
+const CONFIDENCE_SIGNAL_THRESHOLD = 40;
+const CONFIDENCE_FRINGE_BAND = 5;
+const fringeSignals = (status.suggestedBets || [])
+  .map(x => ({
+    meeting: x.meeting,
+    race: x.race,
+    selection: x.selection,
+    type: x.type,
+    odds: x.odds ?? null,
+    place_odds: x.place_odds ?? null,
+    jumpsIn: x.jumpsIn,
+    interesting: !!x.interesting,
+    reason: x.reason,
+    signalPct: inferSignalPct(x)
+  }))
+  .filter(x => Number.isFinite(x.signalPct))
+  .filter(x => Math.abs(x.signalPct - CONFIDENCE_SIGNAL_THRESHOLD) <= CONFIDENCE_FRINGE_BAND)
+  .map(x => ({
+    ...x,
+    threshold: CONFIDENCE_SIGNAL_THRESHOLD,
+    deltaFromThreshold: Math.round((x.signalPct - CONFIDENCE_SIGNAL_THRESHOLD) * 10) / 10,
+    fringeBucket: x.signalPct >= CONFIDENCE_SIGNAL_THRESHOLD ? 'above-threshold' : 'below-threshold'
+  }));
+
 appendJsonl(betPlanAuditPath, {
   ts: new Date().toISOString(),
   date: state.date || null,
@@ -675,7 +724,11 @@ appendJsonl(betPlanAuditPath, {
     reason: x.reason
   })),
   interestingTop: (status.interestingRunners || []).slice(0, 12),
-  moversTop: (status.marketMovers || []).slice(0, 12)
+  moversTop: (status.marketMovers || []).slice(0, 12),
+  confidenceSignalThreshold: CONFIDENCE_SIGNAL_THRESHOLD,
+  confidenceFringeBand: CONFIDENCE_FRINGE_BAND,
+  fringeSignalCount: fringeSignals.length,
+  fringeSignals
 });
 
 safeWriteJson(statusPath, status);
