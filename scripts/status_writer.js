@@ -551,7 +551,7 @@ for (const [raceKey, race] of Object.entries(state.races || {})) {
       ? ((odds - prev) / prev) * 100
       : null;
 
-    const horizonCandidates = [change1m, change5m, change30m, change1h, change5h]
+    const horizonCandidates = [change1m, change5m, change30m, change1h, change5h, changeOpen]
       .filter(v => Number.isFinite(v))
       .sort((a,b) => Math.abs(b) - Math.abs(a));
 
