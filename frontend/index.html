@@ -115,6 +115,7 @@
       <button class="page-tab" data-page="interesting">Interesting Runners</button>
       <button class="page-tab" data-page="plans">Bet Plans</button>
       <button class="page-tab" data-page="strategy">Strategy</button>
+      <button class="page-tab" data-page="bankroll">Bankroll</button>
       <button class="page-tab" data-page="bakeoff">Model Bakeoff</button>
       <button class="page-tab" data-page="performance">Performance</button>
     </nav>
@@ -158,6 +159,57 @@
       <div id="strategySummary" class="strategy-summary"></div>
       <div id="strategyOutput" class="strategy-output"></div>
       <div id="strategyAiSummary" class="analysis-body" style="margin-top:12px"></div>
+    </section>
+
+    <section class="section page-section" data-page="bankroll" style="display:none">
+      <div class="section-head">
+        <h3>Bankroll Manager</h3>
+        <div class="section-actions">
+          <button id="bankrollRefreshBtn" class="btn btn-ghost compact-btn">Refresh Plan</button>
+        </div>
+      </div>
+
+      <div class="overview-grid" id="bankrollOverview">
+        <div class="perf-card"><div class="label">Total Bankroll</div><div class="value" id="bankrollTotal">$0.00</div></div>
+        <div class="perf-card"><div class="label">Today's Allocation</div><div class="value" id="bankrollDayAlloc">$0.00</div></div>
+        <div class="perf-card"><div class="label">Remaining Today</div><div class="value" id="bankrollDayRemaining">$0.00</div></div>
+        <div class="perf-card"><div class="label">Session ROI</div><div class="value" id="bankrollSessionRoi">—</div></div>
+      </div>
+
+      <div class="sub" style="margin:12px 0 6px">
+        <label>Set Bankroll: </label>
+        <input type="number" id="bankrollInput" min="10" step="10" style="width:100px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px" />
+        <button id="bankrollSetBtn" class="btn compact-btn" style="margin-left:6px">Set</button>
+        <span class="sub" style="margin-left:12px">Risk profile:</span>
+        <select id="bankrollRiskSelect" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px">
+          <option value="conservative">Conservative (¼ Kelly)</option>
+          <option value="moderate" selected>Moderate (½ Kelly)</option>
+          <option value="aggressive">Aggressive (¾ Kelly)</option>
+        </select>
+      </div>
+
+      <h4 style="margin-top:16px">Today's Bet Plan</h4>
+      <div class="sub" id="bankrollPlanSummary">No plan generated yet. Click Refresh Plan.</div>
+      <div class="table" id="bankrollPlanTable"></div>
+
+      <h4 style="margin-top:20px">Bankroll History</h4>
+      <div class="sub" id="bankrollHistorySummary">Tracking starts when you set a bankroll.</div>
+      <div class="table" id="bankrollHistoryTable"></div>
+
+      <div style="margin-top:20px;padding:14px;border-radius:var(--radius);border:1px dashed var(--border);background:var(--card2)">
+        <h4 style="margin:0 0 8px">🔮 Auto-Bet (Coming Soon)</h4>
+        <p class="sub" style="margin:0">Provide your TAB or Betcha credentials and BETMAN will execute your bankroll plan automatically. Bets placed within your risk parameters, fully audited.</p>
+        <div style="margin-top:10px;opacity:0.5;pointer-events:none">
+          <select disabled style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px">
+            <option>Select bookmaker…</option>
+            <option>TAB NZ</option>
+            <option>Betcha</option>
+          </select>
+          <input type="text" disabled placeholder="Username" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;width:120px;margin-left:6px" />
+          <input type="password" disabled placeholder="Password" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;width:120px;margin-left:6px" />
+          <button disabled class="btn compact-btn" style="margin-left:6px">Enable Auto-Bet</button>
+        </div>
+      </div>
     </section>
 
     <section class="section page-section" data-page="workspace" style="display:none">
@@ -481,6 +533,7 @@
           <li><b>Market Movers:</b> runners firming/drifting across 1m/5m/30m/1h/5h horizons.</li>
           <li><b>Interesting Runners:</b> notable profiles and planned/value flags.</li>
           <li><b>Bet Plans:</b> next queue of suggested opportunities in current window.</li>
+          <li><b>Bankroll:</b> set your total bankroll and get an AI-optimised bet plan using fractional Kelly staking.</li>
         </ul>
 
         <h4>3) AI Chat Modes</h4>

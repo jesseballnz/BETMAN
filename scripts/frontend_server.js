@@ -3779,6 +3779,107 @@ const server = http.createServer(async (req, res)=>{
       return;
     }
 
+    if (url.pathname === '/api/bankroll') {
+      let body='';
+      req.on('data', c=>body+=c);
+      req.on('end', ()=>{
+        let payload = {};
+        try { payload = body ? JSON.parse(body) : {}; } catch {}
+        const tenantId = effectiveTenantId(req.authPrincipal);
+        const stakePath = tenantId === 'default'
+          ? path.join(process.cwd(), 'frontend', 'data', 'stake.json')
+          : tenantDataPath(tenantId, 'stake.json');
+        const current = loadJson(stakePath, {});
+
+        if (req.method === 'POST') {
+          if (typeof payload.bankroll === 'number' && payload.bankroll >= 0) {
+            current.bankroll = Math.round(payload.bankroll * 100) / 100;
+          }
+          if (typeof payload.riskProfile === 'string') {
+            const allowed = ['conservative', 'moderate', 'aggressive'];
+            if (allowed.includes(payload.riskProfile)) current.riskProfile = payload.riskProfile;
+          }
+          if (!current.bankrollHistory) current.bankrollHistory = [];
+          if (typeof payload.bankroll === 'number') {
+            current.bankrollHistory.push({
+              ts: new Date().toISOString(),
+              bankroll: current.bankroll,
+              action: 'set'
+            });
+            if (current.bankrollHistory.length > 200) current.bankrollHistory = current.bankrollHistory.slice(-200);
+          }
+          fs.writeFileSync(stakePath, JSON.stringify(current, null, 2));
+        }
+
+        // Build today's bet plan from suggested bets + bankroll
+        const statusPath = tenantId === 'default'
+          ? path.join(process.cwd(), 'frontend', 'data', 'status.json')
+          : resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json');
+        const status = loadJson(statusPath, {});
+        const suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
+
+        const bankroll = current.bankroll || 0;
+        const riskProfile = current.riskProfile || 'moderate';
+        const kellyFraction = riskProfile === 'conservative' ? 0.25 : riskProfile === 'aggressive' ? 0.75 : 0.5;
+        const maxSingleBetPct = 0.05;
+        const maxDayPct = 0.20;
+
+        const plan = [];
+        let dayTotal = 0;
+        const maxDay = bankroll * maxDayPct;
+
+        for (const bet of suggested) {
+          if (dayTotal >= maxDay) break;
+          const odds = Number(bet.odds || 0);
+          if (!odds || odds <= 1) continue;
+          const impliedProb = 100 / odds;
+          const modelProb = Number(bet.aiWinProb || bet.winProb || 0);
+          if (!modelProb || modelProb <= 0) continue;
+          const modelProbFrac = modelProb / 100;
+          const impliedProbFrac = impliedProb / 100;
+          const edge = modelProbFrac - impliedProbFrac;
+          if (edge <= 0) continue;
+
+          // Kelly: f* = (bp - q) / b where b = odds-1, p = model prob, q = 1-p
+          const b = odds - 1;
+          const kellyFull = (b * modelProbFrac - (1 - modelProbFrac)) / b;
+          if (kellyFull <= 0) continue;
+          const kellyStake = Math.max(0, kellyFull * kellyFraction);
+          let stakeAmount = Math.round(bankroll * Math.min(kellyStake, maxSingleBetPct) * 100) / 100;
+          stakeAmount = Math.min(stakeAmount, maxDay - dayTotal);
+          if (stakeAmount < 1) continue;
+
+          dayTotal += stakeAmount;
+          plan.push({
+            meeting: bet.meeting || '',
+            race: bet.race || '',
+            selection: bet.selection || '',
+            type: bet.type || 'win',
+            odds: odds,
+            modelProb: Math.round(modelProb * 10) / 10,
+            edge: Math.round(edge * 1000) / 10,
+            kellyPct: Math.round(kellyStake * 10000) / 100,
+            stake: stakeAmount,
+            reason: bet.reason || ''
+          });
+        }
+
+        return okJson(res, {
+          ok: true,
+          bankroll,
+          riskProfile,
+          kellyFraction,
+          maxDayAllocation: Math.round(maxDay * 100) / 100,
+          todayAllocated: Math.round(dayTotal * 100) / 100,
+          todayRemaining: Math.round((maxDay - dayTotal) * 100) / 100,
+          plan,
+          planCount: plan.length,
+          history: (current.bankrollHistory || []).slice(-30)
+        });
+      });
+      return;
+    }
+
     if (url.pathname === '/api/refresh-balances') {
       try {
         // async queue mode: append request and return immediately

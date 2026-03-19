@@ -8710,6 +8710,7 @@ document.querySelectorAll('.page-tab').forEach(btn=>{
     setActivePage(page);
     if (page === 'bakeoff') loadBakeoffLeaderboard();
     if (page === 'strategy') buildStrategyPlan();
+    if (page === 'bankroll') loadBankrollTab();
   });
 });
 document.querySelectorAll('.bet-plan-tab').forEach(btn=>{
@@ -10238,6 +10239,104 @@ setInterval(async ()=>{ await loadStake(); await loadStatus(); }, 60000);
 setInterval(()=>{ if (isAdminUser) { triggerPerformancePoll(false); loadPerformance(); } }, 5 * 60 * 1000);
 setInterval(tickQueuedCountdowns, 1000);
 
+
+// ── Bankroll Tab ──────────────────────────────
+(function initBankroll(){
+  const refreshBtn = $('bankrollRefreshBtn');
+  const setBtn = $('bankrollSetBtn');
+  const inputEl = $('bankrollInput');
+  const riskSelect = $('bankrollRiskSelect');
+  if (!refreshBtn) return;
+
+  async function loadBankroll(){
+    try {
+      const res = await fetchLocal('/api/bankroll', { method: 'GET' });
+      const data = await res.json();
+      if (!data.ok) return;
+      renderBankroll(data);
+    } catch {}
+  }
+
+  async function setBankroll(){
+    const val = parseFloat(inputEl?.value || '0');
+    if (!val || val < 10) return;
+    const risk = riskSelect?.value || 'moderate';
+    try {
+      const res = await fetchLocal('/api/bankroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bankroll: val, riskProfile: risk })
+      });
+      const data = await res.json();
+      if (data.ok) renderBankroll(data);
+    } catch {}
+  }
+
+  function renderBankroll(data){
+    $('bankrollTotal').textContent = `$${(data.bankroll || 0).toFixed(2)}`;
+    $('bankrollDayAlloc').textContent = `$${(data.todayAllocated || 0).toFixed(2)}`;
+    $('bankrollDayRemaining').textContent = `$${(data.todayRemaining || 0).toFixed(2)}`;
+    if (inputEl && !inputEl.value) inputEl.value = data.bankroll || '';
+    if (riskSelect) riskSelect.value = data.riskProfile || 'moderate';
+
+    const plan = data.plan || [];
+    const summaryEl = $('bankrollPlanSummary');
+    const tableEl = $('bankrollPlanTable');
+    if (!plan.length) {
+      summaryEl.textContent = data.bankroll
+        ? 'No qualifying bets found in current signals. Check back closer to race time.'
+        : 'Set your bankroll above to generate a bet plan.';
+      tableEl.innerHTML = '';
+      return;
+    }
+
+    summaryEl.innerHTML = `<b>${plan.length}</b> bets allocated · <b>$${(data.todayAllocated || 0).toFixed(2)}</b> of <b>$${(data.maxDayAllocation || 0).toFixed(2)}</b> daily limit · ${escapeHtml(data.riskProfile)} (${Math.round(data.kellyFraction * 100)}% Kelly)`;
+
+    const rows = plan.map((p, i) => {
+      const edgeClass = p.edge > 5 ? 'style="color:var(--accent)"' : p.edge > 2 ? '' : 'style="color:var(--muted)"';
+      return `<tr>
+        <td>${i + 1}</td>
+        <td>${escapeHtml(p.meeting)} R${escapeHtml(String(p.race))}</td>
+        <td>${escapeHtml(p.selection)}</td>
+        <td>${escapeHtml(p.type.toUpperCase())}</td>
+        <td>$${p.odds.toFixed(2)}</td>
+        <td>${p.modelProb}%</td>
+        <td ${edgeClass}>+${p.edge}pts</td>
+        <td>${p.kellyPct}%</td>
+        <td><b>$${p.stake.toFixed(2)}</b></td>
+      </tr>`;
+    }).join('');
+
+    tableEl.innerHTML = `<table>
+      <thead><tr><th>#</th><th>Race</th><th>Selection</th><th>Type</th><th>Odds</th><th>Model %</th><th>Edge</th><th>Kelly %</th><th>Stake</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+    // History
+    const hist = data.history || [];
+    const histEl = $('bankrollHistoryTable');
+    if (hist.length) {
+      $('bankrollHistorySummary').textContent = `${hist.length} entries`;
+      histEl.innerHTML = `<table>
+        <thead><tr><th>Date</th><th>Bankroll</th><th>Action</th></tr></thead>
+        <tbody>${hist.slice().reverse().slice(0, 20).map(h => `<tr>
+          <td>${new Date(h.ts).toLocaleDateString()}</td>
+          <td>$${(h.bankroll || 0).toFixed(2)}</td>
+          <td>${escapeHtml(h.action || '')}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    }
+  }
+
+  refreshBtn.addEventListener('click', loadBankroll);
+  setBtn.addEventListener('click', setBankroll);
+  riskSelect.addEventListener('change', ()=>{
+    if (inputEl?.value) setBankroll();
+  });
+
+  // Expose for tab-switch loading
+  window.loadBankrollTab = loadBankroll;
+})();
 
 function bindPollOddsButton(){
   const btn = $('pollOddsBtn');
