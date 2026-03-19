@@ -827,6 +827,7 @@ async function loadStatus(){
     latestMarketOddsHistory = data.marketOddsHistory || {};
     latestMarketOddsSnapshot = data.marketOddsSnapshot || {};
     latestDataVersion += 1;
+    saveStatusSnapshot(data);
     applyDerivedMovers();
 
     // Keep meeting selector aligned to loaded races + any meetings referenced in status datasets.
@@ -878,6 +879,8 @@ let racesCacheWarning = '';
 const MEETING_LOCK_KEY = 'betmanMeetingLock';
 const RACE_CACHE_STORAGE_KEY = 'betmanRaceCache.v2';
 const LAST_RACE_STORAGE_KEY = 'betmanLastRaceSelection';
+const STATUS_CACHE_KEY = 'betmanStatusCache.v1';
+const STATUS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 function currentSelectedDateStr(){
   const base = new Date();
@@ -1042,6 +1045,47 @@ hydrateAiAnalysisCacheFromStorage();
   if (cached) {
     renderRaces(racesCache);
   }
+})();
+function saveStatusSnapshot(data){
+  try {
+    localStorage.setItem(STATUS_CACHE_KEY, JSON.stringify({
+      ts: Date.now(),
+      suggestedBets: data.suggestedBets || [],
+      marketMovers: data.marketMovers || [],
+      interestingRunners: data.interestingRunners || [],
+      aiBetComparison: data.aiBetComparison || [],
+      marketOddsHistory: data.marketOddsHistory || {},
+      marketOddsSnapshot: data.marketOddsSnapshot || {}
+    }));
+  } catch (err) {
+    console.warn('status_cache_save_failed', err?.message || err);
+  }
+}
+function loadStatusSnapshot(){
+  try {
+    const snap = JSON.parse(localStorage.getItem(STATUS_CACHE_KEY) || 'null');
+    if (!snap || !snap.ts) return null;
+    if (Date.now() - snap.ts > STATUS_CACHE_TTL_MS) return null;
+    return snap;
+  } catch { return null; }
+}
+(function hydrateStatusCacheOnBoot(){
+  const snap = loadStatusSnapshot();
+  if (!snap) return;
+  latestSuggestedBets = (snap.suggestedBets || []).map(sanitizeSuggestedRow);
+  latestAiCompare = snap.aiBetComparison || [];
+  latestInterestingRows = (snap.interestingRunners || []).map(sanitizeSuggestedRow);
+  latestMarketMovers = (snap.marketMovers || []).map(sanitizeSuggestedRow);
+  latestMarketOddsHistory = snap.marketOddsHistory || {};
+  latestMarketOddsSnapshot = snap.marketOddsSnapshot || {};
+  applyDerivedMovers();
+  const filteredSuggested = filterSuggestedByWhy(latestSuggestedBets);
+  latestFilteredSuggested = filteredSuggested;
+  renderInteresting(latestInterestingRows);
+  renderMarketMovers(latestMarketMovers);
+  renderSuggested(filteredSuggested);
+  renderMultis(filteredSuggested);
+  renderNextPlanned(filteredSuggested);
 })();
 function persistMeetingLock(){
   try {

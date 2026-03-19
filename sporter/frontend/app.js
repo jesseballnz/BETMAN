@@ -15,6 +15,9 @@ const drawerCloseBtn = document.getElementById('drawerClose');
 const edgeModeButtons = document.querySelectorAll('[data-edge-mode]');
 
 const EDGE_MODES = ['overlay', 'fade', 'all'];
+const SPORTER_SCHEDULE_CACHE_KEY = 'sporterScheduleCache.v1';
+const SPORTER_MARKET_CACHE_KEY = 'sporterMarketCache.v1';
+const SPORTER_CACHE_TTL_MS = 10 * 60 * 1000;
 let scheduleLeagues = [];
 let marketEvents = [];
 let marketBooks = [];
@@ -24,6 +27,19 @@ let betWindowHours = Number(localStorage.getItem('sporterBetWindowHours')) || 12
 let selectedEventId = null;
 let edgeMode = localStorage.getItem('sporterEdgeMode') || 'overlay';
 if (!EDGE_MODES.includes(edgeMode)) edgeMode = 'overlay';
+
+function saveSporterCache(key, data){
+  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch (err) {
+    console.warn('sporter_cache_save_failed', key, err?.message || err);
+  }
+}
+function loadSporterCache(key){
+  try {
+    const item = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!item || !item.ts || Date.now() - item.ts > SPORTER_CACHE_TTL_MS) return null;
+    return item;
+  } catch { return null; }
+}
 
 sportFilterEl.value = selectedSport;
 betWindowInput.value = betWindowHours;
@@ -72,6 +88,7 @@ async function fetchSchedule(){
     if (!res.ok) throw new Error(res.statusText);
     const data = await res.json();
     scheduleLeagues = data.leagues || [];
+    saveSporterCache(SPORTER_SCHEDULE_CACHE_KEY, { leagues: scheduleLeagues });
     schedulePill.textContent = `Schedule · ${new Date(data.updatedAt || Date.now()).toLocaleTimeString()}`;
     refreshSportOptions();
     renderSchedule();
@@ -90,6 +107,7 @@ async function fetchMarket(){
     const data = await res.json();
     marketEvents = data.events || [];
     marketBooks = data.books || [];
+    saveSporterCache(SPORTER_MARKET_CACHE_KEY, { events: marketEvents, books: marketBooks });
     marketPill.textContent = `Markets · ${new Date(data.generatedAt || Date.now()).toLocaleTimeString()}`;
     const windowExpanded = expandWindowToIncludeNextEvent();
     refreshSportOptions();
@@ -744,6 +762,24 @@ function buildWindowHint(label){
 }
 
 async function init(){
+  const cachedSchedule = loadSporterCache(SPORTER_SCHEDULE_CACHE_KEY);
+  if (cachedSchedule) {
+    scheduleLeagues = cachedSchedule.data.leagues || [];
+    refreshSportOptions();
+    renderSchedule();
+    renderOverview();
+    schedulePill.textContent = `Schedule · cached ${new Date(cachedSchedule.ts).toLocaleTimeString()}`;
+  }
+  const cachedMarket = loadSporterCache(SPORTER_MARKET_CACHE_KEY);
+  if (cachedMarket) {
+    marketEvents = cachedMarket.data.events || [];
+    marketBooks = cachedMarket.data.books || [];
+    refreshSportOptions();
+    renderMarket();
+    renderEdgeBoard();
+    renderOverview();
+    marketPill.textContent = `Markets · cached ${new Date(cachedMarket.ts).toLocaleTimeString()}`;
+  }
   await Promise.all([fetchSchedule(), fetchMarket(), fetchLiveScores()]);
   setInterval(fetchSchedule, 60000);
   setInterval(fetchMarket, 60000);
