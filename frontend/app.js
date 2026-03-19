@@ -5408,27 +5408,35 @@ async function loadPerformance(){
 
   const allDays = daily ? Object.keys(daily).length : 0;
   const returnAgg = aggregateLastNDays(daily, allDays || 1);
-  const baseReturn = returnAgg ? returnAgg.roi_rec_profit : null;
-  const baseInvested = returnAgg ? returnAgg.roi_stake : null;
+  const baseReturn = returnAgg ? (returnAgg.roi_rec_base_profit ?? returnAgg.roi_rec_profit ?? null) : null;
+  const baseInvested = returnAgg ? (returnAgg.roi_stake_base ?? returnAgg.roi_stake ?? null) : null;
   const exoticReturn = returnAgg ? (returnAgg.exotic_profit || 0) : null;
   const exoticInvested = returnAgg ? (returnAgg.exotic_stake || 0) : null;
   const netReturn = returnAgg ? ((baseReturn || 0) + (exoticReturn || 0)) : null;
   const invested = returnAgg ? ((baseInvested || 0) + (exoticInvested || 0)) : null;
   const returnValueEl = $('betmanReturnValue');
   const returnSubEl = $('betmanReturnSub');
+  const returnBaseEl = $('betmanBaseReturnSub');
+  const returnExoticEl = $('betmanExoticReturnSub');
   const returnBarEl = $('betmanReturnBar');
   if (returnValueEl) {
     const isNeg = Number.isFinite(netReturn) && netReturn < 0;
     returnValueEl.textContent = Number.isFinite(netReturn) ? fmtUnits(netReturn) : '—';
     returnValueEl.classList.toggle('neg', !!isNeg);
   }
-  if (returnSubEl) {
+  if (returnSubEl || returnBaseEl || returnExoticEl) {
     const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
     const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
     const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
-    const baseText = `Base: ${fmtUnits(baseReturn)}${baseRoi != null ? ` (${fmtPct(baseRoi)})` : ''}`;
-    const exoticText = `Exotics: ${fmtUnits(exoticReturn)}${exoticRoi != null ? ` (${fmtPct(exoticRoi)})` : ''}`;
-    returnSubEl.textContent = `Invested: ${fmtUnits(invested)} · ${baseText} · ${exoticText}${roi != null ? ` · ROI: ${fmtPct(roi)}` : ''}`;
+    if (returnSubEl) {
+      returnSubEl.textContent = `Combined: ${fmtUnits(netReturn)} on ${fmtUnits(invested)}${roi != null ? ` (${fmtPct(roi)})` : ''}`;
+    }
+    if (returnBaseEl) {
+      returnBaseEl.textContent = `Base strategies: ${fmtUnits(baseReturn)} on ${fmtUnits(baseInvested)}${baseRoi != null ? ` (${fmtPct(baseRoi)})` : ''}`;
+    }
+    if (returnExoticEl) {
+      returnExoticEl.textContent = `Exotics: ${fmtUnits(exoticReturn)} on ${fmtUnits(exoticInvested)}${exoticRoi != null ? ` (${fmtPct(exoticRoi)})` : ''}`;
+    }
   }
   if (returnBarEl) {
     const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
