@@ -47,3 +47,7 @@ jobs:
 
       - name: Run model sanity
         run: npm run models:test
+        env:
+          BAKEOFF_URL: ${{ secrets.BAKEOFF_URL }}
+          BAKEOFF_USER: ${{ secrets.BAKEOFF_USER }}
+          BAKEOFF_PASS: ${{ secrets.BAKEOFF_PASS }}

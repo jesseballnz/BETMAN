@@ -14,7 +14,16 @@ function inferProvider(model) {
 }
 
 async function main() {
-  const baseUrl = arg('url', process.env.BAKEOFF_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
+  const explicitUrl = arg('url', '') || process.env.BAKEOFF_URL || '';
+
+  if (!explicitUrl) {
+    console.log('[SKIP] No BAKEOFF_URL configured — model sanity test requires a running BETMAN server.');
+    console.log('[SKIP] Set BAKEOFF_URL (and optionally BAKEOFF_USER / BAKEOFF_PASS) to enable this test.');
+    return;
+  }
+
+  const baseUrl = explicitUrl.replace(/\/$/, '');
+
   const user = arg('user', process.env.BAKEOFF_USER || process.env.BETMAN_USER || '');
   const pass = arg('pass', process.env.BAKEOFF_PASS || process.env.BETMAN_PASS || '');
   const question = arg('question', 'Sanity check: confirm this model can answer a simple BETMAN prompt.');
