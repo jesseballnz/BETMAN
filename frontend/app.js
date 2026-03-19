@@ -742,12 +742,22 @@ async function hydrateRaceWithLoveracing(race){
 async function loadStatus(){
   const meta = $('refreshMeta');
   try{
-    setTableLoading('suggestedTable', 'Loading suggested signals…');
-    setTableLoading('nextPlannedTable', 'Loading next suggested signals…');
-    setTableLoading('multisTable', 'Loading multis…');
-    setTableLoading('interestingTable', 'Loading interesting runners…');
-    setTableLoading('moversTable', 'Loading market movers…');
-    if (meta) meta.textContent = 'Refreshing…';
+    const hasWarmData = ['suggestedTable','nextPlannedTable','multisTable','interestingTable','moversTable']
+      .some(id => {
+        const el = $(id);
+        if (!el) return false;
+        const txt = String(el.textContent || '').trim().toLowerCase();
+        return txt && !txt.includes('loading');
+      });
+
+    if (!hasWarmData) {
+      setTableLoading('suggestedTable', 'Loading suggested signals…');
+      setTableLoading('nextPlannedTable', 'Loading next suggested signals…');
+      setTableLoading('multisTable', 'Loading multis…');
+      setTableLoading('interestingTable', 'Loading interesting runners…');
+      setTableLoading('moversTable', 'Loading market movers…');
+    }
+    if (meta) meta.textContent = hasWarmData ? 'Refreshing (showing last snapshot)…' : 'Refreshing…';
     let data = null;
     let apiLiveOk = false;
     try {
