@@ -2324,8 +2324,9 @@ function signalColor(score){
 }
 
 function signalMeterFromScore(score){
-  const cls = signalClass(score);
-  return `<div class='comp-box ${cls}'>Signal: ${score}</div>`;
+  const safeScore = Number.isFinite(Number(score)) ? Math.round(Number(score)) : 0;
+  const cls = signalClass(safeScore);
+  return `<div class='comp-box ${cls}'>Signal: ${safeScore}</div>`;
 }
 
 function signalMeter(reason, type, selection=''){
