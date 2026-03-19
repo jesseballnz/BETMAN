@@ -7518,7 +7518,17 @@ function renderAnalysis(race, modeOverride){
       return r?.last_600 || r?.last600 || null;
     })();
     const last600RawNum = (last600Raw !== null && last600Raw !== undefined && String(last600Raw).trim() !== '') ? Number(last600Raw) : NaN;
-    const raLast600 = Number(ra?.last600_avg ?? ra?.last600_best ?? NaN);
+    const raLast600Candidates = [
+      ra?.last600_avg,
+      ra?.last600_best,
+      ra?.last_600,
+      ra?.last600,
+      ra?.sectionals?.last600,
+      ra?.sectionals?.avg_last600
+    ].map(v => Number(v));
+    const raLast600 = raLast600Candidates.find(v => Number.isFinite(v));
+    const raFirst400 = [ra?.first400_avg, ra?.first_400, ra?.first400, ra?.sectionals?.first400].map(v => Number(v)).find(v => Number.isFinite(v));
+    const raLast800 = [ra?.last800_avg, ra?.last_800, ra?.last800, ra?.sectionals?.last800].map(v => Number(v)).find(v => Number.isFinite(v));
     const last600 = Number.isFinite(avg?.last600)
       ? avg.last600
       : (Number.isFinite(last600RawNum)
@@ -7528,8 +7538,8 @@ function renderAnalysis(race, modeOverride){
     return {
       runner: r,
       rating: lr?.domestic_rating,
-      first400: avg?.first400,
-      last800: avg?.last800,
+      first400: Number.isFinite(avg?.first400) ? avg.first400 : (Number.isFinite(raFirst400) ? raFirst400 : null),
+      last800: Number.isFinite(avg?.last800) ? avg.last800 : (Number.isFinite(raLast800) ? raLast800 : null),
       last600,
       trend600: trend?.last600,
       forecast600: fc?.last600,
