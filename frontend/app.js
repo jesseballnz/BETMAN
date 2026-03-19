@@ -5010,10 +5010,10 @@ function bestStrategyLabel(daily, days=30){
   const agg = aggregateLastNDays(daily, days);
   if (!agg) return null;
   const options = [
-    { key: 'win', label: 'W', bets: agg.pick.win.bets, stake: agg.pick.win.stake_units, roiStake: agg.pick.win.roi_stake_units, profit: agg.pick.win.profit_rec },
-    { key: 'odds_runner', label: 'O', bets: agg.pick.odds_runner.bets, stake: agg.pick.odds_runner.stake_units, roiStake: agg.pick.odds_runner.roi_stake_units, profit: agg.pick.odds_runner.profit_rec },
-    { key: 'ew', label: 'EW', bets: agg.pick.ew.bets, stake: agg.pick.ew.stake_units, roiStake: agg.pick.ew.roi_stake_units, profit: agg.pick.ew.profit_rec },
-    { key: 'long', label: 'L', bets: agg.long.bets, stake: agg.long.stake_units, roiStake: agg.long.roi_stake_units, profit: agg.long.profit_rec }
+    { key: 'win', label: 'Win Strategy', bets: agg.pick.win.bets, stake: agg.pick.win.stake_units, roiStake: agg.pick.win.roi_stake_units, profit: agg.pick.win.profit_rec },
+    { key: 'odds_runner', label: 'Odds Runner', bets: agg.pick.odds_runner.bets, stake: agg.pick.odds_runner.stake_units, roiStake: agg.pick.odds_runner.roi_stake_units, profit: agg.pick.odds_runner.profit_rec },
+    { key: 'ew', label: 'Each Way', bets: agg.pick.ew.bets, stake: agg.pick.ew.stake_units, roiStake: agg.pick.ew.roi_stake_units, profit: agg.pick.ew.profit_rec },
+    { key: 'long', label: 'Long Odds', bets: agg.long.bets, stake: agg.long.stake_units, roiStake: agg.long.roi_stake_units, profit: agg.long.profit_rec }
   ].filter(o => (o.stake || 0) > 0 && (o.bets || 0) >= STRATEGY_MIN_BETS && (o.roiStake || 0) / (o.stake || 1) >= STRATEGY_MIN_ROI_COVERAGE);
   if (!options.length) return null;
   options.forEach(o => { o.roi = o.roiStake ? o.profit / o.roiStake : null; });
@@ -5169,9 +5169,11 @@ function renderBestStrategy(daily){
   const bestKey = best?.key || null;
   const roiHeaders = showRoi ? '<th>ROI Rec</th><th>ROI SP</th><th>ROI Tote</th>' : '';
   const labelFor = (key) => {
+    if (key === 'win') return 'Win Strategy';
     if (key === 'odds_runner') return 'Odds Runner';
-    if (key === 'ew') return 'EW';
-    if (key === 'combo') return 'WIN+ODDS+EW';
+    if (key === 'ew') return 'Each Way';
+    if (key === 'long') return 'Long Odds';
+    if (key === 'combo') return 'Win + Odds Runner + Each Way';
     return key.toUpperCase();
   };
   const roiCells = (row) => showRoi
