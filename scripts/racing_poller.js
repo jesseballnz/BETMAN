@@ -68,8 +68,11 @@ function loadJson(filePath, fallback) {
 }
 
 function writeJson(filePath, data) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, filePath);
 }
 
 function normalizeStatObject(obj) {
@@ -628,7 +631,10 @@ async function main() {
         const mtgSlug = safeSlug(mtg.name);
         const raceDir = path.join(outBase, country, mtgSlug, `R${String(race.race_number).padStart(2,'0')}-${race.id}`);
         fs.mkdirSync(raceDir, { recursive: true });
-        fs.writeFileSync(path.join(raceDir, 'event.json'), JSON.stringify(evt, null, 2));
+        const evtPath = path.join(raceDir, 'event.json');
+        const evtTmp = evtPath + '.tmp';
+        fs.writeFileSync(evtTmp, JSON.stringify(evt, null, 2));
+        fs.renameSync(evtTmp, evtPath);
 
         // diff odds
         const prevRace = prev.races?.[raceKey];

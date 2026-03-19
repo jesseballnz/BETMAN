@@ -9,15 +9,40 @@ const scheduleAuthRedirect = (reason = 'expired') => {
   const qs = new URLSearchParams({ [reason]: '1', ts: String(Date.now()) });
   window.location.href = `/login?${qs.toString()}`;
 };
-const fetchLocal = async (u, opts = {}) => {
-  const res = await fetch(new URL(u, window.location.origin).toString(), { credentials: 'same-origin', ...opts });
-  if (res.status === 401) {
-    const headerReason = (res.headers.get('x-auth-reason') || '').toLowerCase();
-    const reasonKey = headerReason === 'logout' ? 'logout' : 'expired';
-    scheduleAuthRedirect(reasonKey);
-    throw new Error('auth_required');
+function showToast(message, type = 'info', duration = 4000){
+  const el = document.createElement('div');
+  el.setAttribute('role', 'status');
+  const bg = type === 'error' ? '#e74c3c' : type === 'success' ? '#27ae60' : type === 'warning' ? '#e67e22' : '#3498db';
+  el.style.cssText = `position:fixed;bottom:20px;right:20px;background:${bg};color:#fff;padding:10px 16px;border-radius:6px;z-index:99999;font-size:14px;max-width:360px;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0;transition:opacity .3s`;
+  el.textContent = message;
+  document.body.appendChild(el);
+  requestAnimationFrame(()=>{ el.style.opacity = '1'; });
+  setTimeout(()=>{ el.style.opacity = '0'; setTimeout(()=>el.remove(), 350); }, duration);
+}
+function safeJsonParse(key, fallback = null){
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    try { localStorage.removeItem(key); } catch {}
+    return fallback;
   }
-  return res;
+}
+const fetchLocal = async (u, opts = {}) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(new URL(u, window.location.origin).toString(), { credentials: 'same-origin', signal: controller.signal, ...opts });
+    if (res.status === 401) {
+      const headerReason = (res.headers.get('x-auth-reason') || '').toLowerCase();
+      const reasonKey = headerReason === 'logout' ? 'logout' : 'expired';
+      scheduleAuthRedirect(reasonKey);
+      throw new Error('auth_required');
+    }
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
 };
 const BETMAN_BUILD = '20260319-0936';
 const STRATEGY_MIN_BETS = 30;
@@ -1792,7 +1817,7 @@ function renderMarketMovers(rows){
   table.querySelectorAll('.movers-race-btn').forEach(btn=>{
     btn.onclick = async ()=>{
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       setActivePage('workspace');
       await selectRace(race.key);
       $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Loaded from Market Movers</div>`;
@@ -1802,13 +1827,13 @@ function renderMarketMovers(rows){
   table.querySelectorAll('.movers-runner-btn').forEach(btn=>{
     btn.onclick = async ()=>{
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       const selNorm = normalizeRunnerName(String(btn.dataset.runner || '').trim());
       const runner = (race.runners || []).find(x => {
         const nm = normalizeRunnerName(String(x.name || x.runner_name || '').trim());
         return nm === selNorm || nm.includes(selNorm) || selNorm.includes(nm);
       });
-      if (!runner) return alert('Runner not found in race cache.');
+      if (!runner) return showToast('Runner not found in race cache.', 'warning');
       openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
     };
   });
@@ -3495,13 +3520,13 @@ function toggleStrategyPrintModal(show){
 function printStrategyBook(){
   const ctx = latestStrategyContext || {};
   if (!ctx.picks || !ctx.picks.length) {
-    alert('Build a strategy first, then print.');
+    showToast('Build a strategy first, then print.', 'warning');
     return;
   }
   const html = buildStrategyPrintHtml(ctx);
   const frame = $('strategyPrintFrame');
   if (!frame) {
-    alert('Preview frame unavailable.');
+    showToast('Preview frame unavailable.', 'warning');
     return;
   }
   frame.srcdoc = html;
@@ -3928,9 +3953,9 @@ function renderBets(rows){
         });
         const out = await res.json();
         await loadStatus();
-        alert(`Cancelled queued bet(s): ${out.removed || 0}`);
+        showToast(`Cancelled queued bet(s): ${out.removed || 0}`, 'success');
       } catch {
-        alert('Failed to cancel queued bet.');
+        showToast('Failed to cancel queued bet.', 'error');
       }
     };
   });
@@ -4067,7 +4092,7 @@ function scrollerAttach(){
   document.querySelectorAll('#betsTable .bet-btn').forEach(btn=>{
     btn.onclick = async () => {
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       const selRaw = String(btn.dataset.selection || '');
       const selNorm = normalizeRunnerName(selRaw.replace(/^\d+\.\s*/, '').trim());
       const composite = isCompositeSelection(selRaw);
@@ -4089,7 +4114,7 @@ function attachNextPlannedHandlers(){
   document.querySelectorAll('#nextPlannedTable .planned-race-btn').forEach(btn=>{
     btn.onclick = async () => {
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       setActivePage('workspace');
       await selectRace(race.key);
       $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Loaded from Bet Plans</div>`;
@@ -4099,7 +4124,7 @@ function attachNextPlannedHandlers(){
   document.querySelectorAll('#nextPlannedTable .next-planned-btn').forEach(btn=>{
     btn.onclick = async () => {
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       const selRaw = String(btn.dataset.selection || '');
       const selNorm = normalizeRunnerName(selRaw.replace(/^\d+\.\s*/, '').trim());
       const composite = isCompositeSelection(selRaw);
@@ -4122,7 +4147,7 @@ function attachMultisHandlers(){
   table.querySelectorAll('.multi-race-btn').forEach(btn=>{
     btn.onclick = async () => {
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       setActivePage('workspace');
       await selectRace(race.key);
       $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Loaded from Multis</div>`;
@@ -4134,7 +4159,7 @@ function attachInterestingHandlers(){
   document.querySelectorAll('.interesting-race-btn').forEach(btn=>{
     btn.onclick = async () => {
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       setActivePage('workspace');
       await selectRace(race.key);
       $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Loaded from Interesting Runners</div>`;
@@ -4144,7 +4169,7 @@ function attachInterestingHandlers(){
   document.querySelectorAll('.interesting-btn').forEach(btn=>{
     btn.onclick = async () => {
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       const selRaw = String(btn.dataset.runner || '');
       const selNorm = normalizeRunnerName(selRaw.replace(/^\d+\.\s*/, '').trim());
       const runner = (race.runners || []).find(x => {
@@ -4164,7 +4189,7 @@ function attachSuggestedHandlers(){
   document.querySelectorAll('.suggested-race-btn').forEach(btn=>{
     btn.onclick = async () => {
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       setActivePage('workspace');
       await selectRace(race.key);
       $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Loaded from Suggested Bets</div>`;
@@ -4174,7 +4199,7 @@ function attachSuggestedHandlers(){
   document.querySelectorAll('.suggested-btn').forEach(btn=>{
     btn.onclick = async () => {
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
-      if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      if (!race) return showToast('Race not found in cache yet. Try Refresh.', 'warning');
       const selRaw = String(btn.dataset.selection || '');
       const selNorm = normalizeRunnerName(selRaw.replace(/^\d+\.\s*/, '').trim());
       const composite = isCompositeSelection(selRaw);
@@ -5527,7 +5552,7 @@ async function enqueueRequest(type, target='main'){
     await loadStatus();
 
     const label = target === 'exotic' ? 'Exotic' : (target === 'window' ? 'Suggested window' : (target === 'aiwindow' ? 'AI window' : 'Main'));
-    alert(`${label} ${type} executed.`);
+    showToast(`${label} ${type} executed.`, 'success');
   } catch (e) {
     const local = JSON.parse(localStorage.getItem('stakeRequests')||'[]');
     local.push(payload);
@@ -5556,7 +5581,7 @@ async function enqueueRequest(type, target='main'){
       $('stakePerRace').textContent = `$${stakePerRace} / race`;
     }
     const label = target === 'exotic' ? 'Exotic' : (target === 'window' ? 'Suggested window' : (target === 'aiwindow' ? 'AI window' : 'Main'));
-    alert(`${label} ${type} executed (local).`);
+    showToast(`${label} ${type} executed (local).`, 'success');
   }
 }
 
@@ -5568,7 +5593,7 @@ $('increaseWindowBtn').addEventListener('click', ()=>enqueueRequest('increase', 
 $('decreaseWindowBtn').addEventListener('click', ()=>enqueueRequest('decrease', 'window'));
 $('saveBetWindowBtn')?.addEventListener('click', async ()=>{
   const val = Number(($('betWindowInput')?.value || '').trim());
-  if (!Number.isFinite(val)) return alert('Enter a valid number.');
+  if (!Number.isFinite(val)) return showToast('Enter a valid number.', 'warning');
   const clamped = Math.max(1, Math.min(3600, Math.round(val)));
   earlyWindowMin = clamped;
   localStorage.setItem('earlyWindowMin', String(earlyWindowMin));
@@ -5596,9 +5621,9 @@ $('saveBetWindowBtn')?.addEventListener('click', async ()=>{
     renderRaces(racesCache);
     await loadStatus();
 
-    alert(`Bet window set to ${earlyWindowMin} minutes and queue refreshed.`);
+    showToast(`Bet window set to ${earlyWindowMin} minutes and queue refreshed.`, 'success');
   } catch {
-    alert('Failed to update bet window.');
+    showToast('Failed to update bet window.', 'error');
   }
 });
 // removed AI-bets-to-place controls
@@ -5680,10 +5705,10 @@ $('placeAiBetsBtn')?.addEventListener('click', async ()=>{
     }
   }
 
-  if (!selectedRace) return alert('Select a race first.');
+  if (!selectedRace) return showToast('Select a race first.', 'warning');
 
   const plan = buildAIPlan(selectedRace);
-  if (!plan || !plan.bets || !plan.bets.length) return alert('No AI plan available for this race.');
+  if (!plan || !plan.bets || !plan.bets.length) return showToast('No AI plan available for this race.', 'warning');
 
   const bets = plan.bets.map(b => {
     const runner = (selectedRace.runners || []).find(r => String(r.name || r.runner_name) === String(b.selection));
@@ -5707,9 +5732,9 @@ $('placeAiBetsBtn')?.addEventListener('click', async ()=>{
     });
     const out = await res.json();
     await loadStatus();
-    alert(`AI bets queued: ${out.queued ?? out.placed ?? 0}${out.skipped ? ` (skipped ${out.skipped} already matched)` : ''}`);
+    showToast(`AI bets queued: ${out.queued ?? out.placed ?? 0}${out.skipped ? ` (skipped ${out.skipped} already matched)` : ''}`, 'success');
   } catch (e) {
-    alert('Failed to queue AI bets.');
+    showToast('Failed to queue AI bets.', 'error');
   }
 });
 
@@ -5723,12 +5748,12 @@ async function openAIMultiPreview(legCount = 2){
       selectedRaceKey = selectedRace ? selectedRace.key : null;
     }
   }
-  if (!selectedRace) return alert('Select a race first.');
-  if (raceHasJumped(selectedRace, 30)) return alert('Selected race has already jumped — pick an upcoming race before building a multi.');
+  if (!selectedRace) return showToast('Select a race first.', 'warning');
+  if (raceHasJumped(selectedRace, 30)) return showToast('Selected race has already jumped — pick an upcoming race before building a multi.', 'warning');
 
   const n = Math.max(2, Math.min(4, Number(legCount || 2)));
   const multi = buildAIMultiPlan(selectedRace, n);
-  if (!multi) return alert(`Unable to build a valid ${n}-leg multi from current win selections (missing enough races or odds).`);
+  if (!multi) return showToast(`Unable to build a valid ${n}-leg multi from current win selections (missing enough races or odds).`, 'warning');
 
   const legs = (multi.legs || []).map((r, i) => {
     const nm = String(r.selection || runnerLabel(r));
@@ -6838,7 +6863,7 @@ function attachAnalysisSelectionHandlers(race){
         if (selectedCard) await selectRace(selectedCard.dataset.key, selectedCard.dataset.meeting, selectedCard.dataset.race);
       }
       if (!selectedRace) {
-        alert('Select a race first.');
+        showToast('Select a race first.', 'warning');
         return;
       }
       analysisViewMode = analysisViewMode === 'engine' ? 'race' : 'engine';
@@ -6867,7 +6892,7 @@ function attachAnalysisSelectionHandlers(race){
         if (selectedCard) await selectRace(selectedCard.dataset.key, selectedCard.dataset.meeting, selectedCard.dataset.race);
       }
       if (!selectedRace) {
-        alert('Select a race first.');
+        showToast('Select a race first.', 'warning');
         return;
       }
       analysisViewMode = analysisViewMode === 'speed' ? 'engine' : 'speed';
@@ -7055,7 +7080,7 @@ function bindAiAnalyseButton(){
       }
     }
     if (!selectedRace) {
-      alert('Select a race first.');
+      showToast('Select a race first.', 'warning');
       return;
     }
     if (serveCache()) return;
@@ -8916,7 +8941,7 @@ function approximateTokenCount(text){
 const BAKEOFF_AUTOTUNE_KEY = 'bakeoffAutoTuneState.v1';
 
 function getBakeoffAutoTuneState(){
-  try { return JSON.parse(localStorage.getItem(BAKEOFF_AUTOTUNE_KEY) || '{}'); } catch { return {}; }
+  return safeJsonParse(BAKEOFF_AUTOTUNE_KEY, {});
 }
 
 function setBakeoffAutoTuneState(next){
@@ -9694,7 +9719,7 @@ function toggleAiChat(show){
 }
 
 function getAiScenarios(){
-  try { return JSON.parse(localStorage.getItem('aiScenarios') || '[]'); } catch { return []; }
+  return safeJsonParse('aiScenarios', []);
 }
 
 function setAiScenarios(rows){
@@ -9945,7 +9970,7 @@ async function openAuthModal(){
 async function changeMyPassword(){
   const currentPassword = String($('selfCurrentPassword')?.value || '');
   const newPassword = String($('selfNewPassword')?.value || '');
-  if (!currentPassword || !newPassword) return alert('Fill current and new password.');
+  if (!currentPassword || !newPassword) return showToast('Fill current and new password.', 'warning');
   try {
     const res = await fetchLocal('./api/auth-self-password', {
       method: 'POST',
@@ -9953,12 +9978,12 @@ async function changeMyPassword(){
       body: JSON.stringify({ currentPassword, newPassword })
     });
     const out = await res.json();
-    if (!res.ok || out.ok === false) return alert(`Change password failed: ${out.error || res.status}`);
+    if (!res.ok || out.ok === false) return showToast(`Change password failed: ${out.error || res.status}`, 'error');
     $('selfCurrentPassword').value = '';
     $('selfNewPassword').value = '';
-    alert('Password updated. You may be prompted to log in again.');
+    showToast('Password updated. You may be prompted to log in again.', 'success');
   } catch {
-    alert('Unable to change password right now.');
+    showToast('Unable to change password right now.', 'error');
   }
 }
 
@@ -9966,7 +9991,7 @@ async function saveAuthFromModal(){
   const newUsername = String($('authUsername')?.value || '').trim();
   const currentPassword = String($('authCurrentPassword')?.value || '');
   const newPassword = String($('authNewPassword')?.value || '');
-  if (!newUsername || !currentPassword || !newPassword) return alert('Fill all fields.');
+  if (!newUsername || !currentPassword || !newPassword) return showToast('Fill all fields.', 'warning');
 
   try {
     const res = await fetchLocal('./api/auth-config', {
@@ -9975,13 +10000,13 @@ async function saveAuthFromModal(){
       body: JSON.stringify({ currentPassword, newUsername, newPassword })
     });
     const out = await res.json();
-    if (!res.ok || out.ok === false) return alert(`Failed: ${out.error || res.status}`);
+    if (!res.ok || out.ok === false) return showToast(`Failed: ${out.error || res.status}`, 'error');
     $('authCurrentPassword').value = '';
     $('authNewPassword').value = '';
-    alert('Credentials updated. Browser may prompt you to log in again.');
+    showToast('Credentials updated. Browser may prompt you to log in again.', 'success');
     toggleAuthModal(false);
   } catch {
-    alert('Unable to update credentials right now.');
+    showToast('Unable to update credentials right now.', 'error');
   }
 }
 
@@ -9999,9 +10024,9 @@ async function createAuthUser(){
   const hasPersonName = !!(firstName && lastName);
   const hasCompany = !!companyName;
   if ((planType === 'single' && !hasPersonName) || (planType === 'commercial' && !hasCompany) || !email || !password) {
-    return alert(planType === 'commercial'
+    return showToast(planType === 'commercial'
       ? 'Commercial plan requires Company name, email, and password.'
-      : 'Single User plan requires First + Last name, email, and password.');
+      : 'Single User plan requires First + Last name, email, and password.', 'warning');
   }
 
   try {
@@ -10021,7 +10046,7 @@ async function createAuthUser(){
       })
     });
     const out = await res.json();
-    if (!res.ok || out.ok === false) return alert(`Create user failed: ${out.error || res.status}`);
+    if (!res.ok || out.ok === false) return showToast(`Create user failed: ${out.error || res.status}`, 'error');
     $('createUserFirstName').value = '';
     $('createUserLastName').value = '';
     $('createUserCompanyName').value = '';
@@ -10030,9 +10055,9 @@ async function createAuthUser(){
     $('createUserVerification').value = '';
     if ($('createUserVerified')) $('createUserVerified').checked = false;
     await openAuthModal();
-    alert(`User created: ${out.user}`);
+    showToast(`User created: ${out.user}`, 'success');
   } catch {
-    alert('Unable to create user right now.');
+    showToast('Unable to create user right now.', 'error');
   }
 }
 
@@ -10041,7 +10066,7 @@ async function changeAuthUserPassword(){
   if (!currentPassword) return;
   const username = String($('changeUserUsername')?.value || '').trim();
   const newPassword = String($('changeUserPassword')?.value || '');
-  if (!username || !newPassword) return alert('Enter username and new password.');
+  if (!username || !newPassword) return showToast('Enter username and new password.', 'warning');
 
   try {
     const res = await fetchLocal('./api/auth-users/password', {
@@ -10050,13 +10075,13 @@ async function changeAuthUserPassword(){
       body: JSON.stringify({ currentPassword, username, newPassword })
     });
     const out = await res.json();
-    if (!res.ok || out.ok === false) return alert(`Change password failed: ${out.error || res.status}`);
+    if (!res.ok || out.ok === false) return showToast(`Change password failed: ${out.error || res.status}`, 'error');
     $('changeUserUsername').value = '';
     $('changeUserPassword').value = '';
     await openAuthModal();
-    alert(`Password updated for: ${out.user}`);
+    showToast(`Password updated for: ${out.user}`, 'success');
   } catch {
-    alert('Unable to change password right now.');
+    showToast('Unable to change password right now.', 'error');
   }
 }
 
@@ -10064,7 +10089,7 @@ async function deleteAuthUser(){
   const currentPassword = String(prompt('Admin password (required):') || '');
   if (!currentPassword) return;
   const username = String($('deleteUserUsername')?.value || '').trim();
-  if (!username) return alert('Enter username to delete.');
+  if (!username) return showToast('Enter username to delete.', 'warning');
   if (!confirm(`Delete user \"${username}\"?`)) return;
 
   try {
@@ -10074,12 +10099,12 @@ async function deleteAuthUser(){
       body: JSON.stringify({ currentPassword, username })
     });
     const out = await res.json();
-    if (!res.ok || out.ok === false) return alert(`Delete user failed: ${out.error || res.status}`);
+    if (!res.ok || out.ok === false) return showToast(`Delete user failed: ${out.error || res.status}`, 'error');
     $('deleteUserUsername').value = '';
     await openAuthModal();
-    alert(`User deleted: ${out.user}`);
+    showToast(`User deleted: ${out.user}`, 'success');
   } catch {
-    alert('Unable to delete user right now.');
+    showToast('Unable to delete user right now.', 'error');
   }
 }
 
@@ -10223,7 +10248,7 @@ function printAiChat(){
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>BETMAN AI Chat</title></head><body style="font-family:Inter,Arial,sans-serif;padding:24px;color:#111"><h2>BETMAN AI Chat Transcript</h2>${msgs || '<div>No messages.</div>'}</body></html>`;
   const w = window.open('', '_blank', 'width=900,height=700');
-  if (!w) return alert('Unable to open print preview.');
+  if (!w) return showToast('Unable to open print preview.', 'warning');
   w.document.open();
   w.document.write(html);
   w.document.close();

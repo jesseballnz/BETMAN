@@ -174,8 +174,7 @@ function loadRaceAnalysisCacheState(tenantId){
   });
   if (Object.keys(pruned).length !== Object.keys(raw || {}).length) {
     try {
-      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-      fs.writeFileSync(cachePath, JSON.stringify(pruned, null, 2));
+      safeWriteJson(cachePath, pruned);
     } catch (e) {
       console.error('race_analysis_cache_prune_failed', e.message);
     }
@@ -185,8 +184,7 @@ function loadRaceAnalysisCacheState(tenantId){
 
 function saveRaceAnalysisCacheState(cachePath, cacheData){
   try {
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify(cacheData || {}, null, 2));
+    safeWriteJson(cachePath, cacheData || {});
   } catch (e) {
     console.error('race_analysis_cache_save_failed', e.message);
   }
@@ -306,10 +304,21 @@ function safePath(p){
 }
 
 function appendJson(filePath, payload){
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   let arr = [];
   try { arr = JSON.parse(fs.readFileSync(filePath,'utf8')); } catch {}
+  if (!Array.isArray(arr)) arr = [];
   arr.push(payload);
-  fs.writeFileSync(filePath, JSON.stringify(arr, null, 2));
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(arr, null, 2));
+  fs.renameSync(tmp, filePath);
+}
+
+function safeWriteJson(filePath, data){
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, filePath);
 }
 
 function loadJson(filePath, fallback){
@@ -757,7 +766,7 @@ function saveAuthState(next){
     }))
   };
   fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
-  fs.writeFileSync(AUTH_FILE, JSON.stringify(authState, null, 2));
+  safeWriteJson(AUTH_FILE, authState);
 
   const pool = getPgPool();
   if (pool) {
@@ -2608,8 +2617,7 @@ function loadTenantAiChatMemory(tenantId = 'default') {
 
 function saveTenantAiChatMemory(filePath, turns = []) {
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify({ updatedAt: new Date().toISOString(), turns }, null, 2));
+    safeWriteJson(filePath, { updatedAt: new Date().toISOString(), turns });
   } catch (err) {
     console.error('ai_chat_memory_save_failed', err?.message || err);
   }
@@ -3524,7 +3532,7 @@ const server = http.createServer(async (req, res)=>{
         fs.mkdirSync(dir, { recursive: true });
         const stamp = generatedAtIso.replace(/[:.]/g, '-');
         const fileName = `leaderboard-${stamp}.json`;
-        fs.writeFileSync(path.join(dir, fileName), JSON.stringify(record, null, 2));
+        safeWriteJson(path.join(dir, fileName), record);
         return okJson(res, { ok: true, file: fileName });
       });
       return;
@@ -3561,8 +3569,7 @@ const server = http.createServer(async (req, res)=>{
         if (typeof payload.delta === 'number') feel.score = Math.max(0, Math.min(100, (feel.score||50) + payload.delta));
         feel.updatedAt = new Date().toISOString();
 
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, JSON.stringify(feel, null, 2));
+        safeWriteJson(filePath, feel);
 
         const { spawn } = require('child_process');
         const child = spawn('node', [path.join(process.cwd(), 'scripts', 'status_writer.js')], {
@@ -3600,8 +3607,7 @@ const server = http.createServer(async (req, res)=>{
         };
         const filtered = arr.filter(x => key(x) !== key(incoming));
         filtered.push(incoming);
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, JSON.stringify(filtered, null, 2));
+        safeWriteJson(filePath, filtered);
 
         const { spawn } = require('child_process');
         const child = spawn('node', [path.join(process.cwd(), 'scripts', 'status_writer.js')], {
@@ -3657,7 +3663,7 @@ const server = http.createServer(async (req, res)=>{
           if (typeof payload.value === 'number') current.stakePerRace = Math.max(1, payload.value);
         }
 
-        fs.writeFileSync(stakePath, JSON.stringify(current, null, 2));
+        safeWriteJson(stakePath, current);
 
         const { spawnSync } = require('child_process');
         spawnSync('node', [path.join(process.cwd(), 'scripts', 'status_writer.js')], {
@@ -3708,8 +3714,7 @@ const server = http.createServer(async (req, res)=>{
           norm(x.selection) === norm(payload.selection)
         ));
         const removed = queue.length - keep.length;
-        fs.mkdirSync(path.dirname(queuePath), { recursive: true });
-        fs.writeFileSync(queuePath, JSON.stringify(keep, null, 2));
+        safeWriteJson(queuePath, keep);
 
         const { spawnSync } = require('child_process');
         spawnSync('node', [path.join(process.cwd(), 'scripts', 'status_writer.js')], {
@@ -3774,8 +3779,7 @@ const server = http.createServer(async (req, res)=>{
           return currentStake + 0.0001 < Number(x.stake || 0);
         });
 
-        fs.mkdirSync(path.dirname(queuePath), { recursive: true });
-        fs.writeFileSync(queuePath, JSON.stringify([...existingQueue, ...deduped], null, 2));
+        safeWriteJson(queuePath, [...existingQueue, ...deduped]);
 
         const { spawnSync } = require('child_process');
         spawnSync('node', [path.join(process.cwd(), 'scripts', 'status_writer.js')], {

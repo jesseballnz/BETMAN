@@ -7,7 +7,12 @@ function getPool(){
   if (!DB_URL) return null;
   if (pool) return pool;
   pool = new Pool({ connectionString: DB_URL });
+  pool.on('error', (err) => console.error('[db_store] pool error:', err.message));
   return pool;
+}
+
+async function closePool(){
+  if (pool) { await pool.end().catch(()=>{}); pool = null; }
 }
 
 async function ensureSchema(pg){
@@ -35,12 +40,14 @@ async function ensureSchema(pg){
 async function upsertData(pg, { tenantId = 'default', key, payload, updatedAt = null }){
   if (!pg || !key) return;
   const ts = updatedAt ? new Date(updatedAt) : new Date();
+  const json = JSON.stringify(payload);
+  if (json === undefined) throw new Error(`Invalid payload for key ${key}`);
   await pg.query(
     `INSERT INTO betman_data (tenant_id, key, payload, updated_at)
      VALUES ($1, $2, $3::jsonb, $4)
      ON CONFLICT (tenant_id, key) DO UPDATE
      SET payload=EXCLUDED.payload, updated_at=EXCLUDED.updated_at`,
-    [tenantId, key, JSON.stringify(payload), ts]
+    [tenantId, key, json, ts]
   );
 }
 
@@ -67,6 +74,7 @@ async function appendAudit(pg, { tenantId = 'default', row }){
 
 module.exports = {
   getPool,
+  closePool,
   ensureSchema,
   upsertData,
   loadData,

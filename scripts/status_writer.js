@@ -7,6 +7,14 @@ function loadJson(p, fallback){
   try { return JSON.parse(fs.readFileSync(p,'utf8')); } catch { return fallback; }
 }
 
+function safeWriteJson(filePath, data){
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, filePath);
+}
+
 function appendJsonl(p, row){
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -81,7 +89,7 @@ if (!daily || typeof daily.openingTotal !== 'number') {
 const pnl = Math.round((currentTotal - Number(daily.openingTotal || 0)) * 100) / 100;
 daily.lastTotal = currentTotal;
 daily.lastUpdated = new Date().toISOString();
-fs.writeFileSync(dailyPnlPath, JSON.stringify(daily, null, 2));
+safeWriteJson(dailyPnlPath, daily);
 
 // Long-term daily log snapshot
 const hist = loadJson(pnlHistoryPath, []);
@@ -89,7 +97,7 @@ const key = String(nzDate);
 const nextHist = (hist || []).filter(x => String(x.date) !== key);
 nextHist.push({ date: key, openingTotal: daily.openingTotal, lastTotal: currentTotal, pnl, updatedAt: daily.lastUpdated });
 nextHist.sort((a,b) => String(a.date).localeCompare(String(b.date)));
-fs.writeFileSync(pnlHistoryPath, JSON.stringify(nextHist, null, 2));
+safeWriteJson(pnlHistoryPath, nextHist);
 
 status.dailyPnl = pnl;
 status.dailyPnlOpening = daily.openingTotal;
@@ -670,11 +678,10 @@ appendJsonl(betPlanAuditPath, {
   moversTop: (status.marketMovers || []).slice(0, 12)
 });
 
-fs.mkdirSync(path.dirname(statusPath), { recursive: true });
-fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+safeWriteJson(statusPath, status);
 if (isDefaultTenant) {
   try {
-    fs.writeFileSync(path.join(WORKSPACE_ROOT, 'status.json'), JSON.stringify(status, null, 2));
+    safeWriteJson(path.join(WORKSPACE_ROOT, 'status.json'), status);
   } catch {}
 }
 console.log(`status.json updated (${tenantId})`);

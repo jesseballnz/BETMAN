@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
-const { getPool, ensureSchema, upsertData, appendAudit } = require('./db_store');
+const { getPool, closePool, ensureSchema, upsertData, appendAudit } = require('./db_store');
 
 function getArg(name, def = null){
   const idx = process.argv.findIndex(a => a.startsWith(`--${name}=`));
@@ -85,14 +85,18 @@ async function main(){
     : ['default', ...listTenants(root)];
 
   for (const tenantId of tenants) {
-    await syncTenant({ root, tenantId, keys, auditMode, auditTail });
+    try {
+      await syncTenant({ root, tenantId, keys, auditMode, auditTail });
+    } catch (err) {
+      console.error(`[db_sync] tenant ${tenantId} failed:`, err.message || err);
+    }
   }
 
-  const pg = getPool();
-  if (pg) await pg.end();
+  await closePool();
 }
 
-main().catch(err => {
+main().catch(async err => {
   console.error('[db_sync] failed', err.message || err);
+  await closePool().catch(()=>{});
   process.exit(1);
 });

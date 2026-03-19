@@ -7,21 +7,23 @@ function buildStatus(state, balanceData, stakePerRace=10) {
   let aiWindowMin = 10;
   try {
     const stake = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'frontend', 'data', 'stake.json'), 'utf8'));
-    if (typeof stake.aiWindowMin === 'number') aiWindowMin = stake.aiWindowMin;
+    if (typeof stake.aiWindowMin === 'number' && Number.isFinite(stake.aiWindowMin)) aiWindowMin = stake.aiWindowMin;
   } catch {}
 
   const betPlans = rawBetPlans.map(b=>{
-    const [country, meeting, race] = b.race.split(':');
+    const parts = (b.race || '').split(':');
+    if (parts.length < 3) return null;
+    const [country, meeting, race] = parts;
     return {
       meeting,
-      race: race.replace('R',''),
+      race: (race || '').replace('R',''),
       selection: b.selection,
       stake: b.stake,
       type: b.bet_type,
       odds: b.odds,
       eta: `${b.mins_to_start}m`
     };
-  });
+  }).filter(Boolean);
 
   const upcomingRaces = Object.entries(state.races || {})
     .filter(([_, r]) => !['final','closed','abandoned','resulted'].includes((r.race_status || '').toLowerCase()))
