@@ -1805,6 +1805,7 @@ function renderMarketMovers(rows){
 
 function buildMoverGraph(row){
   const horizons = [
+    { label: 'Open', value: Number(row.changeOpening) },
     { label: '5h', value: Number(row.change5h) },
     { label: '1h', value: Number(row.change1h) },
     { label: '30m', value: Number(row.change30m) },
