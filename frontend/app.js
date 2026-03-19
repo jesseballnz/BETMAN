@@ -5323,8 +5323,10 @@ function renderConfidenceBasedBets(){
     <div class='perf-kpis perf-kpis-secondary'>
       <div class='perf-card'><div class='label'>Signal Threshold</div><div class='value'>≥ ${CONFIDENCE_SIGNAL_THRESHOLD}%</div></div>
       <div class='perf-card'><div class='label'>Qualifying Bets</div><div class='value'>${rows.length}</div></div>
-      <div class='perf-card'><div class='label'>Base Stake</div><div class='value'>$${baseStake.toFixed(2)}</div></div>
-      <div class='perf-card'><div class='label'>Boosted Stake</div><div class='value'>$${boostedStake.toFixed(2)}</div></div>
+      <div class='perf-card'><div class='label'>Base Stake Setting</div><div class='value'>$${Number(confidenceBaseStakeUnit || 0).toFixed(2)}</div></div>
+      <div class='perf-card'><div class='label'>Boosted Stake Setting</div><div class='value'>$${Number(confidenceBoostStakeUnit || 0).toFixed(2)}</div></div>
+      <div class='perf-card'><div class='label'>Base Deployed</div><div class='value'>$${baseStake.toFixed(2)}</div></div>
+      <div class='perf-card'><div class='label'>Boosted Deployed</div><div class='value'>$${boostedStake.toFixed(2)}</div></div>
       <div class='perf-card'><div class='label'>Extra Deployed</div><div class='value ${upliftStake >= 0 ? 'pos' : 'neg'}'>$${upliftStake.toFixed(2)}</div></div>
     </div>`;
 
