@@ -6,10 +6,11 @@ cd "$(dirname "$0")/.."
 while true; do
   stake_json="frontend/data/stake.json"
 
-  stake_per_race=$(node -e "const fs=require('fs');try{const s=JSON.parse(fs.readFileSync('${stake_json}','utf8'));process.stdout.write(String(s.stakePerRace??10));}catch{process.stdout.write('10')}" )
-  exotic_stake=$(node -e "const fs=require('fs');try{const s=JSON.parse(fs.readFileSync('${stake_json}','utf8'));process.stdout.write(String(s.exoticStakePerRace??1));}catch{process.stdout.write('1')}" )
-  early_window=$(node -e "const fs=require('fs');try{const s=JSON.parse(fs.readFileSync('${stake_json}','utf8'));process.stdout.write(String(s.earlyWindowMin??180));}catch{process.stdout.write('180')}" )
-  ai_window=$(node -e "const fs=require('fs');try{const s=JSON.parse(fs.readFileSync('${stake_json}','utf8'));process.stdout.write(String(s.aiWindowMin??10));}catch{process.stdout.write('10')}" )
+  read_stake() { node -e 'const fs=require("fs");try{const s=JSON.parse(fs.readFileSync("'"${stake_json}"'","utf8"));process.stdout.write(String(s[process.argv[1]]??process.argv[2]));}catch{process.stdout.write(process.argv[2])}' -- "$1" "$2"; }
+  stake_per_race=$(read_stake stakePerRace 10)
+  exotic_stake=$(read_stake exoticStakePerRace 1)
+  early_window=$(read_stake earlyWindowMin 180)
+  ai_window=$(read_stake aiWindowMin 10)
 
   node scripts/racing_poller.js \
     --countries=NZ,AUS \
