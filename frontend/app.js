@@ -1580,11 +1580,18 @@ function renderMarketMovers(rows){
     const mtj = Number(r.minsToJump);
     return !Number.isFinite(mtj) || mtj >= -5;
   });
-  const meetingUpcomingMovers = filteredMeetingRows
+  let meetingUpcomingMovers = filteredMeetingRows
     .filter(r => {
       const mtj = Number(r.minsToJump);
       return !Number.isFinite(mtj) || mtj >= -5;
     });
+  if (!meetingUpcomingMovers.length) meetingUpcomingMovers = filteredMeetingRows.slice();
+  if (!meetingUpcomingMovers.length && selectedMeeting && selectedMeeting !== 'ALL') {
+    meetingUpcomingMovers = filteredByWhy.filter(r => {
+      const mtj = Number(r.minsToJump);
+      return !Number.isFinite(mtj) || mtj >= -5;
+    });
+  }
   const hasFirmers = meetingUpcomingMovers.some(r => Number(r.pctMove || 0) <= 0);
   const hasDrifters = meetingUpcomingMovers.some(r => Number(r.pctMove || 0) > 0);
   if (moversMode === 'firmers' && !hasFirmers && hasDrifters) {
@@ -2478,11 +2485,32 @@ function renderMultis(rows){
   const table = $('multisTable');
   if (!table) return;
   table.innerHTML = '';
-  const multiRows = (rows || [])
+  let multiRows = (rows || [])
     .filter(r => isMultiType(r.type))
     .filter(r => meetingMatches(r.meeting))
     .slice()
     .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
+
+  if (!multiRows.length) {
+    const winRows = (latestSuggestedBets || [])
+      .filter(r => String(r.type || '').toLowerCase() === 'win' && meetingMatches(r.meeting))
+      .slice()
+      .sort((a,b) => scoreStrategyCandidate(b) - scoreStrategyCandidate(a))
+      .slice(0, 3);
+    if (winRows.length >= 2) {
+      const race = winRows[0].race || winRows[0].race_number || '—';
+      const meeting = winRows[0].meeting || selectedMeeting;
+      const sel = winRows.map(x => cleanRunnerText(x.selection || x.runner || x.name || '')).filter(Boolean).slice(0,3).join(' / ');
+      multiRows = [{
+        meeting,
+        race,
+        selection: sel,
+        type: 'top3',
+        reason: 'Fallback exotics from strongest win selections',
+        jumpsIn: winRows[0].jumpsIn || 'upcoming'
+      }];
+    }
+  }
 
   if (!multiRows.length) {
     const empty = document.createElement('div');
