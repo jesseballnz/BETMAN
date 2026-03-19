@@ -4767,8 +4767,8 @@ function renderBetPlanPerformance(daily){
   const rows = windows.map(win => {
     const rowStats = computeBetPlanStats(cache, win);
     if (!rowStats) return '';
-    const active = win === betPlanPerfWindow ? ' class="active-row"' : '';
-    return `<tr${active}>
+    const active = win === betPlanPerfWindow ? ' class="active-row ledger-row"' : ' class="ledger-row"';
+    return `<tr${active} data-ledger-window='${win}' style='cursor:pointer' title='Click to view bet ledger'>
       <td data-label='Window'>${betPlanLabel(win)}</td>
       <td data-label='Bets'>${rowStats.bets ?? '—'}</td>
       <td data-label='Win Rate'>${fmtPct(rowStats.winRate)}</td>
@@ -4794,10 +4794,125 @@ function renderBetPlanPerformance(daily){
         <tbody>${rows}</tbody>
       </table>`
     : '<div class="sub">No bet-plan history available.</div>';
+  tableWrap.querySelectorAll('.ledger-row').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const win = tr.dataset.ledgerWindow;
+      if (win) openBetLedger(cache, win);
+    });
+  });
   updateBetmanReturn(stats);
   applyPerformanceVisibility();
 }
 
+function openBetLedger(daily, window){
+  if (!daily || typeof daily !== 'object') return;
+  const days = betPlanWindowDays(window);
+  const keys = Object.keys(daily).sort();
+  const slice = keys.slice(-days);
+  if (!slice.length) return;
+  const agg = aggregateLastNDays(daily, days);
+  const showRoi = !!isAdminUser;
+
+  // Build per-day ledger rows
+  const dayRows = slice.map(dateKey => {
+    const d = daily[dateKey] || {};
+    const bets = d.total_bets ?? d.win_bets ?? 0;
+    const winBets = d.win_bets ?? 0;
+    const wins = d.wins ?? 0;
+    const winRate = winBets ? wins / winBets : null;
+    const roiStake = d.roi_stake ?? d.total_stake ?? bets;
+    const roiRec = Number.isFinite(d.roi_rec) ? d.roi_rec : null;
+    const netUnits = (Number.isFinite(d.roi_rec) && roiStake) ? d.roi_rec * roiStake : null;
+    const racesRun = d.races_run ?? 0;
+    const racesWon = d.races_won ?? 0;
+    return { dateKey, bets, winBets, wins, winRate, roiRec, netUnits, racesRun, racesWon };
+  }).reverse();
+
+  const totalBets = agg?.total_bets ?? 0;
+  const totalWins = agg?.wins ?? 0;
+  const overallWinRate = agg?.win_bets ? agg.wins / agg.win_bets : null;
+  const overallRoi = agg?.roi_stake ? agg.roi_rec_profit / agg.roi_stake : null;
+  const overallNetUnits = agg?.roi_rec_profit ?? null;
+
+  // Strategy mini cards (same style as strategy summary)
+  const meter = (val, max = 100) => {
+    const pct = Math.min(100, Math.max(0, ((val || 0) / max) * 100));
+    return `<div class='strategy-meter'><span style='width:${pct}%'></span></div>`;
+  };
+
+  const summaryCards = `
+    <div class='ledger-summary'>
+      <div class='strategy-card'>
+        <div class='label'>Window</div>
+        <div class='value'>${betPlanLabel(window)}</div>
+      </div>
+      <div class='strategy-card'>
+        <div class='label'>Total Bets</div>
+        <div class='value'>${totalBets}</div>
+      </div>
+      <div class='strategy-card'>
+        <div class='label'>Wins</div>
+        <div class='value win-metric'>${totalWins}</div>
+        ${meter(totalWins, Math.max(totalBets, 1))}
+      </div>
+      <div class='strategy-card'>
+        <div class='label'>Win Rate</div>
+        <div class='value win-metric'>${fmtPct(overallWinRate)}</div>
+        ${meter(overallWinRate ? overallWinRate * 100 : 0)}
+      </div>
+      ${showRoi ? `
+      <div class='strategy-card'>
+        <div class='label'>ROI (Rec)</div>
+        <div class='value' style='color:${overallRoi != null && overallRoi >= 0 ? '#c5ff00' : '#ff6b6b'}'>${fmtRoi(overallRoi)}</div>
+        ${meter(overallRoi ? Math.min(Math.abs(overallRoi) * 100, 100) : 0)}
+      </div>
+      <div class='strategy-card'>
+        <div class='label'>Net Units</div>
+        <div class='value' style='color:${overallNetUnits != null && overallNetUnits >= 0 ? '#c5ff00' : '#ff6b6b'}'>${fmtUnits(overallNetUnits)}</div>
+      </div>` : ''}
+    </div>`;
+
+  // Per-day table
+  const roiHeaders = showRoi ? '<th>ROI (Rec)</th><th>Net Units</th>' : '';
+  const tableRows = dayRows.map(d => {
+    const winIcon = d.wins > 0 ? '🏆' : '';
+    const roiColor = d.roiRec != null && d.roiRec >= 0 ? '#c5ff00' : '#ff6b6b';
+    const roiCells = showRoi
+      ? `<td data-label='ROI (Rec)' style='color:${roiColor}'>${fmtRoi(d.roiRec)}</td>
+         <td data-label='Net Units' style='color:${roiColor}'>${fmtUnits(d.netUnits)}</td>`
+      : '';
+    return `<tr>
+      <td data-label='Date'>${d.dateKey}</td>
+      <td data-label='Bets'>${d.bets}</td>
+      <td data-label='Wins'>${d.wins} ${winIcon}</td>
+      <td data-label='Win Rate'>${fmtPct(d.winRate)}</td>
+      <td data-label='Races'>${d.racesRun}</td>
+      <td data-label='Won'>${d.racesWon}</td>
+      ${roiCells}
+    </tr>`;
+  }).join('');
+
+  const html = `
+    ${summaryCards}
+    <div class='ledger-table-wrap'>
+      <table class='perf-table ledger-table'>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Bets</th>
+            <th>Wins</th>
+            <th>Win Rate</th>
+            <th>Races</th>
+            <th>Won</th>
+            ${roiHeaders}
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+
+  openSummaryPopup(`📊 Bet Ledger — ${betPlanLabel(window)}`, html);
+}
 function updateBetmanReturn(stats){
   const baseReturn = stats?.baseProfit ?? null;
   const baseInvested = stats?.baseStake ?? null;

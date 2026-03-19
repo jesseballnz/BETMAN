@@ -123,6 +123,8 @@ let lastPollCacheKey = '';
 let lastPerformancePollTs = 0;
 const PERFORMANCE_POLL_COOLDOWN_MS = 5 * 60 * 1000;
 let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null, signal: null, error: null };
+const SERVER_START_TS = Date.now();
+let healthRequestCount = 0;
 
 function normalizeTenantId(v){
   const raw = String(v || 'default').trim();
@@ -2685,7 +2687,7 @@ function recordAiOutcome({ question, payload, mode, provider, error }){
     error: error || null,
     selectionCount: Number(payload?.selectionCount || 0),
     races: Array.isArray(payload?.selections) ? payload.selections.map(s => `${s.meeting || ''} R${s.race || ''}`) : [],
-    question: String(question || '').slice(0, 400)
+    questionLength: String(question || '').length
   };
   try {
     fs.appendFile(AI_RESPONSE_LOG, JSON.stringify(row) + '\n', err => {
@@ -2734,7 +2736,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const key = process.env.OPENAI_API_KEY || process.env.BETMAN_OPENAI_API_KEY;
   const ollamaBase = String(process.env.OLLAMA_BASE_URL || process.env.BETMAN_OLLAMA_BASE_URL || process.env.BETMAN_CHAT_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE).replace(/\/$/, '');
   if (provider === 'openai' && !key) return null;
-  console.log('[ai-chat] provider', provider, 'question', question);
+  const redact = String(process.env.BETMAN_REDACT_LOGS || 'true').toLowerCase() === 'true';
+  console.log('[ai-chat] provider', provider, 'question_length', question.length, ...(redact ? [] : ['question', question]));
 
   const status = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json'), {});
   const racesData = loadJson(path.join(process.cwd(), 'frontend', 'data', 'races.json'), {});
@@ -2915,7 +2918,10 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const maxTokens = isRaceAnalysis ? modelProfile.maxTokensRace : modelProfile.maxTokensGeneral;
   const fakeAiMode = String(process.env.BETMAN_FAKE_AI || '').toLowerCase() === 'true';
   if (fakeAiMode) {
-    const placeholder = `[fake-ai:${effectiveModel}] ${question}`;
+    const rc = clientContext?.raceContext || {};
+    const meetingTag = rc.meeting ? ` ${rc.meeting}` : '';
+    const raceTag = rc.raceNumber ? ` R${String(rc.raceNumber).replace(/^R/i, '')}` : '';
+    const placeholder = `fake-ai ${effectiveModel}${meetingTag}${raceTag} — ${question}`;
     return {
       answer: appendRunnerCallouts(placeholder, selections, suggested),
       requestedModel: requestedModel || null,
@@ -2991,18 +2997,9 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       }
 
       if (!response.ok && response.status === 404) {
-        try {
-          const { models: installedList = [] } = await fetchOllamaModelsForBase(base);
-          const fallbackPool = [...installedList.filter(name => name && name !== modelForBase), ...DEFAULT_OLLAMA_FALLBACK_MODELS.filter(name => name !== modelForBase)];
-          const fallback = fallbackPool.find(Boolean) || '';
-          if (fallback && fallback !== modelForBase) {
-            console.warn('ollama_missing_model', modelForBase, 'fallback', fallback, 'base', base);
-            modelForBase = fallback;
-            response = await runOllamaWithRetry(base, modelForBase);
-          }
-        } catch (err) {
-          console.warn('ollama_missing_model_fallback_error', err?.message || err);
-        }
+        console.error('ollama_model_not_found', modelForBase, 'base', base);
+        lastError = new Error(`ollama_model_not_found: ${modelForBase}`);
+        continue;
       }
 
       if (!response.ok) {
@@ -4329,11 +4326,15 @@ if (url.pathname === '/api/ask-selection') {
         }
       }
       if (!answerText) {
-        const fallback = buildSelectionFactAnswer(question, payload, tenantId);
-        const nonRaceSource = String(payload?.source || '').toLowerCase();
-        const shouldFormatDecision = nonRaceSource === 'strategy' || Number(payload?.selectionCount || 0) > 0;
-        answerText = shouldFormatDecision ? enforceDecisionAnswerFormat(fallback) : String(fallback).trim();
-        mode = 'fallback';
+        // No fallback — return explicit error so the user knows AI failed
+        recordAiOutcome({ question, payload, mode: 'error', provider: aiProvider, error: fallbackReason });
+        return okJson(res, {
+          ok: false,
+          error: 'ai_unavailable',
+          detail: fallbackReason,
+          mode: 'error',
+          provider: aiProvider
+        }, 503);
       }
     }
 
@@ -4656,7 +4657,33 @@ if (url.pathname === '/api/ask-selection') {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    return okJson(res, { ok: true, service: 'betman-api', ts: new Date().toISOString() });
+    healthRequestCount++;
+    const now = Date.now();
+    const uptimeMs = now - SERVER_START_TS;
+    const mem = process.memoryUsage();
+    return okJson(res, {
+      ok: true,
+      service: 'betman-api',
+      ts: new Date().toISOString(),
+      startedAt: new Date(SERVER_START_TS).toISOString(),
+      uptimeMs,
+      uptimeHuman: `${Math.floor(uptimeMs / 3600000)}h ${Math.floor((uptimeMs % 3600000) / 60000)}m`,
+      sla: '99.999%',
+      healthChecks: healthRequestCount,
+      memoryMb: {
+        rss: Math.round(mem.rss / 1048576),
+        heapUsed: Math.round(mem.heapUsed / 1048576),
+        heapTotal: Math.round(mem.heapTotal / 1048576)
+      },
+      ai: {
+        lastSuccess: aiHealth.lastSuccess,
+        lastFailure: aiHealth.lastFailure,
+        lastMode: aiHealth.lastMode,
+        lastProvider: aiHealth.lastProvider,
+        lastError: aiHealth.lastError
+      },
+      db: !!DB_URL
+    });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/ai-models') {

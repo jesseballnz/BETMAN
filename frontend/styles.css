@@ -392,6 +392,28 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
   background: rgba(197, 255, 0, 0.08);
 }
 
+.ledger-row:hover {
+  background: rgba(197, 255, 0, 0.12) !important;
+  transition: background 0.15s;
+}
+
+.ledger-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.ledger-table-wrap {
+  max-height: 400px;
+  overflow-y: auto;
+  border-radius: 10px;
+}
+
+.ledger-table tbody tr:hover td {
+  background: rgba(197, 255, 0, 0.06);
+}
+
 .best-strategy-row {
   background: rgba(197, 255, 0, 0.06);
 }
