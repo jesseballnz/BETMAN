@@ -29,7 +29,7 @@ function fetchWithTimeout(url, opts = {}, timeoutMs = 30000) {
     .then(res => { clearTimeout(timer); return res; })
     .catch(err => { clearTimeout(timer); throw err; });
 }
-const BETMAN_BUILD = '20260319-0936';
+const BETMAN_BUILD = '20260319-1800';
 const STRATEGY_MIN_BETS = 30;
 const SIGNAL_GLOSSARY = {
   implied: 'Market-implied probability from current odds (100 / odds).',

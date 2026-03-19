@@ -124,6 +124,8 @@ let lastPerformancePollTs = 0;
 const PERFORMANCE_POLL_COOLDOWN_MS = 5 * 60 * 1000;
 let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null, signal: null, error: null };
 const SERVER_START_TS = Date.now();
+const BETMAN_SERVER_VERSION = '1.0.0';
+const BETMAN_SERVER_BUILD = '20260319';
 let healthRequestCount = 0;
 
 function normalizeTenantId(v){
@@ -4654,6 +4656,16 @@ if (url.pathname === '/api/ask-selection') {
     }
 
     return send(res, 404, 'not found');
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/version') {
+    return okJson(res, {
+      ok: true,
+      version: BETMAN_SERVER_VERSION,
+      build: BETMAN_SERVER_BUILD,
+      service: 'betman-api',
+      ts: new Date().toISOString()
+    });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
