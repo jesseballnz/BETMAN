@@ -2371,7 +2371,22 @@ function baseSuggestedRows(rows){
 function renderSuggested(rows){
   const table = $('suggestedTable');
   table.innerHTML = '';
-  const mainRows = baseSuggestedRows(rows);
+  let mainRows = baseSuggestedRows(rows);
+  if (!mainRows.length && selectedMeeting && selectedMeeting !== 'ALL') {
+    const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
+    mainRows = (rows || [])
+      .filter(r => meetingMatches(r.meeting))
+      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase()))
+      .slice()
+      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
+  }
+  if (!mainRows.length) {
+    const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
+    mainRows = (rows || [])
+      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase()))
+      .slice()
+      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
+  }
 
   if (!mainRows.length) {
     const empty = document.createElement('div');
@@ -3760,8 +3775,21 @@ function renderNextPlanned(rows){
   const table = $('nextPlannedTable');
   if (!table) return;
   table.innerHTML = '';
-  const scoped = baseSuggestedRows(rows)
+  let scoped = baseSuggestedRows(rows)
     .filter(r => jumpsInToMinutes(r.jumpsIn) <= Number(earlyWindowMin || 180));
+  if (!scoped.length && selectedMeeting && selectedMeeting !== 'ALL') {
+    scoped = (rows || [])
+      .filter(r => meetingMatches(r.meeting))
+      .slice()
+      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn))
+      .slice(0, 5);
+  }
+  if (!scoped.length) {
+    scoped = (rows || [])
+      .slice()
+      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn))
+      .slice(0, 5);
+  }
   updateNextRaceCountdown(scoped);
   const top = scoped.slice(0,5);
   if (!top.length) {

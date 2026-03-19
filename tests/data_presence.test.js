@@ -15,4 +15,7 @@ assert(suggested.length > 0, 'suggestedBets should not be empty');
 const pukekoheMovers = movers.filter(r => String(r.meeting || '').trim().toLowerCase() === 'pukekohe');
 assert(pukekoheMovers.length > 0, 'Pukekohe market movers should not be empty when Pukekohe races are active');
 
+const winSuggested = suggested.filter(r => String(r.type || '').toLowerCase() === 'win');
+assert(winSuggested.length >= 2, 'Need at least two win suggestions so Multis fallback can be generated');
+
 console.log('data_presence tests passed');
