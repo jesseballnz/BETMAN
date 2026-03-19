@@ -1602,6 +1602,8 @@ function renderMarketMovers(rows){
     localStorage.setItem('moversMode', moversMode);
   }
 
+  const normalizeMeetingKey = (val) => String(val || '').trim().toLowerCase();
+  const normalizeRaceNumber = (val) => String(val || '').replace(/^R/i,'').trim();
   const selectedRaceNumPref = selectedRace ? String(selectedRace.race_number || selectedRace.race || '').replace(/^R/i,'').trim() : '';
   const selectedMeetingKeyPref = selectedRace ? normalizeMeetingKey(selectedRace.meeting || '') : '';
   if (selectedMeetingKeyPref && selectedRaceNumPref) {
@@ -1655,8 +1657,6 @@ function renderMarketMovers(rows){
       return String(a.eta || '').localeCompare(String(b.eta || ''));
     })
     .slice(0, 120);
-  const normalizeMeetingKey = (val) => String(val || '').trim().toLowerCase();
-  const normalizeRaceNumber = (val) => String(val || '').replace(/^R/i,'').trim();
   const seenRaceKeys = new Set(upcomingRaw
     .map(r => {
       const raceNum = normalizeRaceNumber(r.race);
@@ -2371,10 +2371,11 @@ function baseSuggestedRows(rows){
 function renderSuggested(rows){
   const table = $('suggestedTable');
   table.innerHTML = '';
-  let mainRows = baseSuggestedRows(rows);
+  const suggestedSource = (rows && rows.length) ? rows : (latestSuggestedBets || []);
+  let mainRows = baseSuggestedRows(suggestedSource);
   if (!mainRows.length && selectedMeeting && selectedMeeting !== 'ALL') {
     const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
-    mainRows = (rows || [])
+    mainRows = (latestSuggestedBets || suggestedSource)
       .filter(r => meetingMatches(r.meeting))
       .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase()))
       .slice()
@@ -2382,7 +2383,7 @@ function renderSuggested(rows){
   }
   if (!mainRows.length) {
     const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
-    mainRows = (rows || [])
+    mainRows = (latestSuggestedBets || suggestedSource)
       .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase()))
       .slice()
       .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
@@ -2500,7 +2501,8 @@ function renderMultis(rows){
   const table = $('multisTable');
   if (!table) return;
   table.innerHTML = '';
-  let multiRows = (rows || [])
+  const multiSource = (rows && rows.length) ? rows : (latestSuggestedBets || []);
+  let multiRows = (multiSource || [])
     .filter(r => isMultiType(r.type))
     .filter(r => meetingMatches(r.meeting))
     .slice()
@@ -3775,10 +3777,11 @@ function renderNextPlanned(rows){
   const table = $('nextPlannedTable');
   if (!table) return;
   table.innerHTML = '';
-  let scoped = baseSuggestedRows(rows)
+  const plannedSource = (rows && rows.length) ? rows : (latestSuggestedBets || []);
+  let scoped = baseSuggestedRows(plannedSource)
     .filter(r => jumpsInToMinutes(r.jumpsIn) <= Number(earlyWindowMin || 180));
   if (!scoped.length && selectedMeeting && selectedMeeting !== 'ALL') {
-    scoped = (rows || [])
+    scoped = (latestSuggestedBets || plannedSource)
       .filter(r => meetingMatches(r.meeting))
       .slice()
       .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn))
