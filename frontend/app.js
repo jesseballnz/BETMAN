@@ -19,6 +19,16 @@ const fetchLocal = async (u, opts = {}) => {
   }
   return res;
 };
+function fetchWithTimeout(url, opts = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const signal = opts.signal
+    ? (() => { opts.signal.addEventListener('abort', () => controller.abort()); return controller.signal; })()
+    : controller.signal;
+  return fetchLocal(url, { ...opts, signal })
+    .then(res => { clearTimeout(timer); return res; })
+    .catch(err => { clearTimeout(timer); throw err; });
+}
 const BETMAN_BUILD = '20260319-0936';
 const STRATEGY_MIN_BETS = 30;
 const SIGNAL_GLOSSARY = {
@@ -176,7 +186,10 @@ function renderAnalysisVisuals(){
 function setTableLoading(id, text='Loading…'){
   const el = $(id);
   if (!el) return;
-  el.innerHTML = `<div class='row'><div style='grid-column:1/-1'>${text}</div></div>`;
+  // Only show loading placeholder if table is currently empty — never clear existing data
+  if (!el.innerHTML.trim() || el.innerHTML.includes('no data') || el.children.length === 0) {
+    el.innerHTML = `<div class='row'><div style='grid-column:1/-1'>${text}</div></div>`;
+  }
 }
 
 function setBakeoffRunIndicator(state, message){
@@ -1849,16 +1862,23 @@ function inheritMoveTags(meeting, race, runner){
 
 function renderInteresting(rows){
   const table = $('interestingTable');
+  const filtered = filterInterestingByWhy(rows || []);
+  let scoped = filtered
+    .filter(r => meetingMatches(r.meeting))
+    .filter(selectionIsUpcoming);
+  // Don't clear existing content if we have nothing new to show
+  if (!scoped.length && table.children.length > 1) {
+    // Still try fallback before giving up
+    if (selectedMeeting && selectedMeeting !== 'ALL') {
+      const fallback = buildFallbackInterestingRows(selectedMeeting);
+      if (!fallback.length) return;
+    } else { return; }
+  }
   table.innerHTML = '';
   const header = document.createElement('div');
   header.className='row header';
   header.innerHTML = `<div>Race</div><div>Runner</div><div>AI Commentary</div><div>Odds</div><div class='right'>Jumps In</div>`;
   table.appendChild(header);
-
-  const filtered = filterInterestingByWhy(rows || []);
-  let scoped = filtered
-    .filter(r => meetingMatches(r.meeting))
-    .filter(selectionIsUpcoming);
 
   if (!scoped.length && selectedMeeting && selectedMeeting !== 'ALL') {
     const fallback = buildFallbackInterestingRows(selectedMeeting);
@@ -2320,8 +2340,10 @@ function baseSuggestedRows(rows){
 
 function renderSuggested(rows){
   const table = $('suggestedTable');
-  table.innerHTML = '';
   const mainRows = baseSuggestedRows(rows);
+  // Don't clear existing content if we have nothing new to show
+  if (!mainRows.length && table.children.length > 1) return;
+  table.innerHTML = '';
 
   if (!mainRows.length) {
     const empty = document.createElement('div');
@@ -2434,12 +2456,14 @@ function exoticSignalScore(row){
 function renderMultis(rows){
   const table = $('multisTable');
   if (!table) return;
-  table.innerHTML = '';
   const multiRows = (rows || [])
     .filter(r => isMultiType(r.type))
     .filter(r => meetingMatches(r.meeting))
     .slice()
     .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
+  // Don't clear existing content if we have nothing new to show
+  if (!multiRows.length && table.children.length > 1) return;
+  table.innerHTML = '';
 
   if (!multiRows.length) {
     const empty = document.createElement('div');
@@ -3688,9 +3712,11 @@ function updateNextRaceCountdown(rows){
 function renderNextPlanned(rows){
   const table = $('nextPlannedTable');
   if (!table) return;
-  table.innerHTML = '';
   const scoped = baseSuggestedRows(rows)
     .filter(r => jumpsInToMinutes(r.jumpsIn) <= Number(earlyWindowMin || 180));
+  // Don't clear existing content if we have nothing new to show
+  if (!scoped.length && table.children.length > 1) return;
+  table.innerHTML = '';
   updateNextRaceCountdown(scoped);
   const top = scoped.slice(0,5);
   if (!top.length) {
@@ -3752,9 +3778,10 @@ function renderNextPlanned(rows){
 function renderBets(rows){
   const table = $('betsTable');
   if (!table) return;
-  table.innerHTML = '';
-
   const ordered = (rows || []).slice().sort((a,b)=> String(a.sortTime||a.eta||'').localeCompare(String(b.sortTime||b.eta||'')));
+  // Don't clear existing content if we have nothing new to show
+  if (!ordered.length && table.children.length > 1) return;
+  table.innerHTML = '';
   if (!ordered.length) {
     const previewPool = baseSuggestedRows(latestSuggestedBets || [])
       .filter(r => jumpsInToMinutes(r.jumpsIn) <= Number(aiWindowMin || 10));
@@ -5258,7 +5285,7 @@ async function loadPerformance(){
     $('perfWinPickPct').textContent = fmtPct(latestDaily.pick_breakdown?.win?.win_rate);
     $('perfRoiTote').textContent = fmtRoi(latestDaily.roi_tote);
     $('perfRoiRec').textContent = fmtRoi(latestDaily.roi_rec);
-    $('perfRoiFixed').textContent = fmtRoi(latestDaily.roi_rec);
+    $('perfRoiFixed').textContent = fmtRoi(latestDaily.roi_fixed);
     $('perfRoiSp').textContent = fmtRoi(latestDaily.roi_sp);
     $('perfRoiEw').textContent = fmtRoi(latestDaily.roi_ew);
     $('perfExoticHit').textContent = fmtPct(latestDaily.exotic_hit_rate);
@@ -8710,6 +8737,7 @@ document.querySelectorAll('.page-tab').forEach(btn=>{
     setActivePage(page);
     if (page === 'bakeoff') loadBakeoffLeaderboard();
     if (page === 'strategy') buildStrategyPlan();
+    if (page === 'bankroll') loadBankrollTab();
   });
 });
 document.querySelectorAll('.bet-plan-tab').forEach(btn=>{
@@ -10234,10 +10262,114 @@ loadRaces().then(()=>{
   }
   restoreLastRaceSelection();
 });
-setInterval(async ()=>{ await loadStake(); await loadStatus(); }, 60000);
+let _pollRunning = false;
+setInterval(async ()=>{
+  if (_pollRunning) return;
+  _pollRunning = true;
+  try { await loadStake(); await loadStatus(); } catch {}
+  _pollRunning = false;
+}, 60000);
 setInterval(()=>{ if (isAdminUser) { triggerPerformancePoll(false); loadPerformance(); } }, 5 * 60 * 1000);
 setInterval(tickQueuedCountdowns, 1000);
 
+
+// ── Bankroll Tab ──────────────────────────────
+(function initBankroll(){
+  const refreshBtn = $('bankrollRefreshBtn');
+  const setBtn = $('bankrollSetBtn');
+  const inputEl = $('bankrollInput');
+  const riskSelect = $('bankrollRiskSelect');
+  if (!refreshBtn) return;
+
+  async function loadBankroll(){
+    try {
+      const res = await fetchLocal('/api/bankroll', { method: 'GET' });
+      const data = await res.json();
+      if (!data.ok) return;
+      renderBankroll(data);
+    } catch {}
+  }
+
+  async function setBankroll(){
+    const val = parseFloat(inputEl?.value || '0');
+    if (!val || val < 10) return;
+    const risk = riskSelect?.value || 'moderate';
+    try {
+      const res = await fetchLocal('/api/bankroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bankroll: val, riskProfile: risk })
+      });
+      const data = await res.json();
+      if (data.ok) renderBankroll(data);
+    } catch {}
+  }
+
+  function renderBankroll(data){
+    $('bankrollTotal').textContent = `$${(data.bankroll || 0).toFixed(2)}`;
+    $('bankrollDayAlloc').textContent = `$${(data.todayAllocated || 0).toFixed(2)}`;
+    $('bankrollDayRemaining').textContent = `$${(data.todayRemaining || 0).toFixed(2)}`;
+    if (inputEl && !inputEl.value) inputEl.value = data.bankroll || '';
+    if (riskSelect) riskSelect.value = data.riskProfile || 'moderate';
+
+    const plan = data.plan || [];
+    const summaryEl = $('bankrollPlanSummary');
+    const tableEl = $('bankrollPlanTable');
+    if (!plan.length) {
+      summaryEl.textContent = data.bankroll
+        ? 'No qualifying bets found in current signals. Check back closer to race time.'
+        : 'Set your bankroll above to generate a bet plan.';
+      tableEl.innerHTML = '';
+      return;
+    }
+
+    summaryEl.innerHTML = `<b>${plan.length}</b> bets allocated · <b>$${(data.todayAllocated || 0).toFixed(2)}</b> of <b>$${(data.maxDayAllocation || 0).toFixed(2)}</b> daily limit · ${escapeHtml(data.riskProfile)} (${Math.round(data.kellyFraction * 100)}% Kelly)`;
+
+    const rows = plan.map((p, i) => {
+      const edgeClass = p.edge > 5 ? 'style="color:var(--accent)"' : p.edge > 2 ? '' : 'style="color:var(--muted)"';
+      return `<tr>
+        <td>${i + 1}</td>
+        <td>${escapeHtml(p.meeting)} R${escapeHtml(String(p.race))}</td>
+        <td>${escapeHtml(p.selection)}</td>
+        <td>${escapeHtml(p.type.toUpperCase())}</td>
+        <td>$${p.odds.toFixed(2)}</td>
+        <td>${p.modelProb}%</td>
+        <td ${edgeClass}>+${p.edge}pts</td>
+        <td>${p.kellyPct}%</td>
+        <td><b>$${p.stake.toFixed(2)}</b></td>
+      </tr>`;
+    }).join('');
+
+    tableEl.innerHTML = `<table>
+      <thead><tr><th>#</th><th>Race</th><th>Selection</th><th>Type</th><th>Odds</th><th>Model %</th><th>Edge</th><th>Kelly %</th><th>Stake</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+    // History
+    const hist = data.history || [];
+    const histEl = $('bankrollHistoryTable');
+    if (hist.length) {
+      $('bankrollHistorySummary').textContent = `${hist.length} entries`;
+      histEl.innerHTML = `<table>
+        <thead><tr><th>Date</th><th>Bankroll</th><th>Action</th></tr></thead>
+        <tbody>${hist.slice().reverse().slice(0, 20).map(h => `<tr>
+          <td>${new Date(h.ts).toLocaleDateString()}</td>
+          <td>$${(h.bankroll || 0).toFixed(2)}</td>
+          <td>${escapeHtml(h.action || '')}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    }
+  }
+
+  refreshBtn.addEventListener('click', loadBankroll);
+  setBtn.addEventListener('click', setBankroll);
+  riskSelect.addEventListener('change', ()=>{
+    if (inputEl?.value) setBankroll();
+  });
+
+  // Expose for tab-switch loading
+  window.loadBankrollTab = loadBankroll;
+})();
 
 function bindPollOddsButton(){
   const btn = $('pollOddsBtn');
