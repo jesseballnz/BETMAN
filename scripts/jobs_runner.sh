@@ -15,6 +15,8 @@ while true; do
     echo "[jobs_runner] refreshing meeting profiles"
     node scripts/meeting_profile.js --date=today --country=AUS || true
     node scripts/meeting_profile.js --date=today --country=NZ --loveracing=true || true
+    echo "[jobs_runner] running Loveracing enrichment"
+    python3 scripts/loveracing_enrich.py || true
     last_profile="$now"
   fi
 
