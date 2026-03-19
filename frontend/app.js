@@ -5336,7 +5336,7 @@ function renderConfidenceBasedBets(){
   }).join('');
 
   wrap.innerHTML = `
-    <div class='perf-hint'>Confidence stakes are user-defined. Bets with signal ≥ ${confidenceSignalThreshold}% use your boosted stake setting.</div>
+    <div class='perf-hint'>Confidence stakes are user-defined. Base bets with signal ≥ ${confidenceSignalThreshold}% use your boosted stake setting. Exotics are excluded from this threshold and are not adjusted here.</div>
     ${controls}
     ${kpis}
     <div class='table'>
