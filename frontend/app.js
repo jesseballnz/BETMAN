@@ -2188,7 +2188,8 @@ function whyCategoryMatch(row, why, opts = {}){
     const winProb = Number.isFinite(Number(row?.win_p)) ? Number(row.win_p) : parseReasonWinProb(row?.reason);
     const shortFav = Number.isFinite(odds) && odds > 0 && odds <= 3.2;
     const favContext = /favourite|favorite|market\s+leader|short\s+price/.test(reason);
-    return shortFav && ((Number.isFinite(winProb) && winProb >= 22) || favContext);
+    const formStatus = String(runnerFormSignal(row)?.status || '').toUpperCase();
+    return shortFav && ((Number.isFinite(winProb) && winProb >= 22) || favContext || formStatus === 'HOT' || formStatus === 'SOLID');
   }
   if (why === 'VALUE') return (type === 'ew') || rowHasValueEdge(row) || /value|odds|long-odds/.test(reason);
   if (why === 'LONG') return rowMatchesLongProfile(row);
@@ -3771,7 +3772,9 @@ function renderNextPlanned(rows){
     if (t === 'top4') tagPool.push(`<span class='tag top4'>TOP4</span>`);
     const sigRaw = Number(r.signal_score);
     const sig = Number.isFinite(sigRaw) ? sigRaw : signalScore(r.reason, t, r.selection || r.runner || '');
-    if (!exotic && Number.isFinite(sig) && sig >= 60) tagPool.push(`<span class='tag win'>strong</span>`);
+    const formStatus = runnerFormSignal(r)?.status;
+    const shortFavStrong = Number.isFinite(odds) && odds > 0 && odds <= 3.2 && ['HOT','SOLID'].includes(String(formStatus || '').toUpperCase());
+    if (!exotic && ((Number.isFinite(sig) && sig >= 60) || shortFavStrong)) tagPool.push(`<span class='tag win'>strong</span>`);
     if (!exotic && (t === 'ew' || (Number.isFinite(odds) && odds >= 5) || (Number.isFinite(p) && p < 20) || reasonLc.includes('value') || reasonLc.includes('long-odds'))) tagPool.push(`<span class='tag value'>value</span>`);
     const seenPlanTags = new Set();
     const tags = tagPool.filter(tag => {
@@ -3782,7 +3785,13 @@ function renderNextPlanned(rows){
     const tag = tags.length ? ` ${tags.join(' ')}` : '';
     const aiProbText = Number.isFinite(Number(r.aiWinProb))
       ? `AI win probability is ${Number(r.aiWinProb).toFixed(1)}%.`
-      : 'AI win probability is unavailable for this market.';
+      : (() => {
+          const f = String(formStatus || '').toUpperCase();
+          if (Number.isFinite(odds) && odds > 0 && odds <= 3.2) {
+            return `AI win probability is unavailable for this market. WHY: short-priced favourite${f ? ` with ${f} form` : ''}.`;
+          }
+          return 'AI win probability is unavailable for this market. WHY: market lacks enough quantified model inputs.';
+        })();
     row.innerHTML = `<div><button class='bet-btn race-cell-btn planned-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div><div><button class='bet-btn next-planned-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-selection='${escapeAttr(cleanRunnerText(r.selection))}'><span class='bet-icon'>📌</span>${escapeHtml(cleanRunnerText(r.selection))}${tag}</button></div><div>${r.type}</div><div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div><div class='right'>${aiProbText}</div>`;
     table.appendChild(row);
   });
