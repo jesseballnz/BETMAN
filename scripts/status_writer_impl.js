@@ -12,7 +12,10 @@ function buildStatus(state, balanceData, stakePerRace=10) {
 
   const betPlans = rawBetPlans.map(b=>{
     const parts = (b.race || '').split(':');
-    if (parts.length < 3) return null;
+    if (parts.length < 3) {
+      if (b.race) console.warn('Invalid race format in bet plan:', b.race);
+      return null;
+    }
     const [country, meeting, race] = parts;
     return {
       meeting,

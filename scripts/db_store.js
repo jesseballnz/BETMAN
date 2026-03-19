@@ -40,8 +40,8 @@ async function ensureSchema(pg){
 async function upsertData(pg, { tenantId = 'default', key, payload, updatedAt = null }){
   if (!pg || !key) return;
   const ts = updatedAt ? new Date(updatedAt) : new Date();
+  if (payload === undefined) throw new Error(`Invalid payload for key ${key}`);
   const json = JSON.stringify(payload);
-  if (json === undefined) throw new Error(`Invalid payload for key ${key}`);
   await pg.query(
     `INSERT INTO betman_data (tenant_id, key, payload, updated_at)
      VALUES ($1, $2, $3::jsonb, $4)

@@ -97,6 +97,6 @@ async function main(){
 
 main().catch(async err => {
   console.error('[db_sync] failed', err.message || err);
-  await closePool().catch(()=>{});
+  await closePool().catch(e => console.error('[db_sync] pool cleanup failed:', e.message));
   process.exit(1);
 });
