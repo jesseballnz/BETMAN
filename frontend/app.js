@@ -1596,6 +1596,8 @@ function renderMarketMovers(rows){
     });
   });
 
+  const selectedRaceNum = selectedRace ? String(selectedRace.race_number || selectedRace.race || '').replace(/^R/i,'').trim() : '';
+  const selectedMeetingKey = selectedRace ? normalizeMeetingKey(selectedRace.meeting || '') : '';
   const scoped = meetingUpcomingMovers
     .filter(r => {
       const move = Number(r.pctMove || 0);
@@ -1603,6 +1605,11 @@ function renderMarketMovers(rows){
     })
     .slice()
     .sort((a,b) => {
+      const aRace = normalizeRaceNumber(a.race);
+      const bRace = normalizeRaceNumber(b.race);
+      const aSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(a.meeting) === selectedMeetingKey && aRace === selectedRaceNum;
+      const bSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(b.meeting) === selectedMeetingKey && bRace === selectedRaceNum;
+      if (aSelected !== bSelected) return aSelected ? -1 : 1;
       const ma = Number(a.minsToJump);
       const mb = Number(b.minsToJump);
       const hasA = Number.isFinite(ma);
