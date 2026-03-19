@@ -17,8 +17,16 @@ function loadJson(filePath, fallback = {}) {
   }
 }
 
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-XSS-Protection': '1; mode=block',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()'
+};
+
 function send(res, code, body, type = 'text/plain') {
-  res.writeHead(code, { 'Content-Type': type });
+  res.writeHead(code, { 'Content-Type': type, ...SECURITY_HEADERS });
   res.end(body);
 }
 

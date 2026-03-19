@@ -39,6 +39,40 @@ const BETMAN_OLLAMA_DEFAULT_BASE = 'http://office.waihekewater.com:11434';
 const DEFAULT_OLLAMA_FALLBACK_MODELS = ['qwen2.5:1.5b', 'llama3.2:3b', 'deepseek-r1:8b', 'llama3.1:8b'];
 const crypto = require('crypto');
 
+let bcryptHash, bcryptCompare;
+try {
+  const bcrypt = require('bcrypt');
+  bcryptHash = (pw) => bcrypt.hash(pw, 10);
+  bcryptCompare = (pw, hash) => bcrypt.compare(pw, hash);
+} catch {
+  // Fallback: use crypto scrypt for environments without native bcrypt
+  const { scrypt, randomBytes, timingSafeEqual } = require('crypto');
+  bcryptHash = (pw) => new Promise((resolve, reject) => {
+    const salt = randomBytes(16).toString('hex');
+    scrypt(pw, salt, 64, (err, dk) => {
+      if (err) reject(err);
+      else resolve(`scrypt:${salt}:${dk.toString('hex')}`);
+    });
+  });
+  bcryptCompare = (pw, hash) => new Promise((resolve, reject) => {
+    if (!hash || !hash.startsWith('scrypt:')) { resolve(pw === hash); return; }
+    const [, salt, key] = hash.split(':');
+    scrypt(pw, salt, 64, (err, dk) => {
+      if (err) reject(err);
+      else {
+        try {
+          resolve(timingSafeEqual(Buffer.from(key, 'hex'), dk));
+        } catch { resolve(false); }
+      }
+    });
+  });
+}
+
+function isPasswordHashed(pw) {
+  if (!pw || typeof pw !== 'string') return false;
+  return pw.startsWith('$2b$') || pw.startsWith('$2a$') || pw.startsWith('scrypt:');
+}
+
 const DB_URL = process.env.DATABASE_URL || process.env.BETMAN_DATABASE_URL || '';
 function readStripeSecretFromCreds(){
   try {
@@ -294,8 +328,35 @@ async function initAuthPersistence(){
   }
 }
 
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-XSS-Protection': '1; mode=block',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()'
+};
+
+const rateLimitBuckets = new Map();
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const RATE_LIMIT_MAX_ATTEMPTS = 15;
+
+function isRateLimited(key) {
+  const now = Date.now();
+  let bucket = rateLimitBuckets.get(key);
+  if (!bucket || (now - bucket.windowStart) > RATE_LIMIT_WINDOW_MS) {
+    bucket = { windowStart: now, count: 0 };
+    rateLimitBuckets.set(key, bucket);
+  }
+  bucket.count++;
+  if (rateLimitBuckets.size > 10000) {
+    const oldest = rateLimitBuckets.keys().next().value;
+    rateLimitBuckets.delete(oldest);
+  }
+  return bucket.count > RATE_LIMIT_MAX_ATTEMPTS;
+}
+
 function send(res, code, body, type='text/plain'){
-  res.writeHead(code, {'Content-Type': type});
+  res.writeHead(code, { 'Content-Type': type, ...SECURITY_HEADERS });
   res.end(body);
 }
 
@@ -683,7 +744,7 @@ function getSessionPrincipal(req){
   return row.principal;
 }
 
-function validateCredentials(username, password){
+async function validateCredentials(username, password){
   const user = normalizeUsername(username);
   const pass = String(password || '');
   const adminUser = normalizeUsername(authState.username);
@@ -692,15 +753,33 @@ function validateCredentials(username, password){
     principal.effectiveTenantId = effectiveTenantId(principal);
     return principal;
   }
-  const found = (authState.users || []).find(u => normalizeUsername(u.username) === user && u.password === pass);
-  if (!found) return null;
-  const role = found.role || 'user';
-  const principal = { username: found.username, role, isAdmin: role === 'admin', source: 'users', tenantId: normalizeTenantId(found.tenantId || 'default') };
-  principal.effectiveTenantId = effectiveTenantId(principal);
-  return principal;
+  for (const u of (authState.users || [])) {
+    if (normalizeUsername(u.username) !== user) continue;
+    const match = isPasswordHashed(u.password)
+      ? await bcryptCompare(pass, u.password)
+      : (pass === u.password);
+    if (!match) continue;
+    // Auto-upgrade plaintext passwords to hashed on successful login
+    if (!isPasswordHashed(u.password)) {
+      try {
+        const hashed = await bcryptHash(pass);
+        const users = [...(authState.users || [])];
+        const idx = users.findIndex(x => normalizeUsername(x.username) === user);
+        if (idx >= 0) {
+          users[idx] = { ...users[idx], password: hashed, updatedAt: new Date().toISOString() };
+          saveAuthState({ username: authState.username, password: authState.password, users });
+        }
+      } catch {}
+    }
+    const role = u.role || 'user';
+    const principal = { username: u.username, role, isAdmin: role === 'admin', source: 'users', tenantId: normalizeTenantId(u.tenantId || 'default') };
+    principal.effectiveTenantId = effectiveTenantId(principal);
+    return principal;
+  }
+  return null;
 }
 
-function getAuthPrincipal(req){
+async function getAuthPrincipal(req){
   const sessionPrincipal = getSessionPrincipal(req);
   if (sessionPrincipal) return sessionPrincipal;
 
@@ -726,8 +805,8 @@ function canUseOpenAiByPrincipal(principal){
   return false;
 }
 
-function requireAuth(req, res){
-  const principal = getAuthPrincipal(req);
+async function requireAuth(req, res){
+  const principal = await getAuthPrincipal(req);
   if (principal) {
     if (!principal.effectiveTenantId) principal.effectiveTenantId = effectiveTenantId(principal);
     req.authPrincipal = principal;
@@ -3049,7 +3128,7 @@ const server = http.createServer(async (req, res)=>{
   // Public login/landing routes
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/landing' || url.pathname === '/landing.html' || url.pathname === '/login')) {
     const forceLanding = ['1','true','yes'].includes(String(url.searchParams.get('logout') || '').toLowerCase());
-    const principal = forceLanding ? null : getAuthPrincipal(req);
+    const principal = forceLanding ? null : await getAuthPrincipal(req);
     if (principal) {
       const appPath = safePath('/index.html');
       res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
@@ -3073,6 +3152,10 @@ const server = http.createServer(async (req, res)=>{
   }
 
   if (req.method === 'POST' && url.pathname === '/api/login') {
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    if (isRateLimited(`login:${clientIp}`)) {
+      return okJson(res, { ok: false, error: 'rate_limited', retryAfterSeconds: 900 }, 429);
+    }
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
@@ -3080,7 +3163,7 @@ const server = http.createServer(async (req, res)=>{
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const username = String(payload.username || '').trim();
       const password = String(payload.password || '');
-      const principal = validateCredentials(username, password);
+      const principal = await validateCredentials(username, password);
       if (!principal) {
         const idx = (authState.users || []).findIndex(u => normalizeUsername(u.username) === normalizeUsername(username));
         if (idx >= 0) {
@@ -3220,9 +3303,13 @@ const server = http.createServer(async (req, res)=>{
   }
 
   if (req.method === 'POST' && url.pathname === '/api/set-password') {
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    if (isRateLimited(`setpw:${clientIp}`)) {
+      return okJson(res, { ok: false, error: 'rate_limited', retryAfterSeconds: 900 }, 429);
+    }
     let body='';
     req.on('data', c=>body+=c);
-    req.on('end', ()=>{
+    req.on('end', async ()=>{
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const token = String(payload.token || '').trim();
@@ -3234,7 +3321,8 @@ const server = http.createServer(async (req, res)=>{
       if (idx < 0) return okJson(res, { ok: false, error: 'invalid_token' }, 400);
       const exp = new Date(users[idx].setupExpiresAt || 0).getTime();
       if (!Number.isFinite(exp) || Date.now() > exp) return okJson(res, { ok: false, error: 'token_expired' }, 400);
-      users[idx] = { ...users[idx], password, setupToken: null, setupExpiresAt: null, updatedAt: new Date().toISOString() };
+      const hashedPassword = await bcryptHash(password);
+      users[idx] = { ...users[idx], password: hashedPassword, setupToken: null, setupExpiresAt: null, updatedAt: new Date().toISOString() };
       saveAuthState({ username: authState.username, password: authState.password, users });
       return okJson(res, { ok: true, user: users[idx].username });
     });
@@ -3287,14 +3375,18 @@ const server = http.createServer(async (req, res)=>{
   }
 
   if (req.method === 'POST' && url.pathname === '/api/signup-challenge') {
-    const a = Math.floor(Math.random() * 7) + 3;
-    const b = Math.floor(Math.random() * 7) + 2;
+    const a = crypto.randomInt(3, 10);
+    const b = crypto.randomInt(2, 9);
     const token = crypto.randomBytes(12).toString('hex');
     signupChallenges.set(token, { answer: String(a + b), exp: Date.now() + (5 * 60 * 1000) });
     return okJson(res, { ok: true, token, prompt: `Verification: what is ${a} + ${b}?` });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/signup') {
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    if (isRateLimited(`signup:${clientIp}`)) {
+      return okJson(res, { ok: false, error: 'rate_limited', retryAfterSeconds: 900 }, 429);
+    }
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
@@ -3337,6 +3429,7 @@ const server = http.createServer(async (req, res)=>{
       const emailSlug = email.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
       const tenantId = normalizeTenantId(emailSlug ? `acct_${emailSlug}` : 'default');
 
+      const hashedPassword = await bcryptHash(password);
       let newUser = {
         username: email,
         email,
@@ -3345,7 +3438,7 @@ const server = http.createServer(async (req, res)=>{
         lastName,
         companyName,
         name: planType === 'commercial' ? companyName : ([firstName, lastName].filter(v => v !== '').join(' ') || email),
-        password,
+        password: hashedPassword,
         tenantId,
         role: 'user',
         openaiEnabled: false,
@@ -3421,7 +3514,7 @@ const server = http.createServer(async (req, res)=>{
     return res.end();
   }
 
-  if (!requireAuth(req, res)) return;
+  if (!(await requireAuth(req, res))) return;
 
   // Race analysis cache endpoints (GET)
   if (req.method === 'GET' && url.pathname === '/api/race-analysis/list') {
@@ -4266,6 +4359,7 @@ if (url.pathname === '/api/ask-selection') {
           return okJson(res, { ok: false, error: 'username_exists' }, 409);
         }
 
+        const hashedPassword = await bcryptHash(password);
         let newUser = {
           username: email,
           email,
@@ -4274,7 +4368,7 @@ if (url.pathname === '/api/ask-selection') {
           lastName,
           companyName,
           name: planType === 'commercial' ? companyName : `${firstName} ${lastName}`,
-          password,
+          password: hashedPassword,
           tenantId,
           role: 'user',
           openaiEnabled: false,
