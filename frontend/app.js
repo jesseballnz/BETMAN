@@ -876,7 +876,7 @@ let lastRacesSnapshot = [];
 let lastRacesMeta = { dateStr: null, fetchedAt: null };
 let racesCacheWarning = '';
 const MEETING_LOCK_KEY = 'betmanMeetingLock';
-const RACE_CACHE_STORAGE_KEY = 'betmanRaceCache';
+const RACE_CACHE_STORAGE_KEY = 'betmanRaceCache.v2';
 const LAST_RACE_STORAGE_KEY = 'betmanLastRaceSelection';
 
 function currentSelectedDateStr(){
