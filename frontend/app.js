@@ -404,7 +404,7 @@ let racesCache = [];
 let selectedRace = null;
 let selectedRaceKey = null;
 
-const CONFIDENCE_SIGNAL_THRESHOLD = 40;
+let confidenceSignalThreshold = 40;
 let confidenceBaseStakeUnit = 1;
 let confidenceBoostStakeUnit = 2;
 let stakePerRace = 10;
@@ -533,11 +533,14 @@ function registerMeetingBiasFromUserText(text, meeting){
 
 function loadConfidenceStakePrefs(){
   try {
+    const threshold = Number(localStorage.getItem('confidenceSignalThreshold'));
     const base = Number(localStorage.getItem('confidenceBaseStakeUnit'));
     const boost = Number(localStorage.getItem('confidenceBoostStakeUnit'));
+    confidenceSignalThreshold = Number.isFinite(threshold) && threshold >= 0 ? threshold : 40;
     confidenceBaseStakeUnit = Number.isFinite(base) && base >= 0 ? base : 1;
     confidenceBoostStakeUnit = Number.isFinite(boost) && boost >= 0 ? boost : 2;
   } catch {
+    confidenceSignalThreshold = 40;
     confidenceBaseStakeUnit = 1;
     confidenceBoostStakeUnit = 2;
   }
@@ -5315,13 +5318,14 @@ function renderConfidenceBasedBets(){
 
   const controls = `
     <div class='ai-chat-input-row' style='margin:8px 0 10px;gap:10px;flex-wrap:wrap'>
+      <label class='sub' style='display:flex;align-items:center;gap:6px'>Signal Threshold <input id='confidenceSignalThresholdInput' type='number' min='0' max='100' step='1' value='${Number(confidenceSignalThreshold || 40).toFixed(0)}' style='width:72px' />%</label>
       <label class='sub' style='display:flex;align-items:center;gap:6px'>Base Stake <input id='confidenceBaseStakeInput' type='number' min='0' step='0.5' value='${Number(confidenceBaseStakeUnit || 1).toFixed(2)}' style='width:92px' /></label>
       <label class='sub' style='display:flex;align-items:center;gap:6px'>Boosted Stake <input id='confidenceBoostStakeInput' type='number' min='0' step='0.5' value='${Number(confidenceBoostStakeUnit || 2).toFixed(2)}' style='width:92px' /></label>
     </div>`;
 
   const kpis = `
     <div class='perf-kpis perf-kpis-secondary'>
-      <div class='perf-card'><div class='label'>Signal Threshold</div><div class='value'>≥ ${CONFIDENCE_SIGNAL_THRESHOLD}%</div></div>
+      <div class='perf-card'><div class='label'>Signal Threshold</div><div class='value'>≥ ${confidenceSignalThreshold}%</div></div>
       <div class='perf-card'><div class='label'>Qualifying Bets</div><div class='value'>${rows.length}</div></div>
       <div class='perf-card'><div class='label'>Base Stake Setting</div><div class='value'>$${Number(confidenceBaseStakeUnit || 0).toFixed(2)}</div></div>
       <div class='perf-card'><div class='label'>Boosted Stake Setting</div><div class='value'>$${Number(confidenceBoostStakeUnit || 0).toFixed(2)}</div></div>
@@ -5345,7 +5349,7 @@ function renderConfidenceBasedBets(){
   }).join('');
 
   wrap.innerHTML = `
-    <div class='perf-hint'>Confidence stakes are user-defined. Bets with signal ≥ ${CONFIDENCE_SIGNAL_THRESHOLD}% use your boosted stake setting.</div>
+    <div class='perf-hint'>Confidence stakes are user-defined. Bets with signal ≥ ${confidenceSignalThreshold}% use your boosted stake setting.</div>
     ${controls}
     ${kpis}
     <div class='table'>
@@ -5355,19 +5359,24 @@ function renderConfidenceBasedBets(){
       </table>
     </div>`;
 
+  const thresholdInput = $('confidenceSignalThresholdInput');
   const baseInput = $('confidenceBaseStakeInput');
   const boostInput = $('confidenceBoostStakeInput');
   const applyStakeSettings = () => {
+    const threshold = Number(thresholdInput?.value);
     const base = Number(baseInput?.value);
     const boost = Number(boostInput?.value);
+    confidenceSignalThreshold = Number.isFinite(threshold) && threshold >= 0 && threshold <= 100 ? threshold : 40;
     confidenceBaseStakeUnit = Number.isFinite(base) && base >= 0 ? base : 1;
     confidenceBoostStakeUnit = Number.isFinite(boost) && boost >= 0 ? boost : 2;
     try {
+      localStorage.setItem('confidenceSignalThreshold', String(confidenceSignalThreshold));
       localStorage.setItem('confidenceBaseStakeUnit', String(confidenceBaseStakeUnit));
       localStorage.setItem('confidenceBoostStakeUnit', String(confidenceBoostStakeUnit));
     } catch {}
     renderConfidenceBasedBets();
   };
+  thresholdInput?.addEventListener('change', applyStakeSettings);
   baseInput?.addEventListener('change', applyStakeSettings);
   boostInput?.addEventListener('change', applyStakeSettings);
 }
@@ -6518,7 +6527,7 @@ function isConfidenceBoostCandidate(row){
   const t = String(row?.type || '').toLowerCase();
   if (['top2','top3','top4','trifecta','multi'].includes(t)) return false;
   const p = confidenceSignalPct(row);
-  return Number.isFinite(p) && p >= CONFIDENCE_SIGNAL_THRESHOLD;
+  return Number.isFinite(p) && p >= confidenceSignalThreshold;
 }
 
 function sanitizeSuggestedRow(x){
