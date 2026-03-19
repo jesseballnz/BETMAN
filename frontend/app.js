@@ -5435,27 +5435,37 @@ async function loadPerformance(){
   const invested = returnAgg ? ((baseInvested || 0) + (exoticInvested || 0)) : null;
   const returnValueEl = $('betmanReturnValue');
   const returnSubEl = $('betmanReturnSub');
+  const returnBaseValueEl = $('betmanBaseReturnValue');
   const returnBaseEl = $('betmanBaseReturnSub');
+  const returnExoticValueEl = $('betmanExoticReturnValue');
   const returnExoticEl = $('betmanExoticReturnSub');
   const returnBarEl = $('betmanReturnBar');
+  const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
+  const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
+  const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
   if (returnValueEl) {
     const isNeg = Number.isFinite(netReturn) && netReturn < 0;
     returnValueEl.textContent = Number.isFinite(netReturn) ? fmtUnits(netReturn) : '—';
     returnValueEl.classList.toggle('neg', !!isNeg);
   }
-  if (returnSubEl || returnBaseEl || returnExoticEl) {
-    const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
-    const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
-    const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
-    if (returnSubEl) {
-      returnSubEl.textContent = `Combined: ${fmtUnits(netReturn)} on ${fmtUnits(invested)}${roi != null ? ` (${fmtPct(roi)})` : ''}`;
-    }
-    if (returnBaseEl) {
-      returnBaseEl.textContent = `Base strategies: ${fmtUnits(baseReturn)} on ${fmtUnits(baseInvested)}${baseRoi != null ? ` (${fmtPct(baseRoi)})` : ''}`;
-    }
-    if (returnExoticEl) {
-      returnExoticEl.textContent = `Exotics: ${fmtUnits(exoticReturn)} on ${fmtUnits(exoticInvested)}${exoticRoi != null ? ` (${fmtPct(exoticRoi)})` : ''}`;
-    }
+  if (returnBaseValueEl) {
+    const isNeg = Number.isFinite(baseReturn) && baseReturn < 0;
+    returnBaseValueEl.textContent = Number.isFinite(baseReturn) ? fmtUnits(baseReturn) : '—';
+    returnBaseValueEl.classList.toggle('neg', !!isNeg);
+  }
+  if (returnExoticValueEl) {
+    const isNeg = Number.isFinite(exoticReturn) && exoticReturn < 0;
+    returnExoticValueEl.textContent = Number.isFinite(exoticReturn) ? fmtUnits(exoticReturn) : '—';
+    returnExoticValueEl.classList.toggle('neg', !!isNeg);
+  }
+  if (returnSubEl) {
+    returnSubEl.textContent = `ROI ${roi != null ? fmtPct(roi) : '—'} · Stake ${fmtUnits(invested)}`;
+  }
+  if (returnBaseEl) {
+    returnBaseEl.textContent = `ROI ${baseRoi != null ? fmtPct(baseRoi) : '—'} · Stake ${fmtUnits(baseInvested)}`;
+  }
+  if (returnExoticEl) {
+    returnExoticEl.textContent = `ROI ${exoticRoi != null ? fmtPct(exoticRoi) : '—'} · Stake ${fmtUnits(exoticInvested)}`;
   }
   if (returnBarEl) {
     const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
