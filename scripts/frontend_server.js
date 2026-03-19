@@ -1084,7 +1084,13 @@ function aiAnswerRespectsSelections(answer, payload){
   return sels.every(s => {
     const name = normalizeRunnerName(s?.selection || '');
     if (!name) return true;
-    return txt.includes(name);
+    if (!txt.includes(name)) return false;
+    // Require substantive mention: name must appear near analysis context
+    const nameIdx = txt.indexOf(name);
+    const window = txt.slice(Math.max(0, nameIdx - 120), Math.min(txt.length, nameIdx + name.length + 120));
+    const hasContext = /barrier|jockey|trainer|form|odds|edge|win|place|map|tempo|speed|probability|%|risk|value/i.test(window);
+    // Accept if name appears in a structured section or near analytical language
+    return hasContext || /[🏇🔎🧬📊🧮🏆💰🎙🏁📈•\-\|]/.test(window);
   });
 }
 
@@ -1187,9 +1193,10 @@ function raceAnalysisMatchesContext(answer, clientContext = {}){
 
   const hasMeeting = new RegExp(meeting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(txt);
   const raceMentions = [...txt.matchAll(/\bR(?:ace)?\s*([0-9]{1,2})\b/gi)].map(m => String(m[1]));
+  // Race number must appear if source is race-analysis and we have race context
   if (raceMentions.length && !raceMentions.includes(raceNo)) return false;
-  // Meeting name is preferred but not mandatory; avoid false fallback when model omits header text.
-  if (!hasMeeting && !raceMentions.length) return true;
+  // If answer has no race mentions at all AND no meeting mention, it likely analysed the wrong race
+  if (!hasMeeting && !raceMentions.length && txt.length > 200) return false;
   return true;
 }
 
@@ -2588,7 +2595,9 @@ function buildAiContextSummary({
 
   const summary = lines.filter(Boolean).join('\n');
   if (summary.length <= maxLength) return summary;
-  return `${summary.slice(0, maxLength - 1)}…`;
+  const truncated = `${summary.slice(0, maxLength - 1)}…`;
+  console.warn(`[ai-context] context truncated: ${summary.length} chars → ${maxLength} (dropped ${summary.length - maxLength} chars)`);
+  return truncated;
 }
 
 const BETMAN_ANALYST_SYSTEM_PROMPT = `You are BETMAN's senior racing analyst. Be direct, structured, and evidence-first.
@@ -2619,7 +2628,15 @@ Response format:
 - For Same-Race Multi/H2H: include explicit joint likelihood for each proposed pair (not just individual win%).
 - Optional: 3 short pundit lines + consensus when useful
 
-Tone: plain English, no fluff, no hype.`;
+Tone: plain English, no fluff, no hype.
+
+Priority rule for race-analysis:
+- ALWAYS begin with the race header: 🏇 <Meeting> – Race <N>: <Name>
+- ALWAYS mention every runner that appears in SELECTION_DATA by name with analysis.
+- If RACE_FIELD_DATA is provided, build full field profiles before narrative sections.
+- Include 3 pace scenarios (genuine, false, slow) and how each impacts the top 3.
+- Explicitly state pass conditions: "PASS this race if…" with specific triggers.
+- Confidence % must reflect expected strike rate: 80% = expect 4/5 correct, 40% = flip-a-coin territory.`;
 
 const BETMAN_CHAT_SYSTEM_PROMPT = `You are BETMAN's racing intelligence copilot.
 
