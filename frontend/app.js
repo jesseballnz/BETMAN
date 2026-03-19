@@ -5258,7 +5258,7 @@ async function loadPerformance(){
     $('perfWinPickPct').textContent = fmtPct(latestDaily.pick_breakdown?.win?.win_rate);
     $('perfRoiTote').textContent = fmtRoi(latestDaily.roi_tote);
     $('perfRoiRec').textContent = fmtRoi(latestDaily.roi_rec);
-    $('perfRoiFixed').textContent = fmtRoi(latestDaily.roi_rec);
+    $('perfRoiFixed').textContent = fmtRoi(latestDaily.roi_fixed);
     $('perfRoiSp').textContent = fmtRoi(latestDaily.roi_sp);
     $('perfRoiEw').textContent = fmtRoi(latestDaily.roi_ew);
     $('perfExoticHit').textContent = fmtPct(latestDaily.exotic_hit_rate);
