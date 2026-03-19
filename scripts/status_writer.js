@@ -21,6 +21,7 @@ function getArg(name, def){
 }
 
 const ROOT = path.resolve(__dirname, '..');
+const WORKSPACE_ROOT = path.resolve(ROOT, '..');
 const defaultStatePath = path.join(ROOT, 'memory', 'racing-poll-state.json');
 const statePath = path.resolve(getArg('state_path', defaultStatePath));
 const tenantId = String(process.env.TENANT_ID || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -671,6 +672,11 @@ appendJsonl(betPlanAuditPath, {
 
 fs.mkdirSync(path.dirname(statusPath), { recursive: true });
 fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+if (isDefaultTenant) {
+  try {
+    fs.writeFileSync(path.join(WORKSPACE_ROOT, 'status.json'), JSON.stringify(status, null, 2));
+  } catch {}
+}
 console.log(`status.json updated (${tenantId})`);
 
 if (process.env.DATABASE_URL || process.env.BETMAN_DATABASE_URL) {

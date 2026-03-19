@@ -8,6 +8,7 @@ function loadJson(p, fallback){
 }
 
 const ROOT = path.resolve(__dirname, '..');
+const WORKSPACE_ROOT = path.resolve(ROOT, '..');
 const statePath = path.join(ROOT, 'memory', 'racing-poll-state.json');
 const state = loadJson(statePath, null);
 if (!state) process.exit(1);
@@ -143,8 +144,12 @@ const races = Object.entries(state.races || {})
 const outDir = path.join(ROOT, 'frontend', 'data');
 const outPath = path.join(outDir, 'races.json');
 const datedPath = path.join(outDir, `races-${state.date}.json`);
-fs.writeFileSync(outPath, JSON.stringify({ updatedAt: state.ts, date: state.date, races }, null, 2));
-fs.writeFileSync(datedPath, JSON.stringify({ updatedAt: state.ts, date: state.date, races }, null, 2));
+const payload = { updatedAt: state.ts, date: state.date, races };
+fs.writeFileSync(outPath, JSON.stringify(payload, null, 2));
+fs.writeFileSync(datedPath, JSON.stringify(payload, null, 2));
+try {
+  fs.writeFileSync(path.join(WORKSPACE_ROOT, 'races.json'), JSON.stringify(payload, null, 2));
+} catch {}
 console.log('races.json updated');
 
 if (process.env.DATABASE_URL || process.env.BETMAN_DATABASE_URL) {
