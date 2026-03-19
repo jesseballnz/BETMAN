@@ -276,10 +276,23 @@
           <h4>BETMAN RETURN</h4>
           <div class="return-meter">
             <div class="return-bar"><span id="betmanReturnBar"></span></div>
-            <div class="return-value" id="betmanReturnValue">—</div>
-            <div class="return-sub" id="betmanReturnSub">Combined invested: —</div>
-            <div class="return-sub" id="betmanBaseReturnSub">Base strategies: —</div>
-            <div class="return-sub" id="betmanExoticReturnSub">Exotics: —</div>
+            <div class="return-cards">
+              <div class="return-card return-card-combined">
+                <div class="return-card-label">Combined P/L</div>
+                <div class="return-card-value" id="betmanReturnValue">—</div>
+                <div class="return-card-sub" id="betmanReturnSub">ROI — · Stake —</div>
+              </div>
+              <div class="return-card return-card-base">
+                <div class="return-card-label">Base Strategies P/L</div>
+                <div class="return-card-value" id="betmanBaseReturnValue">—</div>
+                <div class="return-card-sub" id="betmanBaseReturnSub">ROI — · Stake —</div>
+              </div>
+              <div class="return-card return-card-exotic">
+                <div class="return-card-label">Exotics P/L</div>
+                <div class="return-card-value" id="betmanExoticReturnValue">—</div>
+                <div class="return-card-sub" id="betmanExoticReturnSub">ROI — · Stake —</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -639,6 +652,6 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
   <script src="perf-utils.js?v=20260318-2120"></script>
-  <script src="app.js?v=20260320-0718"></script>
+  <script src="app.js?v=20260320-0719"></script>
 </body>
 </html>
