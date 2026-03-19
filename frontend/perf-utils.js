@@ -42,6 +42,7 @@
       agg.wins += wins;
       agg.races_run += r.races_run ?? 0;
       agg.races_won += r.races_won ?? 0;
+      agg.races_played = (agg.races_played || 0) + (r.races_played ?? 0);
       if (Number.isFinite(r.roi_rec)) agg.roi_rec_profit += r.roi_rec * roiStake;
       if (Number.isFinite(r.roi_sp)) {
         agg.roi_sp_profit += r.roi_sp * roiStake;
