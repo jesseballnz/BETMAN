@@ -295,7 +295,13 @@ async function initAuthPersistence(){
 }
 
 function send(res, code, body, type='text/plain'){
-  res.writeHead(code, {'Content-Type': type});
+  const headers = { 'Content-Type': type };
+  if (typeof type === 'string' && /text\/|javascript|json|css|html/i.test(type)) {
+    headers['Cache-Control'] = 'no-store, no-cache, must-revalidate';
+    headers['Pragma'] = 'no-cache';
+    headers['Expires'] = '0';
+  }
+  res.writeHead(code, headers);
   res.end(body);
 }
 
@@ -3043,6 +3049,109 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   };
 }
 
+
+
+function edgeThresholds(){
+  return {
+    periodMinBets: Number(process.env.BETMAN_EDGE_PERIOD_MIN_BETS || 20),
+    typeMinBets: Number(process.env.BETMAN_EDGE_TYPE_MIN_BETS || 8),
+    exoticMinBets: Number(process.env.BETMAN_EDGE_EXOTIC_MIN_BETS || 10)
+  };
+}
+
+function num(v){
+  return Number.isFinite(Number(v)) ? Number(v) : null;
+}
+
+function aggregateEdgeRows(rows, periodLabel, minBets){
+  const totalBets = rows.reduce((a,r)=>a+(Number(r.total_bets||0)),0);
+  const baseStake = rows.reduce((a,r)=>a+(Number(r.roi_stake_base || r.roi_stake || 0)),0);
+  const fixedProfit = rows.reduce((a,r)=>a+((num(r.roi_sp)||0) * Number(r.roi_stake_base || r.roi_stake || 0)),0);
+  const toteProfit = rows.reduce((a,r)=>a+((num(r.roi_tote)||0) * Number(r.roi_stake_base || r.roi_stake || 0)),0);
+  const deltaProfit = toteProfit - fixedProfit;
+  return {
+    period: periodLabel,
+    totalBets,
+    comparableBets: baseStake,
+    roiFixed: baseStake ? (fixedProfit / baseStake) : null,
+    roiTote: baseStake ? (toteProfit / baseStake) : null,
+    profitFixed: fixedProfit,
+    profitTote: toteProfit,
+    profitDelta: deltaProfit,
+    qualified: totalBets >= minBets,
+    thresholdMinBets: minBets
+  };
+}
+
+function aggregateTypeRows(rows, key, minBets){
+  let bets=0, stake=0, fixedProfit=0, toteProfit=0;
+  rows.forEach(r=>{
+    const src = key === 'longshots' ? (r.long_breakdown || {})
+      : key === 'exotics' ? (r.exotic_breakdown || {})
+      : ((r.pick_breakdown || {})[key] || {});
+    if (key === 'exotics') {
+      Object.values(src).forEach(ex => {
+        const b = Number(ex?.bets || 0);
+        const roiT = num(ex?.roi_tote);
+        bets += b;
+        if (Number.isFinite(roiT)) {
+          toteProfit += roiT * b;
+          stake += b;
+        }
+      });
+      return;
+    }
+    const b = Number(src.bets || 0);
+    const s = Number(src.roi_stake_units || src.stake_units || b || 0);
+    const roiF = num(src.roi_sp);
+    const roiT = num(src.roi_tote);
+    bets += b;
+    stake += s;
+    if (Number.isFinite(roiF)) fixedProfit += roiF * s;
+    if (Number.isFinite(roiT)) toteProfit += roiT * s;
+  });
+  const deltaProfit = toteProfit - fixedProfit;
+  return {
+    type: key,
+    bets,
+    comparableBets: stake,
+    roiFixed: stake ? (fixedProfit / stake) : null,
+    roiTote: stake ? (toteProfit / stake) : null,
+    profitFixed: fixedProfit,
+    profitTote: toteProfit,
+    profitDelta: deltaProfit,
+    qualified: bets >= minBets,
+    thresholdMinBets: minBets,
+    toteOnly: key === 'exotics'
+  };
+}
+
+function buildToteVsFixedEdgeReport(daily){
+  const data = (daily && typeof daily === 'object') ? daily : {};
+  const keys = Object.keys(data).sort();
+  const rows = keys.map(k => ({ key:k, ...(data[k]||{}) }));
+  const thresholds = edgeThresholds();
+  const latestDay = rows.length ? aggregateEdgeRows([rows[rows.length-1]], rows[rows.length-1].key, thresholds.periodMinBets) : null;
+  const weekRows = rows.slice(-7);
+  const monthRows = rows.slice(-30);
+  const periods = {
+    day: latestDay,
+    week: aggregateEdgeRows(weekRows, `Last ${weekRows.length} days`, thresholds.periodMinBets),
+    month: aggregateEdgeRows(monthRows, `Last ${monthRows.length} days`, thresholds.periodMinBets)
+  };
+  const typeKeys = ['win','ew','longshots','exotics'];
+  const byType = {
+    day: typeKeys.map(k => aggregateTypeRows(latestDay ? [rows[rows.length-1]] : [], k, k === 'exotics' ? thresholds.exoticMinBets : thresholds.typeMinBets)),
+    week: typeKeys.map(k => aggregateTypeRows(weekRows, k, k === 'exotics' ? thresholds.exoticMinBets : thresholds.typeMinBets)),
+    month: typeKeys.map(k => aggregateTypeRows(monthRows, k, k === 'exotics' ? thresholds.exoticMinBets : thresholds.typeMinBets))
+  };
+  return {
+    generatedAt: new Date().toISOString(),
+    thresholds,
+    periods,
+    byType
+  };
+}
 const server = http.createServer(async (req, res)=>{
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -3370,7 +3479,7 @@ const server = http.createServer(async (req, res)=>{
     const types = { '.css':'text/css', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp' };
     const mime = types[ext] || 'application/octet-stream';
     if (req.method === 'HEAD') {
-      res.writeHead(200, { 'Content-Type': mime });
+      res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' });
       return res.end();
     }
     return send(res, 200, fs.readFileSync(p), mime);
@@ -3380,7 +3489,7 @@ const server = http.createServer(async (req, res)=>{
     const p = safePath('/app.js');
     if (!p || !fs.existsSync(p)) return send(res, 404, 'not found');
     if (req.method === 'HEAD') {
-      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' });
       return res.end();
     }
     return send(res, 200, fs.readFileSync(p), 'application/javascript; charset=utf-8');
@@ -4440,6 +4549,15 @@ if (url.pathname === '/api/ask-selection') {
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
     return okJson(res, { ok: true, service: 'betman-api', ts: new Date().toISOString() });
+  }
+
+  if (req.method === 'GET' && (url.pathname === '/api/tote-vs-fixed-edge' || url.pathname === '/data/tote_vs_fixed_edge.json')) {
+    const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
+    const payload = DB_URL ? await loadDataSnapshotFromPg(tenantId, 'success_daily.json') : null;
+    const filename = 'success_daily.json';
+    const filePath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', filename), filename);
+    const daily = payload || loadJson(filePath, {});
+    return okJson(res, buildToteVsFixedEdgeReport(daily));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/ai-models') {

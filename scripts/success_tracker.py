@@ -120,6 +120,11 @@ def load_bets_by_tenant():
                             'type': bet_type,
                             'odds': odds,
                             'place_odds': place_odds,
+                            'pedigreeTag': item.get('pedigreeTag'),
+                            'pedigreeScore': item.get('pedigreeScore'),
+                            'pedigreeConfidence': item.get('pedigreeConfidence'),
+                            'pedigreeRelativeEdge': item.get('pedigreeRelativeEdge'),
+                            'pedigreeArchetype': item.get('pedigreeArchetype'),
                             'ts': ts_val
                         }
                 for item in row.get('interestingTop', []) or []:
@@ -167,6 +172,19 @@ def load_results_for_date(date):
             positions = {r.get('position'): r.get('name') for r in res if r.get('position') and r.get('name')}
             if not positions:
                 continue
+            runners = (data.get('data') or {}).get('runners') or []
+            odds_by_name = {}
+            for runner in runners:
+                name = runner.get('name')
+                if not name:
+                    continue
+                odds = runner.get('odds') or {}
+                odds_by_name[norm(name)] = {
+                    'fixed_win': odds.get('fixed_win'),
+                    'fixed_place': odds.get('fixed_place'),
+                    'tote_win': odds.get('pool_win'),
+                    'tote_place': odds.get('pool_place')
+                }
             dividends_raw = (data.get('data') or {}).get('dividends') or []
             dividends = {}
             for d in dividends_raw:
@@ -181,7 +199,7 @@ def load_results_for_date(date):
                 elif 'first4' in name or 'first 4' in name:
                     dividends['first4'] = div
             key = (norm(meeting), str(race_no))
-            results[key] = { 'positions': positions, 'dividends': dividends }
+            results[key] = { 'positions': positions, 'dividends': dividends, 'odds_by_name': odds_by_name }
     return results
 
 
@@ -243,7 +261,12 @@ def evaluate_bets(bets):
                     'top4': { 'bets': 0, 'hits': 0, 'roi_profit': 0.0, 'roi_stake': 0.0 },
                     'trifecta': { 'bets': 0, 'hits': 0, 'roi_profit': 0.0, 'roi_stake': 0.0 }
                 },
-                'long_breakdown': { 'bets': 0, 'stake_units': 0, 'roi_stake_units': 0, 'wins': 0, 'roi_rec_profit': 0.0, 'roi_sp_profit': 0.0, 'roi_tote_profit': 0.0, 'roi_ew_profit': 0.0 }
+                'long_breakdown': { 'bets': 0, 'stake_units': 0, 'roi_stake_units': 0, 'wins': 0, 'roi_rec_profit': 0.0, 'roi_sp_profit': 0.0, 'roi_tote_profit': 0.0, 'roi_ew_profit': 0.0 },
+                'pedigree_breakdown': {
+                    'bets': 0, 'stake_units': 0, 'roi_stake_units': 0, 'wins': 0, 'roi_rec_profit': 0.0,
+                    'score_sum': 0.0, 'score_count': 0, 'confidence_sum': 0.0, 'confidence_count': 0,
+                    'edge_sum': 0.0, 'edge_count': 0, 'archetypes': {}
+                }
             }
         return daily[date]
 
@@ -263,6 +286,7 @@ def evaluate_bets(bets):
             continue
         positions = race_result.get('positions') or {}
         dividends = race_result.get('dividends') or {}
+        odds_by_name = race_result.get('odds_by_name') or {}
         if not positions:
             continue
 
@@ -283,6 +307,12 @@ def evaluate_bets(bets):
             day['roi_stake'] += stake_units
             target['roi_rec_profit'] += profit
             target['roi_stake_units'] += stake_units
+
+        def add_market_profit(target, key, profit, stake_units):
+            if profit is None:
+                return
+            day[f'roi_{key}_profit'] += profit
+            target[f'roi_{key}_profit'] += profit
 
         if bet_type in ['win', 'odds_runner', 'ew']:
             stake_units = 2 if bet_type == 'ew' else 1
@@ -324,6 +354,75 @@ def evaluate_bets(bets):
                     profit = (odds - 1.0) if hit else -1.0
             if profit is not None:
                 add_profit(pick, profit, stake_units)
+                sel_odds = odds_by_name.get(norm(selection)) or {}
+                fixed_win = sel_odds.get('fixed_win')
+                tote_win = sel_odds.get('tote_win')
+                if bet_type == 'ew':
+                    fixed_place = sel_odds.get('fixed_place')
+                    tote_place = sel_odds.get('tote_place')
+                    fixed_profit = None
+                    tote_profit = None
+                    if fixed_win is not None and fixed_place is not None:
+                        if pos_by_name.get(norm(selection)) == 1:
+                            fixed_profit = (fixed_win - 1.0) + (fixed_place - 1.0)
+                        elif hit:
+                            fixed_profit = (fixed_place - 1.0) - 1.0
+                        else:
+                            fixed_profit = -2.0
+                    if tote_win is not None and tote_place is not None:
+                        if pos_by_name.get(norm(selection)) == 1:
+                            tote_profit = (tote_win - 1.0) + (tote_place - 1.0)
+                        elif hit:
+                            tote_profit = (tote_place - 1.0) - 1.0
+                        else:
+                            tote_profit = -2.0
+                    add_market_profit(pick, 'sp', fixed_profit, stake_units)
+                    add_market_profit(pick, 'tote', tote_profit, stake_units)
+                    if odds is not None and odds >= 12:
+                        add_market_profit(day['long_breakdown'], 'sp', fixed_profit, stake_units)
+                        add_market_profit(day['long_breakdown'], 'tote', tote_profit, stake_units)
+                else:
+                    fixed_profit = (fixed_win - 1.0) if (fixed_win is not None and hit) else (-1.0 if fixed_win is not None else None)
+                    tote_profit = (tote_win - 1.0) if (tote_win is not None and hit) else (-1.0 if tote_win is not None else None)
+                    add_market_profit(pick, 'sp', fixed_profit, stake_units)
+                    add_market_profit(pick, 'tote', tote_profit, stake_units)
+                    if odds is not None and odds >= 12:
+                        add_market_profit(day['long_breakdown'], 'sp', fixed_profit, stake_units)
+                        add_market_profit(day['long_breakdown'], 'tote', tote_profit, stake_units)
+
+                if bet.get('pedigreeTag') == 'Pedigree Advantage':
+                    ped = day['pedigree_breakdown']
+                    ped['bets'] += 1
+                    ped['stake_units'] += stake_units
+                    ped['roi_stake_units'] += stake_units
+                    if hit:
+                        ped['wins'] += 1
+                    ped['roi_rec_profit'] += profit
+                    try:
+                        score = float(bet.get('pedigreeScore'))
+                        ped['score_sum'] += score
+                        ped['score_count'] += 1
+                    except Exception:
+                        pass
+                    try:
+                        conf = float(bet.get('pedigreeConfidence'))
+                        ped['confidence_sum'] += conf
+                        ped['confidence_count'] += 1
+                    except Exception:
+                        pass
+                    try:
+                        edge = float(bet.get('pedigreeRelativeEdge'))
+                        ped['edge_sum'] += edge
+                        ped['edge_count'] += 1
+                    except Exception:
+                        pass
+                    arch = bet.get('pedigreeArchetype')
+                    if arch:
+                        bucket = ped['archetypes'].setdefault(arch, { 'bets': 0, 'wins': 0, 'profit': 0.0 })
+                        bucket['bets'] += 1
+                        if hit:
+                            bucket['wins'] += 1
+                        bucket['profit'] += profit
                 if odds is not None and odds >= 12:
                     long_pick = day['long_breakdown']
                     long_pick['bets'] += 1
@@ -414,8 +513,8 @@ def evaluate_bets(bets):
         roi_rec_profit_total = d['roi_rec_profit'] + d.get('exotic_roi_profit', 0)
         roi_rec_base = (d['roi_rec_profit'] / roi_stake_base) if roi_stake_base else None
         roi_rec = (roi_rec_profit_total / roi_stake_total) if roi_stake_total else None
-        roi_sp = None
-        roi_tote = None
+        roi_sp = (d['roi_sp_profit'] / roi_stake_base) if roi_stake_base else None
+        roi_tote = (d['roi_tote_profit'] / roi_stake_base) if roi_stake_base else None
         roi_ew = None
         exotic_hit_rate = (d['exotic_hits'] / d['exotic_bets']) if d['exotic_bets'] else None
         exotic_roi = (d['exotic_roi_profit'] / d['exotic_roi_stake']) if d['exotic_roi_stake'] else None
@@ -432,8 +531,8 @@ def evaluate_bets(bets):
                 'roi_stake_units': roi_stake,
                 'win_rate': (pwins / pbets) if pbets else None,
                 'roi_rec': (pdata['roi_rec_profit'] / roi_stake) if roi_stake else None,
-                'roi_sp': None,
-                'roi_tote': None,
+                'roi_sp': (pdata['roi_sp_profit'] / roi_stake) if roi_stake else None,
+                'roi_tote': (pdata['roi_tote_profit'] / roi_stake) if roi_stake else None,
                 'roi_ew': None
             }
 
@@ -460,9 +559,26 @@ def evaluate_bets(bets):
             'roi_stake_units': long_roi_stake,
             'win_rate': (long_wins / long_bets) if long_bets else None,
             'roi_rec': (long_pick.get('roi_rec_profit', 0) / long_roi_stake) if long_roi_stake else None,
-            'roi_sp': None,
-            'roi_tote': None,
+            'roi_sp': (long_pick.get('roi_sp_profit', 0) / long_roi_stake) if long_roi_stake else None,
+            'roi_tote': (long_pick.get('roi_tote_profit', 0) / long_roi_stake) if long_roi_stake else None,
             'roi_ew': None
+        }
+
+        pedigree_pick = d.get('pedigree_breakdown') or {}
+        pedigree_bets = pedigree_pick.get('bets', 0)
+        pedigree_wins = pedigree_pick.get('wins', 0)
+        pedigree_stake = pedigree_pick.get('stake_units', pedigree_bets)
+        pedigree_roi_stake = pedigree_pick.get('roi_stake_units', pedigree_stake)
+        pedigree_breakdown = {
+            'bets': pedigree_bets,
+            'stake_units': pedigree_stake,
+            'roi_stake_units': pedigree_roi_stake,
+            'win_rate': (pedigree_wins / pedigree_bets) if pedigree_bets else None,
+            'roi_rec': (pedigree_pick.get('roi_rec_profit', 0) / pedigree_roi_stake) if pedigree_roi_stake else None,
+            'avg_score': (pedigree_pick.get('score_sum', 0) / pedigree_pick.get('score_count', 1)) if pedigree_pick.get('score_count', 0) else None,
+            'avg_confidence': (pedigree_pick.get('confidence_sum', 0) / pedigree_pick.get('confidence_count', 1)) if pedigree_pick.get('confidence_count', 0) else None,
+            'avg_edge': (pedigree_pick.get('edge_sum', 0) / pedigree_pick.get('edge_count', 1)) if pedigree_pick.get('edge_count', 0) else None,
+            'archetypes': pedigree_pick.get('archetypes', {})
         }
 
         out[date] = {
@@ -486,7 +602,8 @@ def evaluate_bets(bets):
             'exotic_roi_stake': d.get('exotic_roi_stake', 0),
             'pick_breakdown': pick_breakdown,
             'exotic_breakdown': exotic_breakdown,
-            'long_breakdown': long_breakdown
+            'long_breakdown': long_breakdown,
+            'pedigree_breakdown': pedigree_breakdown
         }
 
     filtered = {}
@@ -555,6 +672,10 @@ def group_periods(daily, mode):
         g['races_won'] += d.get('races_won', 0)
         if isinstance(d['roi_rec'], (int, float)):
             g['roi_rec_profit'] += d['roi_rec'] * (d.get('roi_stake', d.get('total_stake', d.get('total_bets', 0))) or 0)
+        if isinstance(d.get('roi_sp'), (int, float)):
+            g['roi_sp_profit'] += d['roi_sp'] * (d.get('roi_stake_base', d.get('roi_stake', d.get('total_stake', d.get('total_bets', 0)))) or 0)
+        if isinstance(d.get('roi_tote'), (int, float)):
+            g['roi_tote_profit'] += d['roi_tote'] * (d.get('roi_stake_base', d.get('roi_stake', d.get('total_stake', d.get('total_bets', 0)))) or 0)
         if isinstance(d['exotic_hit_rate'], (int, float)):
             g['exotic_hits'] += d['exotic_hit_rate'] * (d.get('exotic_bets') or 0)
         g['exotic_bets'] += d.get('exotic_bets') or 0
@@ -580,8 +701,8 @@ def group_periods(daily, mode):
             'races_won': g.get('races_won', 0),
             'win_rate': (wins / win_bets) if win_bets else None,
             'roi_rec': (g['roi_rec_profit'] / roi_stake) if roi_stake else None,
-            'roi_sp': None,
-            'roi_tote': None,
+            'roi_sp': (g['roi_sp_profit'] / roi_stake) if roi_stake else None,
+            'roi_tote': (g['roi_tote_profit'] / roi_stake) if roi_stake else None,
             'roi_ew': None,
             'exotic_hit_rate': (g['exotic_hits'] / g['exotic_bets']) if g['exotic_bets'] else None,
             'exotic_roi_tote': (g['exotic_roi_profit'] / g['exotic_roi_stake']) if g['exotic_roi_stake'] else None

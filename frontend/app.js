@@ -4723,6 +4723,41 @@ function betPlanLabel(window){
   return 'Latest Day';
 }
 
+function aggregatePedigreePerformance(daily, window){
+  if (!daily || typeof daily !== 'object') return null;
+  const keys = Object.keys(daily).sort().reverse();
+  const days = Math.max(1, betPlanWindowDays(window));
+  const selected = keys.slice(0, days);
+  if (!selected.length) return null;
+  const agg = { bets: 0, wins: 0, stake: 0, profit: 0, scoreSum: 0, scoreCount: 0, confSum: 0, confCount: 0, edgeSum: 0, edgeCount: 0, archetypes: {} };
+  selected.forEach(key => {
+    const ped = daily[key]?.pedigree_breakdown || {};
+    agg.bets += Number(ped.bets || 0);
+    agg.wins += Number((ped.win_rate != null && ped.bets != null) ? Math.round(ped.win_rate * ped.bets) : 0);
+    agg.stake += Number(ped.roi_stake_units || ped.stake_units || 0);
+    agg.profit += Number.isFinite(ped.roi_rec) && Number.isFinite(ped.roi_stake_units || ped.stake_units) ? Number(ped.roi_rec) * Number(ped.roi_stake_units || ped.stake_units || 0) : 0;
+    if (Number.isFinite(ped.avg_score)) { agg.scoreSum += Number(ped.avg_score) * Number(ped.bets || 0); agg.scoreCount += Number(ped.bets || 0); }
+    if (Number.isFinite(ped.avg_confidence)) { agg.confSum += Number(ped.avg_confidence) * Number(ped.bets || 0); agg.confCount += Number(ped.bets || 0); }
+    if (Number.isFinite(ped.avg_edge)) { agg.edgeSum += Number(ped.avg_edge) * Number(ped.bets || 0); agg.edgeCount += Number(ped.bets || 0); }
+    const archetypes = ped.archetypes || {};
+    Object.entries(archetypes).forEach(([arch, vals]) => {
+      if (!agg.archetypes[arch]) agg.archetypes[arch] = { bets: 0, wins: 0, profit: 0 };
+      agg.archetypes[arch].bets += Number(vals?.bets || 0);
+      agg.archetypes[arch].wins += Number(vals?.wins || 0);
+      agg.archetypes[arch].profit += Number(vals?.profit || 0);
+    });
+  });
+  return {
+    bets: agg.bets,
+    winRate: agg.bets ? agg.wins / agg.bets : null,
+    roiRec: agg.stake ? agg.profit / agg.stake : null,
+    avgScore: agg.scoreCount ? agg.scoreSum / agg.scoreCount : null,
+    avgConfidence: agg.confCount ? agg.confSum / agg.confCount : null,
+    avgEdge: agg.edgeCount ? agg.edgeSum / agg.edgeCount : null,
+    archetypes: agg.archetypes
+  };
+}
+
 function computeBetPlanStats(daily, window){
   if (!daily || typeof daily !== 'object') return null;
   const agg = aggregateLastNDays(daily, betPlanWindowDays(window));
@@ -4766,9 +4801,50 @@ function computeBetPlanStats(daily, window){
       win: summarizePick(agg.pick?.win),
       odds: summarizePick(agg.pick?.odds_runner),
       ew: summarizePick(agg.pick?.ew),
-      long: summarizePick(agg.long)
+      long: summarizePick(agg.long),
+      pedigree: {
+        ...summarizePick(agg.pedigree),
+        avgScore: agg.pedigree?.score_count ? (agg.pedigree.score_sum / agg.pedigree.score_count) : null,
+        avgConfidence: agg.pedigree?.confidence_count ? (agg.pedigree.confidence_sum / agg.pedigree.confidence_count) : null,
+        avgEdge: agg.pedigree?.edge_count ? (agg.pedigree.edge_sum / agg.pedigree.edge_count) : null,
+        archetypes: agg.pedigree?.archetypes || {}
+      }
     }
   };
+}
+
+let signalThresholdAuditCache = null;
+
+function renderSignalThresholdAuditPanel(audit){
+  const wrap = $('betPlanPerformanceBreakdown');
+  if (!wrap || !audit) return '';
+  const renderBucketList = (obj, mode) => Object.entries(obj || {}).slice(0, 6).map(([k,v]) => `<div>${escapeHtml(k)} — Bets ${v?.bets || 0} · Win ${fmtPct(v?.winRate)}${mode ? ` · ROI ${fmtRoi(v?.roi)}` : ''}</div>`).join('') || '<div>No data</div>';
+  const goodBuckets = Object.fromEntries(Object.entries(audit.byEdgeBand || {}).filter(([,v]) => Number(v?.roi) > 0).sort((a,b)=>Number(b[1].roi)-Number(a[1].roi)).slice(0,5));
+  const badBuckets = Object.fromEntries(Object.entries(audit.byEdgeBand || {}).filter(([,v]) => Number(v?.roi) < 0).sort((a,b)=>Number(a[1].roi)-Number(b[1].roi)).slice(0,5));
+  const blockedBuckets = {
+    '0-2 edge': audit.byEdgeBand?.['0-2'] || null,
+    '2-4 edge @ 5-8 odds': audit.topIntersections?.['20-25 | 2-4 | 5-8'] || audit.topIntersections?.['15-20 | 2-4 | 5-8'] || null,
+    '20-25 model band': audit.byProbabilityBand?.['20-25'] || null
+  };
+  const policy = [
+    'Main bet: edge ≥ 6 pts, confidence ≥ 65',
+    'Secondary bet: edge ≥ 4 pts, confidence ≥ 58',
+    'Block 0–2 pt edge',
+    'Block 2–4 pt edge in 5–8 odds range',
+    'Block toxic 20–25% model band unless exceptional support',
+    'Block COLD form and track-dislike runners'
+  ];
+  return `<div class='bet-plan-breakdown-card' style='grid-column:1 / -1'>
+    <div class='label'>Signal Threshold Audit v2</div>
+    <div style='margin:6px 0 10px'>Current active threshold policy</div>
+    <ul>${policy.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>
+    <div style='margin-top:10px'><b>Good buckets</b></div>
+    ${renderBucketList(goodBuckets, true)}
+    <div style='margin-top:10px'><b>Bad buckets</b></div>
+    ${renderBucketList(badBuckets, true)}
+    <div style='margin-top:10px'><b>Blocked buckets</b></div>
+    ${renderBucketList(blockedBuckets, true)}
+  </div>`;
 }
 
 function renderBetPlanPerformance(daily){
@@ -4817,6 +4893,7 @@ function renderBetPlanPerformance(daily){
     </div>`;
   };
   const ewBets = stats.strategyBreakdown?.ew?.bets ?? 0;
+  const pedigreeStats = aggregatePedigreePerformance(cache, betPlanPerfWindow);
   const cards = `
     <div class='perf-kpis'>
       <div class='perf-card'><div class='label'>Window</div><div class='value'>${betPlanLabel(betPlanPerfWindow)}</div></div>
@@ -4829,17 +4906,34 @@ function renderBetPlanPerformance(daily){
       <div class='perf-card' data-roi-only><div class='label'>Exotic ROI</div><div class='value'>${fmtRoi(stats.exoticRoi)}</div></div>
       <div class='perf-card'><div class='label'>Settled Races</div><div class='value'>${stats.racesRun ?? '—'}</div></div>
       <div class='perf-card'><div class='label'>Settled Won</div><div class='value'>${stats.racesWon ?? '—'}</div></div>
+    </div>
+    <div class='perf-kpis perf-kpis-secondary' style='margin-top:10px'>
+      <div class='perf-card'><div class='label'>Pedigree Adv Bets</div><div class='value'>${pedigreeStats?.bets ?? 0}</div></div>
+      <div class='perf-card'><div class='label'>Pedigree Win Rate</div><div class='value win-metric'>${fmtPct(pedigreeStats?.winRate)}</div></div>
+      <div class='perf-card' data-roi-only><div class='label'>Pedigree ROI</div><div class='value'>${fmtRoi(pedigreeStats?.roiRec)}</div></div>
+      <div class='perf-card'><div class='label'>Avg Ped Score</div><div class='value'>${Number.isFinite(pedigreeStats?.avgScore) ? pedigreeStats.avgScore.toFixed(1) : '—'}</div></div>
+      <div class='perf-card'><div class='label'>Avg Ped Conf</div><div class='value'>${Number.isFinite(pedigreeStats?.avgConfidence) ? pedigreeStats.avgConfidence.toFixed(1)+'%' : '—'}</div></div>
+      <div class='perf-card'><div class='label'>Avg Ped Edge</div><div class='value'>${Number.isFinite(pedigreeStats?.avgEdge) ? (pedigreeStats.avgEdge >= 0 ? '+' : '') + pedigreeStats.avgEdge.toFixed(1) : '—'}</div></div>
     </div>`;
   metricsWrap.innerHTML = cards;
 
   if (breakdownWrap) {
     const detail = stats.strategyBreakdown || {};
-    breakdownWrap.innerHTML = [
+    const pedigreeArchetypeLines = pedigreeStats?.archetypes ? Object.entries(pedigreeStats.archetypes)
+      .sort((a,b) => (b[1]?.bets || 0) - (a[1]?.bets || 0))
+      .slice(0, 6)
+      .map(([arch, vals]) => `<div>${escapeHtml(arch)} — Bets ${vals?.bets || 0} · Win ${fmtPct((vals?.bets || 0) ? ((vals?.wins || 0) / (vals?.bets || 0)) : null)} · ${showRoi ? `ROI ${fmtRoi((vals?.bets || 0) ? ((vals?.profit || 0) / (vals?.bets || 0)) : null)}` : ''}</div>`)
+      .join('') : '';
+    const cardsHtml = [
       ['Win', detail.win],
       ['Odds Runner', detail.odds],
       ['EW', detail.ew],
-      ['Long', detail.long]
+      ['Long', detail.long],
+      ['Pedigree Advantage', detail.pedigree]
     ].map(([label, data]) => buildBreakdownCard(label, data)).join('');
+    const pedigreeExtra = pedigreeArchetypeLines ? `<div class='bet-plan-breakdown-card' style='grid-column:1 / -1'><div class='label'>Pedigree by Archetype</div>${pedigreeArchetypeLines}</div>` : '';
+    const thresholdAuditPanel = renderSignalThresholdAuditPanel(signalThresholdAuditCache);
+    breakdownWrap.innerHTML = `${cardsHtml}${pedigreeExtra}${thresholdAuditPanel}`;
   }
 
   const windows = ['day','week','month'];
@@ -4873,36 +4967,110 @@ function renderBetPlanPerformance(daily){
         <tbody>${rows}</tbody>
       </table>`
     : '<div class="sub">No bet-plan history available.</div>';
-  updateBetmanReturn(stats);
+  updateBetmanReturn();
   applyPerformanceVisibility();
 }
 
-function updateBetmanReturn(stats){
-  const baseReturn = stats?.baseProfit ?? null;
-  const baseInvested = stats?.baseStake ?? null;
-  const exoticReturn = stats?.exoticProfit ?? null;
-  const exoticInvested = stats?.exoticStake ?? null;
+function gaugeSvg(roi){
+  const pct = Number.isFinite(roi) ? Math.min(Math.abs(roi) * 100, 100) : 0;
+  const label = Number.isFinite(roi) ? `${(roi * 100).toFixed(1)}%` : '—';
+  const r = 18;
+  const c = 2 * Math.PI * r;
+  const fill = (pct / 100) * c;
+  const color = Number.isFinite(roi) && roi < 0 ? '#ff6b6b' : '#1fd184';
+  return `<svg width="58" height="58" viewBox="0 0 58 58" role="img" aria-label="ROI gauge ${label}">
+    <circle cx="29" cy="29" r="18" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6"></circle>
+    <circle cx="29" cy="29" r="18" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${fill} ${c}" transform="rotate(-90 29 29)"></circle>
+    <text x="29" y="33" text-anchor="middle" font-size="9" font-weight="700" fill="#dbe6f3">${label}</text>
+  </svg>`;
+}
+
+function renderReturnCardsGraphical(data){
+  const wrap = $('betmanReturnCards');
+  if (!wrap) return;
+  const maxStake = Math.max(1, data.invested || 0, data.baseInvested || 0, data.exoticInvested || 0);
+  const card = (title, value, roi, stake) => {
+    const roiPct = Number.isFinite(roi) ? Math.min(Math.abs(roi) * 100, 100) : 0;
+    const stakePct = Number.isFinite(stake) ? Math.min((Math.abs(stake) / maxStake) * 100, 100) : 0;
+    const color = value < 0 ? '#ff6b6b' : '#1fd184';
+    return `<div style="border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:170px;">
+      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8ea3b7;font-weight:700;">${title}</div>
+      <div style="font-size:clamp(24px,3vw,34px);font-weight:800;color:${color};line-height:1.1;word-break:break-word;">${fmtUnits(value)}</div>
+      <div style="font-size:13px;color:#9fb2c4;line-height:1.35;word-break:break-word;">ROI ${roi != null ? fmtPct(roi) : '—'} · Stake ${fmtUnits(stake)}</div>
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;">
+        ${gaugeSvg(roi)}
+        <div style="flex:1;min-width:170px;display:flex;flex-direction:column;gap:8px;">
+          <div>
+            <div style="font-size:10px;color:#90a5b9;margin-bottom:2px;">ROI intensity</div>
+            <div style="height:7px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden;"><span style="display:block;height:100%;width:${roiPct}%;background:${color};"></span></div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#90a5b9;margin-bottom:2px;">Stake weight</div>
+            <div style="height:7px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden;"><span style="display:block;height:100%;width:${stakePct}%;background:#6bb6ff;"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  };
+  wrap.innerHTML = [
+    card('Combined P/L', data.netReturn, data.roi, data.invested),
+    card('Base Strategies P/L', data.baseReturn, data.baseRoi, data.baseInvested),
+    card('Exotics P/L', data.exoticReturn, data.exoticRoi, data.exoticInvested)
+  ].join('');
+}
+
+function setReturnMeter(id, roi){
+  const el = $(id);
+  if (!el) return;
+  const pct = Number.isFinite(roi) ? Math.min(Math.abs(roi) * 100, 100) : 0;
+  el.style.width = `${pct}%`;
+  el.classList.toggle('neg', Number.isFinite(roi) && roi < 0);
+}
+
+function setReturnGauge(id, roi){
+  const el = $(id);
+  if (!el) return;
+  const pct = Number.isFinite(roi) ? Math.min(Math.abs(roi) * 100, 100) : 0;
+  const label = Number.isFinite(roi) ? `${(roi * 100).toFixed(1)}%` : '—';
+  const r = 18;
+  const c = 2 * Math.PI * r;
+  const fill = (pct / 100) * c;
+  const color = Number.isFinite(roi) && roi < 0 ? '#ff6b6b' : '#1fd184';
+  el.innerHTML = `<svg width="58" height="58" viewBox="0 0 58 58" role="img" aria-label="ROI gauge ${label}">
+    <circle cx="29" cy="29" r="18" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6"></circle>
+    <circle cx="29" cy="29" r="18" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${fill} ${c}" transform="rotate(-90 29 29)"></circle>
+    <text x="29" y="33" text-anchor="middle" font-size="9" font-weight="700" fill="#dbe6f3">${label}</text>
+  </svg>`;
+}
+
+function updateBetmanReturn(){
+  const daily = performanceDailyCache;
+  const allDays = daily ? Object.keys(daily).length : 0;
+  const agg = aggregateLastNDays(daily, allDays || 1);
+  const baseReturn = agg ? (agg.roi_rec_base_profit ?? agg.roi_rec_profit ?? null) : null;
+  const baseInvested = agg ? (agg.roi_stake_base ?? agg.roi_stake ?? null) : null;
+  const exoticReturn = agg ? (agg.exotic_profit || 0) : null;
+  const exoticInvested = agg ? (agg.exotic_stake || 0) : null;
   const netReturn = (baseReturn ?? 0) + (exoticReturn ?? 0);
   const invested = (baseInvested ?? 0) + (exoticInvested ?? 0);
-  const returnValueEl = $('betmanReturnValue');
-  const returnSubEl = $('betmanReturnSub');
+  const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
+  const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
+  const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
+
+  renderReturnCardsGraphical({
+    netReturn,
+    roi,
+    invested,
+    baseReturn,
+    baseRoi,
+    baseInvested,
+    exoticReturn,
+    exoticRoi,
+    exoticInvested
+  });
+
   const returnBarEl = $('betmanReturnBar');
-  if (returnValueEl) {
-    const isNeg = Number.isFinite(netReturn) && netReturn < 0;
-    returnValueEl.textContent = Number.isFinite(netReturn) ? fmtUnits(netReturn) : '—';
-    returnValueEl.classList.toggle('neg', !!isNeg);
-  }
-  if (returnSubEl) {
-    const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
-    const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
-    const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
-    const baseText = Number.isFinite(baseReturn) ? `Base: ${fmtUnits(baseReturn)}${baseRoi != null ? ` (${fmtPct(baseRoi)})` : ''}` : 'Base: —';
-    const exoticText = Number.isFinite(exoticReturn) ? `Exotics: ${fmtUnits(exoticReturn)}${exoticRoi != null ? ` (${fmtPct(exoticRoi)})` : ''}` : 'Exotics: —';
-    const roiText = roi != null ? `ROI: ${fmtPct(roi)}` : 'ROI: —';
-    returnSubEl.textContent = `${baseText} · ${exoticText} · ${roiText}`;
-  }
   if (returnBarEl) {
-    const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
     const pct = roi != null ? Math.min(Math.abs(roi) * 100, 100) : 0;
     returnBarEl.style.width = `${pct}%`;
     returnBarEl.classList.toggle('neg', roi != null && roi < 0);
@@ -5368,10 +5536,60 @@ function renderConfidenceBasedBets(){
   boostInput?.addEventListener('change', applyStakeSettings);
 }
 
+function renderToteVsFixedEdge(report){
+  const cardsEl = $('toteFixedEdgeCards');
+  const tablesEl = $('toteFixedEdgeTables');
+  if (!cardsEl || !tablesEl) return;
+  if (!report || !report.periods) {
+    cardsEl.innerHTML = '<div class="sub">No edge report available.</div>';
+    tablesEl.innerHTML = '';
+    return;
+  }
+  const periodOrder = ['day','week','month'];
+  cardsEl.innerHTML = periodOrder.map(key => {
+    const row = report.periods[key] || {};
+    const low = !row.qualified ? `<div class="low-sample-warning">Low sample (&lt;${row.thresholdMinBets || '—'} bets)</div>` : '';
+    return `<div class="perf-card">
+      <div class="label">${escapeHtml(String(row.period || key).toUpperCase())}</div>
+      <div class="value">${fmtUnits(row.profitDelta)}</div>
+      <div class="sub">Tote ${fmtRoiZero(row.roiTote)} · Fixed ${fmtRoi(row.roiFixed)}</div>
+      <div class="sub">Comparable ${Math.round(row.comparableBets || 0)} bets</div>
+      ${low}
+    </div>`;
+  }).join('');
+
+  const typeLabel = { win: 'Win', ew: 'EW', longshots: 'Longshots', exotics: 'Exotics' };
+  const section = (key) => {
+    const rows = Array.isArray(report.byType?.[key]) ? report.byType[key] : [];
+    const body = rows.map(r => {
+      const low = r.qualified ? '' : ' ⚠️';
+      return `<tr>
+        <td data-label="Type">${typeLabel[r.type] || r.type}${low}</td>
+        <td data-label="Bets">${r.bets ?? 0}</td>
+        <td data-label="Comparable">${Math.round(r.comparableBets || 0)}</td>
+        <td data-label="Profit Δ">${fmtUnits(r.profitDelta)}</td>
+        <td data-label="ROI Tote">${fmtRoiZero(r.roiTote)}</td>
+        <td data-label="ROI Fixed">${r.toteOnly ? '—' : fmtRoi(r.roiFixed)}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6">No data</td></tr>';
+    return `<h5 style="margin:14px 0 8px">${escapeHtml(String(report.periods?.[key]?.period || key))}</h5>
+      <table class="perf-table">
+        <thead><tr><th>Type</th><th>Bets</th><th>Comparable</th><th>Profit Δ (T-F)</th><th>ROI Tote</th><th>ROI Fixed</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>`;
+  };
+
+  tablesEl.innerHTML = section('day') + section('week') + section('month');
+}
+
 async function loadPerformance(){
   const daily = await fetchLocal('./data/success_daily.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const weekly = await fetchLocal('./data/success_weekly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const monthly = await fetchLocal('./data/success_monthly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
+  const toteFixedEdge = await fetchLocal('./api/tote-vs-fixed-edge', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
+  signalThresholdAuditCache = await fetchLocal('./data/signal_threshold_audit_v2.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
+
+  renderToteVsFixedEdge(toteFixedEdge);
 
   renderBetPlanPerformance(daily);
 
@@ -5392,7 +5610,7 @@ async function loadPerformance(){
     $('perfWinRate').textContent = fmtPct(latestDaily.win_rate);
     $('perfWinPickPct').textContent = fmtPct(latestDaily.pick_breakdown?.win?.win_rate);
     $('perfRoiTote').textContent = fmtRoiZero(latestDaily.roi_tote);
-    $('perfRoiRec').textContent = fmtRoi(latestDaily.roi_rec);
+    $('perfRoiRec').textContent = fmtRoi(latestDaily.roi_sp);
     $('perfRoiFixed').textContent = fmtRoi(latestDaily.roi_rec);
     $('perfRoiSp').textContent = fmtRoi(latestDaily.roi_sp);
     $('perfRoiEw').textContent = fmtRoi(latestDaily.roi_ew);
@@ -5658,6 +5876,13 @@ $('strategyPrintDownloadBtn')?.addEventListener('click', async ()=> {
 document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') { closeSummaryPopup(); toggleStrategyPrintModal(false); } });
 
 document.addEventListener('click', (e) => {
+  const bloodlineBtn = e.target?.closest?.('.bloodline-profile-btn');
+  if (bloodlineBtn) {
+    const bloodline = bloodlineBtn.getAttribute('data-bloodline') || '';
+    const relation = bloodlineBtn.getAttribute('data-relation') || 'Bloodline';
+    openBloodlineProfile(bloodline, relation);
+    return;
+  }
   const btn = e.target?.closest?.('.jockey-profile-btn');
   if (!btn) return;
   const jockey = btn.getAttribute('data-jockey') || '';
@@ -6302,52 +6527,353 @@ function runnerThreeStartAvg(runner){
 const formSignalCache = new WeakMap();
 
 function runnerFormSignal(runner){
-  if (!runner) return { status: 'UNKNOWN', legacy: 'UNKNOWN', summary: 'Form data unavailable', sample: '', recentLength: 0 };
+  if (!runner) return { status: 'UNKNOWN', legacy: 'UNKNOWN', summary: 'Form data unavailable', sample: '', recentLength: 0, formScore: 0, lastStart: null };
   if (formSignalCache.has(runner)) return formSignalCache.get(runner);
   const placements = runnerFormPlacings(runner);
   if (!placements.length) {
-    const empty = { status: 'UNKNOWN', legacy: 'UNKNOWN', summary: 'Form data unavailable', sample: '', recentLength: 0 };
+    const empty = { status: 'UNKNOWN', legacy: 'UNKNOWN', summary: 'Form data unavailable', sample: '', recentLength: 0, formScore: 0, lastStart: null };
     formSignalCache.set(runner, empty);
     return empty;
   }
   const recent = placements.slice(0, 6);
+  const recent4 = placements.slice(0, 4);
+  const recent3 = placements.slice(0, 3);
   const wins = recent.filter(v => v === 1).length;
   const podiums = recent.filter(v => v >= 1 && v <= 3).length;
+  const top4 = recent.filter(v => v >= 1 && v <= 4).length;
   const top5 = recent.filter(v => v >= 1 && v <= 5).length;
   const avgFinish = recent.reduce((sum, val) => sum + val, 0) / recent.length;
-  const winsLast4 = placements.slice(0, 4).filter(v => v === 1).length;
+  const winsLast4 = recent4.filter(v => v === 1).length;
+  const recent3Podiums = recent3.filter(v => v <= 3).length;
+  const recent5Top4 = placements.slice(0, 5).filter(v => v <= 4).length;
+  const lastStart = Number.isFinite(recent[0]) ? recent[0] : null;
   let streakTop3 = 0;
   for (let i = 0; i < recent.length; i++) {
     if (recent[i] <= 3) streakTop3++;
     else break;
   }
+  const finishPoints = (finish, idx) => {
+    if (!Number.isFinite(finish) || finish <= 0) return 0;
+    const base = finish === 1 ? 12
+      : finish === 2 ? 9
+      : finish === 3 ? 7
+      : finish === 4 ? 4
+      : finish === 5 ? 2
+      : finish <= 7 ? 0
+      : finish <= 10 ? -4
+      : -7;
+    const weights = [0.45, 0.25, 0.18, 0.12];
+    return base * (weights[idx] || 0.08);
+  };
+  let formScore = placements.slice(0, 4).reduce((sum, finish, idx) => sum + finishPoints(finish, idx), 0);
+  if (lastStart !== null && lastStart <= 3) formScore += 4;
+  if (lastStart === 1) formScore += 3;
+  if (lastStart !== null && lastStart >= 8) formScore -= 6;
+  if (placements[0] >= 6 && placements[1] >= 6) formScore -= 4;
+  if (placements[2] && placements[1] && placements[0] < placements[1] && placements[1] < placements[2]) formScore += 2;
+
   let status = 'COLD';
-  if (winsLast4 >= 2) {
+  const lastStartHotEligible = lastStart !== null && lastStart <= 3;
+  if (lastStartHotEligible && (winsLast4 >= 2 || recent3Podiums >= 2 || recent5Top4 >= 3) && formScore >= 12) {
     status = 'HOT';
-  } else if ((podiums >= 2 && podiums <= 3) || (winsLast4 === 1 && podiums >= 3)) {
+  } else if ((lastStart !== null && lastStart <= 5 && (recent3Podiums >= 1 || top4 >= 2)) || formScore >= 5) {
     status = 'SOLID';
-  } else if (podiums >= 1 || top5 >= 2 || avgFinish <= 6 || streakTop3 >= 2) {
+  } else if (podiums >= 1 || top5 >= 2 || avgFinish <= 6 || streakTop3 >= 2 || formScore >= -2) {
     status = 'MIXED';
   }
-  const recent4 = placements.slice(0, 4);
+  if (lastStart !== null && lastStart > 3 && status === 'HOT') status = 'SOLID';
   const recent4Podiums = recent4.filter(v => v <= 3).length;
-  if (recent4Podiums === 0 && status !== 'COLD') {
-    status = 'MIXED';
-  }
+  if (recent4Podiums === 0 && status === 'SOLID') status = 'MIXED';
   if (recent.length < 3) {
     if (status === 'HOT') status = 'SOLID';
-    // Small-sample protection: do not label a lone win as MIXED.
     if (recent.length === 1 && wins === 1) status = 'SOLID';
     if (recent.length === 2 && wins >= 1 && podiums >= 1) status = 'SOLID';
   }
+  if (lastStart !== null && lastStart >= 8 && formScore < 5 && status !== 'COLD') status = 'MIXED';
+  if (lastStart !== null && lastStart >= 9 && formScore < 0) status = 'COLD';
   const legacy = (status === 'HOT' || status === 'SOLID') ? 'GOOD'
     : (status === 'MIXED' ? 'MIXED' : (status === 'COLD' ? 'POOR' : 'UNKNOWN'));
   const sampleNote = recent.length < 3 ? ' · limited sample' : '';
-  const summary = `${wins} win${wins === 1 ? '' : 's'}, ${podiums} podium${podiums === 1 ? '' : 's'} last ${recent.length} · avg finish ${avgFinish.toFixed(1)}${sampleNote}`;
+  const hotGateNote = lastStart !== null && lastStart > 3 ? ' · last start missed HOT gate' : '';
+  const summary = `${wins} win${wins === 1 ? '' : 's'}, ${podiums} podium${podiums === 1 ? '' : 's'} last ${recent.length} · avg finish ${avgFinish.toFixed(1)} · form ${formScore.toFixed(1)}${sampleNote}${hotGateNote}`;
   const sample = recent.map(v => (v >= 10 ? '0' : v)).join('');
-  const details = { status, legacy, summary, wins, podiums, top5, avgFinish, streakTop3, sample, recentLength: recent.length, raw: placements };
+  const details = { status, legacy, summary, wins, podiums, top5, avgFinish, streakTop3, sample, recentLength: recent.length, raw: placements, formScore, lastStart };
   formSignalCache.set(runner, details);
   return details;
+}
+
+function normalizeTrackBucket(track){
+  const raw = String(track || '').toLowerCase().trim();
+  if (!raw) return 'UNKNOWN';
+  if (raw.includes('heavy')) return 'HEAVY';
+  if (raw.includes('soft') || raw.includes('slow')) return 'SOFT';
+  if (raw.includes('firm')) return 'FIRM';
+  if (raw.includes('good')) return 'GOOD';
+  return 'UNKNOWN';
+}
+
+function normalizeBloodlineName(value){
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\b(aus|nz|ire|gb|usa|fr|jpn|ger|ity)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function recordWinPlaceScore(stats){
+  if (!stats) return { score: 0, starts: 0, wins: 0, places: 0 };
+  const starts = Number(stats.number_of_starts ?? stats.starts ?? 0);
+  const wins = Number(stats.wins ?? 0);
+  const places = Number(stats.places ?? stats.placings ?? 0);
+  if (!Number.isFinite(starts) || starts <= 0) return { score: 0, starts: 0, wins: 0, places: 0 };
+  const winRate = wins / starts;
+  const placeRate = (wins + places) / starts;
+  const avgFinish = Number(stats.average_finish ?? stats.avg_finish ?? NaN);
+  let score = (winRate * 16) + (placeRate * 8);
+  if (Number.isFinite(avgFinish)) score += Math.max(-4, Math.min(4, 6 - avgFinish));
+  const shrink = starts / (starts + 3);
+  return { score: score * shrink, starts, wins, places };
+}
+
+function runnerTrackPreferenceSignal(runner, race){
+  const trackBucket = normalizeTrackBucket(race?.track_condition || race?.loveracing?.track_condition || '');
+  const stats = runner?.stats || {};
+  let statKey = 'overall';
+  if (trackBucket === 'HEAVY') statKey = 'heavy';
+  else if (trackBucket === 'SOFT') statKey = 'soft';
+  else if (trackBucket === 'GOOD' || trackBucket === 'FIRM') statKey = 'good';
+  const direct = recordWinPlaceScore(stats[statKey]);
+  const fallback = direct.starts ? { score: 0, starts: 0 } : recordWinPlaceScore(stats.overall);
+  const baseScore = direct.starts ? direct.score : (fallback.score * 0.35);
+  const reliability = Math.max(0.2, Math.min(1, ((direct.starts || 0) + ((fallback.starts || 0) * 0.35)) / 6));
+  const formSignal = runnerFormSignal(runner);
+  let score = baseScore;
+  if (trackBucket === 'HEAVY' && formSignal.lastStart !== null && formSignal.lastStart >= 8) score -= 1.5;
+  if (trackBucket !== 'UNKNOWN' && formSignal.status === 'HOT') score += 1.5;
+  if (trackBucket !== 'UNKNOWN' && formSignal.status === 'COLD') score -= 1.5;
+  let label = 'NEUTRAL';
+  if (score >= 8) label = 'LOVES THIS GROUND';
+  else if (score >= 3) label = 'SUITED';
+  else if (score <= -8) label = 'DISLIKES THIS GROUND';
+  else if (score <= -3) label = 'QUERY';
+  return { bucket: trackBucket, statKey, score, reliability, label, starts: direct.starts || fallback.starts || 0 };
+}
+
+function clampProbability(p){
+  if (!Number.isFinite(p)) return NaN;
+  return Math.max(0.02, Math.min(0.42, p));
+}
+
+const PEDIGREE_BLOODLINE_LIBRARY = {
+  snitzel: { juvenile: 16, sprint: 14, wet: 5, slipper: 22, elite: 8 },
+  'i am invincible': { juvenile: 14, sprint: 16, wet: 2, slipper: 8, elite: 8 },
+  'written tycoon': { juvenile: 12, sprint: 12, wet: 2, slipper: 9, elite: 6 },
+  'exceed and excel': { juvenile: 13, sprint: 11, wet: 2, slipper: 8, elite: 6 },
+  zoustar: { juvenile: 12, sprint: 12, wet: 3, slipper: 8, elite: 7 },
+  'fastnet rock': { juvenile: 9, sprint: 11, wet: 4, slipper: 7, elite: 8 },
+  savvybeel: { juvenile: 5, sprint: 3, wet: 8, staying: 10, elite: 9 },
+  savabeel: { juvenile: 5, sprint: 3, wet: 8, staying: 10, elite: 9 },
+  'per incanto': { juvenile: 6, sprint: 9, wet: 6, elite: 5 },
+  proisir: { juvenile: 5, sprint: 5, wet: 9, staying: 8, elite: 6 },
+  tivaci: { juvenile: 5, sprint: 6, wet: 5, elite: 5 },
+  ardrossan: { juvenile: 6, sprint: 8, wet: 4, elite: 5 },
+  preferment: { juvenile: 2, sprint: 1, wet: 5, staying: 12, elite: 5 },
+  belardo: { juvenile: 8, sprint: 8, wet: 4, elite: 5 },
+  toronado: { juvenile: 6, sprint: 5, wet: 5, staying: 7, elite: 5 },
+  'so you think': { juvenile: 3, sprint: 2, wet: 5, staying: 11, elite: 8 },
+  'ocean park': { juvenile: 2, sprint: 1, wet: 8, staying: 12, elite: 6 }
+};
+
+const BLOODLINE_COMMENTARY_LIBRARY = {
+  snitzel: {
+    summary: 'Premium Australian speed/juvenile sire line. Strong precocity and high-pressure 2YO sprint profile.',
+    strengths: ['2YO sprint precocity', 'Golden Slipper-style pressure races', 'sharp early speed'],
+    cautions: ['not an automatic wet-track edge', 'must still fit map and setup'],
+    style: 'Fast, professional, early-season quality.'
+  },
+  'i am invincible': {
+    summary: 'Elite sprint sire line with strong commercial speed and broad open-sprint relevance.',
+    strengths: ['open sprint quality', 'speed influence', 'commercial class'],
+    cautions: ['not always the top Slipper-specific profile', 'wet profile can vary by cross'],
+    style: 'Explosive speed, broad sprinting class.'
+  },
+  'written tycoon': {
+    summary: 'Strong Australian speed/juvenile influence with genuine precocity and commercial sharpness.',
+    strengths: ['juvenile sprinting', 'early speed', 'AUS speed races'],
+    cautions: ['needs setup support at elite end'],
+    style: 'Sharp, quick, precocious.'
+  },
+  'fastnet rock': {
+    summary: 'Powerful Danehill-line source of class and versatility. Strong broodmare-sire relevance too.',
+    strengths: ['class', 'versatility', 'important dam-sire cross influence'],
+    cautions: ['less pure-precocity than specialist 2YO sprint sires'],
+    style: 'Class, depth, and cross value.'
+  },
+  savabeel: {
+    summary: 'Core NZ staying/wet-ground/class influence. Much stronger in NZ middle-distance and rain-affected setups than in raw juvenile speed tests.',
+    strengths: ['wet tracks', 'middle distance', 'staying quality', 'NZ class profile'],
+    cautions: ['not a natural pure-precocity sprint line'],
+    style: 'Toughness, depth, and wet-ground resilience.'
+  },
+  proisir: {
+    summary: 'NZ-oriented line with strong wet-track and middle-distance upside.',
+    strengths: ['wet ground', 'middle-distance progression'],
+    cautions: ['not a top-end Australian juvenile sprint default'],
+    style: 'Progressive, rain-affected, durable.'
+  },
+  'per incanto': {
+    summary: 'Useful NZ/AUS sprinting line with respectable wet-ground support.',
+    strengths: ['open sprint races', 'NZ speed setups'],
+    cautions: ['less dominant in elite juvenile races'],
+    style: 'Sprinting utility with enough versatility.'
+  }
+};
+
+function pedigreeBloodlineProfile(name){
+  const key = normalizeBloodlineName(name || '');
+  if (!key) return null;
+  return PEDIGREE_BLOODLINE_LIBRARY[key] || null;
+}
+
+function bloodlineCommentaryProfile(name){
+  const key = normalizeBloodlineName(name || '');
+  if (!key) return null;
+  return BLOODLINE_COMMENTARY_LIBRARY[key] || null;
+}
+
+function renderBloodlineButton(name, relation='Bloodline'){
+  const label = String(name || '').trim();
+  if (!label) return 'n/a';
+  return `<button class='bloodline-profile-btn' data-bloodline='${escapeAttr(label)}' data-relation='${escapeAttr(relation)}'>${escapeHtml(label)}</button>`;
+}
+
+function openBloodlineProfile(bloodlineName, relation='Bloodline'){
+  const label = String(bloodlineName || '').trim();
+  if (!label) {
+    openSummaryPopup('Bloodline Library', '<div>No bloodline selected.</div>');
+    return;
+  }
+  const traits = pedigreeBloodlineProfile(label) || {};
+  const notes = bloodlineCommentaryProfile(label) || {};
+  const traitRows = Object.entries(traits || {}).map(([k,v]) => `<div><b>${escapeHtml(k)}:</b> ${escapeHtml(String(v))}</div>`).join('');
+  const strengths = Array.isArray(notes.strengths) && notes.strengths.length ? `<li>${notes.strengths.map(x => escapeHtml(String(x))).join('</li><li>')}</li>` : '<li>No strength notes yet.</li>';
+  const cautions = Array.isArray(notes.cautions) && notes.cautions.length ? `<li>${notes.cautions.map(x => escapeHtml(String(x))).join('</li><li>')}</li>` : '<li>No caution notes yet.</li>';
+  const html = `<div class='bloodline-profile-modal'>
+    <div class='sub' style='margin-bottom:10px'>${escapeHtml(relation)} lookup from the BETMAN bloodline library.</div>
+    <div class='runner-grid'>
+      <div><b>Bloodline:</b> ${escapeHtml(label)}</div>
+      <div><b>Style:</b> ${escapeHtml(notes.style || 'No style note yet')}</div>
+      <div><b>Summary:</b> ${escapeHtml(notes.summary || 'No commentary yet')}</div>
+    </div>
+    <div style='margin-top:12px'><b>Trait profile</b></div>
+    <div class='runner-grid' style='margin-top:8px'>${traitRows || '<div>No trait profile in library yet.</div>'}</div>
+    <div style='margin-top:12px'><b>Strengths</b></div>
+    <ul>${strengths}</ul>
+    <div style='margin-top:12px'><b>Cautions</b></div>
+    <ul>${cautions}</ul>
+  </div>`;
+  openSummaryPopup(`${relation} — ${label}`, html);
+}
+
+function inferRacePedigreeDemand(race){
+  const distance = Number(race?.distance || 0);
+  const desc = String(race?.description || '').toLowerCase();
+  const track = normalizeTrackBucket(race?.track_condition || race?.loveracing?.track_condition || '');
+  const juvenile = /slipper|2yo|two-year|juvenile/.test(desc) ? 1.25 : (distance > 0 && distance <= 1200 ? 1.0 : 0.45);
+  const sprint = distance > 0 && distance <= 1400 ? 1.0 : 0.35;
+  const staying = distance >= 1800 ? 1.0 : 0.1;
+  const slipper = /golden slipper/.test(desc) ? 1.35 : (/slipper/.test(desc) ? 1.15 : 0);
+  const wet = track === 'HEAVY' ? 1.0 : (track === 'SOFT' ? 0.65 : 0.15);
+  const elite = /group 1|g1|group 2|g2|listed|classic|slipper/.test(desc) ? 0.8 : 0.35;
+  return { juvenile, sprint, staying, slipper, wet, elite };
+}
+
+function pedigreeComponentScore(name, demand){
+  const profile = pedigreeBloodlineProfile(name);
+  if (!profile) return { score: 0, confidence: 0, known: false };
+  const score =
+    (profile.juvenile || 0) * (demand.juvenile || 0) +
+    (profile.sprint || 0) * (demand.sprint || 0) +
+    (profile.staying || 0) * (demand.staying || 0) +
+    (profile.slipper || 0) * (demand.slipper || 0) +
+    (profile.wet || 0) * (demand.wet || 0) +
+    (profile.elite || 0) * (demand.elite || 0);
+  const confidence = 0.55 + (Object.keys(profile).length * 0.05);
+  return { score, confidence: Math.min(0.95, confidence), known: true };
+}
+
+function runnerPedigreeSignal(runner, race){
+  const demand = inferRacePedigreeDemand(race);
+  const sire = pedigreeComponentScore(runner?.sire, demand);
+  const damSire = pedigreeComponentScore(runner?.dam_sire || runner?.damSire, demand);
+  const dam = pedigreeComponentScore(runner?.dam, demand);
+  const crossBoost = sire.known && damSire.known ? Math.min(6, Math.max(0, (sire.score + damSire.score) * 0.08)) : 0;
+  const total = (sire.score * 0.45) + (dam.score * 0.18) + (damSire.score * 0.27) + crossBoost;
+  const weightedConfidence = (sire.confidence * 0.45) + (dam.confidence * 0.18) + (damSire.confidence * 0.27) + ((crossBoost ? 0.1 : 0));
+  const primaryConfidence = Math.max(
+    sire.known ? sire.confidence * 0.82 : 0,
+    damSire.known ? damSire.confidence * 0.72 : 0,
+    crossBoost ? 0.68 : 0
+  );
+  const confidence = Math.max(0.2, Math.min(0.95, Math.max(weightedConfidence, primaryConfidence)));
+  return {
+    score: total,
+    confidence,
+    sireKnown: sire.known,
+    damKnown: dam.known,
+    damSireKnown: damSire.known,
+    summary: `Pedigree ${total.toFixed(1)} · sire ${runner?.sire || 'n/a'} · dam ${runner?.dam || 'n/a'} · dam sire ${runner?.dam_sire || runner?.damSire || 'n/a'}`
+  };
+}
+
+function computeRacePedigreeAdvantageMap(race, runners){
+  const entries = (runners || []).map(r => ({
+    runner: r,
+    key: normalizeRunnerName(r?.name || r?.runner_name || ''),
+    signal: runnerPedigreeSignal(r, race)
+  })).filter(x => x.key);
+  if (!entries.length) return new Map();
+  const scores = entries.map(x => x.signal.score).filter(Number.isFinite);
+  const avg = scores.length ? scores.reduce((a,b)=>a+b,0) / scores.length : 0;
+  const top = scores.length ? Math.max(...scores) : 0;
+  const qualified = entries.filter(x => {
+    const eliteCompactField = top >= 40 && (top - x.signal.score) <= 1.5;
+    const clearFieldEdge = (x.signal.score - avg) >= 6 && (top - x.signal.score) <= 3.0;
+    return x.signal.score >= 24 && (x.signal.confidence * 100) >= 55 && (clearFieldEdge || eliteCompactField);
+  });
+  return new Map(entries.map(x => [x.key, {
+    ...x.signal,
+    relativeEdge: x.signal.score - avg,
+    qualifies: qualified.some(q => q.key === x.key),
+    topScore: top,
+    averageScore: avg
+  }]));
+}
+
+function runnerConfidenceBlend(runner, race, rawProb){
+  const marketOdds = runnerOddsValue(runner);
+  const marketProb = Number.isFinite(marketOdds) && marketOdds > 0 ? (1 / marketOdds) : rawProb;
+  const formSignal = runnerFormSignal(runner);
+  const trackSignal = runnerTrackPreferenceSignal(runner, race);
+  const hasSectionals = Array.isArray(runner?.last_starts) && runner.last_starts.some(start => start?.last_600 || start?.last600 || start?.lastSixHundred);
+  const hasMap = !!runner?.speedmap;
+  const hasStats = !!(runner?.stats?.overall || runner?.stats?.soft || runner?.stats?.heavy || runner?.stats?.good);
+  let confidence = 0.35;
+  if (hasStats) confidence += 0.15;
+  if (hasSectionals) confidence += 0.10;
+  if (hasMap) confidence += 0.10;
+  if (formSignal.recentLength >= 4) confidence += 0.10;
+  confidence += Math.min(0.15, trackSignal.reliability * 0.15);
+  confidence = Math.max(0.25, Math.min(0.8, confidence));
+  const blended = (rawProb * confidence) + (marketProb * (1 - confidence));
+  const trackAdj = Math.max(-0.025, Math.min(0.025, (trackSignal.score / 100) * (0.5 + trackSignal.reliability * 0.5)));
+  return {
+    confidence,
+    marketProb,
+    finalProb: clampProbability(blended + trackAdj),
+    trackSignal
+  };
 }
 
 function runnerFormStatus(runner){
@@ -8113,15 +8639,21 @@ function renderAnalysis(race, modeOverride){
     .map(r => {
       const odds = oddsOf(r);
       const signal = runnerFormSignal(r);
-      const goodForm = signal && (signal.status === 'HOT' || signal.status === 'SOLID' || signal.legacy === 'GOOD');
-      const modeledPct = Number(sim[r.name] || 0) * 100;
+      const blend = runnerConfidenceBlend(r, race, Number(sim[r.name] || 0));
+      const trackSignal = blend.trackSignal;
+      const modeledPct = Number(blend.finalProb || 0) * 100;
       const implied = Number.isFinite(odds) && odds > 0 ? (100 / odds) : NaN;
       const edge = Number.isFinite(modeledPct) && Number.isFinite(implied) ? (modeledPct - implied) : NaN;
       const formAvg = runnerThreeStartAvg(r);
-      return { r, odds, goodForm, modeledPct, edge, formAvg };
+      const hardFail = (signal?.lastStart ?? 99) >= 9 && (signal?.formScore ?? -99) < 0;
+      const map = String(r?.speedmap || '').toLowerCase();
+      const mapPenalty = (!map || /back|off pace/.test(map)) ? 1 : 0;
+      const goodForm = signal && (signal.status === 'HOT' || signal.status === 'SOLID');
+      const trackOk = trackSignal.label !== 'DISLIKES THIS GROUND';
+      return { r, odds, goodForm, modeledPct, edge, formAvg, hardFail, mapPenalty, trackOk, confidence: blend.confidence, trackSignal };
     })
-    .filter(x => Number.isFinite(x.odds) && x.odds >= 8 && x.goodForm)
-    .sort((a,b) => (a.formAvg - b.formAvg) || (b.edge ?? -999) - (a.edge ?? -999) || b.modeledPct - a.modeledPct);
+    .filter(x => Number.isFinite(x.odds) && x.odds >= 8 && x.goodForm && x.trackOk && !x.hardFail && x.modeledPct >= 7.5)
+    .sort((a,b) => (b.edge ?? -999) - (a.edge ?? -999) || (b.confidence - a.confidence) || (a.formAvg - b.formAvg) || (a.mapPenalty - b.mapPenalty) || b.modeledPct - a.modeledPct);
   const longTop = longModelCandidates[0]?.r || null;
   const longRunnerKeys = new Set(longTop ? [normalizeRunnerName(longTop.name || longTop.runner_name || '')].filter(Boolean) : []);
 
@@ -8149,6 +8681,7 @@ function renderAnalysis(race, modeOverride){
   const aiWinnerRunner = storedAiWinner?.runner || (hasAiRun ? picked : null);
   const aiWinnerTagKey = aiWinnerRunner ? normalizeRunnerName(aiWinnerRunner) : '';
   const aiWinnerPctValue = Number.isFinite(storedAiWinner?.winPct) ? storedAiWinner.winPct : (hasAiRun ? aiWinnerPctRounded : null);
+  const pedigreeAdvantageMap = computeRacePedigreeAdvantageMap(race, runners);
   const buildRunnerLink = (text, runnerName) => {
     const baseText = (text === null || text === undefined) ? '—' : String(text);
     if (!runnerName) return escapeHtml(baseText);
@@ -8200,6 +8733,8 @@ function renderAnalysis(race, modeOverride){
     }
     if (ewKey && norm === ewKey) tags.push("<span class='tag ew'>EW</span>");
     if (longRunnerKeys.has(norm)) tags.push("<span class='tag long'>LONG</span>");
+    const pedigreeSignal = pedigreeAdvantageMap.get(norm);
+    if (pedigreeSignal?.qualifies) tags.push(`<span class='tag pedigree-adv' title='${escapeAttr(pedigreeSignal.summary || `Pedigree Advantage ${pedigreeSignal.score?.toFixed?.(1) || ''}`)}' style='background:linear-gradient(135deg,#ffd54a,#c89b1d);color:#1c1606;border-color:#f4cf63'>Pedigree Advantage</span>`);
     const moveTags = inheritMoveTags(race.meeting, race.race_number || race.race, runner.name || runner.runner_name || runner.selection || '');
     if (moveTags.length) tags.push(...moveTags);
     if (runnerHasStrongTrials(runner)) tags.push("<span class='tag form'>Trial Form</span>");
@@ -8210,21 +8745,27 @@ function renderAnalysis(race, modeOverride){
   const edgeVizRows = runners.map(r => {
     const odds = oddsOf(r);
     const impliedPct = Number.isFinite(odds) ? (100/odds) : NaN;
-    const modeledPct = Number(sim[r.name] || 0) * 100;
+    const rawProb = Number(sim[r.name] || 0);
+    const blend = runnerConfidenceBlend(r, race, rawProb);
+    const modeledPct = Number(blend.finalProb || 0) * 100;
     const edgePct = Number.isFinite(modeledPct) && Number.isFinite(impliedPct) ? (modeledPct - impliedPct) : NaN;
     return {
       name: cleanRunnerText(r.name || r.runner_name || ''),
       odds: Number.isFinite(odds) ? odds : null,
       impliedPct: Number.isFinite(impliedPct) ? Number(impliedPct.toFixed(1)) : null,
       modeledPct: Number.isFinite(modeledPct) ? Number(modeledPct.toFixed(1)) : null,
-      edgePct: Number.isFinite(edgePct) ? Number(edgePct.toFixed(1)) : null
+      edgePct: Number.isFinite(edgePct) ? Number(edgePct.toFixed(1)) : null,
+      confidence: Number.isFinite(blend.confidence) ? Number((blend.confidence * 100).toFixed(0)) : null,
+      trackLabel: blend.trackSignal?.label || null
     };
   }).filter(row => row.name);
 
   const oddsRows = runners.map(r => {
     const odds = oddsOf(r);
     const implied = Number.isFinite(odds) ? (100/odds) : NaN;
-    const modeled = Number(sim[r.name] || 0) * 100;
+    const rawProb = Number(sim[r.name] || 0);
+    const blend = runnerConfidenceBlend(r, race, rawProb);
+    const modeled = Number(blend.finalProb || 0) * 100;
     const edge = Number.isFinite(modeled) && Number.isFinite(implied) ? (modeled - implied) : NaN;
     const placeOdds = placeOddsOf(r);
     const placeImplied = Number.isFinite(placeOdds) ? (100/placeOdds) : NaN;
@@ -8239,17 +8780,22 @@ function renderAnalysis(race, modeOverride){
     const numberRaw = r.number ?? r.runner_number ?? r.saddle_number ?? r.horse_number ?? r.program_number ?? r.tab_no ?? null;
     const runnerNumber = (numberRaw === 0 || numberRaw) ? String(numberRaw).trim() : '';
     const formSignal = runnerFormSignal(r);
+    const pedigreeSignal = pedigreeAdvantageMap.get(normalizeRunnerName(r.name || r.runner_name || ''));
     const formPattern = r.last_twenty_starts || r.form || r.last_five_starts || r.recent_form || '—';
     const formTag = formSignal ? renderFormStatusTag(formSignal, formSignal.summary || '') : '';
     const trialTag = runnerHasStrongTrials(r) ? `<span class='tag form'>Trial Form</span>` : '';
-    const formCell = `<div class='form-pattern'>${formPattern || '—'}</div>${formTag ? `<div class='form-status-tag'>${formTag}</div>` : ''}${trialTag ? `<div class='form-status-tag'>${trialTag}</div>` : ''}`;
+    const pedigreeTag = pedigreeSignal?.qualifies ? `<span class='tag pedigree-adv' title='${escapeAttr(pedigreeSignal.summary || '')}' style='background:linear-gradient(135deg,#ffd54a,#c89b1d);color:#1c1606;border-color:#f4cf63'>Pedigree Advantage ${Number.isFinite(pedigreeSignal.score) ? pedigreeSignal.score.toFixed(1) : ''}</span>` : '';
+    const pedigreeFitTxt = Number.isFinite(pedigreeSignal?.score) ? pedigreeSignal.score.toFixed(1) : '—';
+    const pedigreeConfidenceTxt = Number.isFinite(pedigreeSignal?.confidence) ? `${(pedigreeSignal.confidence * 100).toFixed(0)}%` : '—';
+    const pedigreeEdgeTxt = Number.isFinite(pedigreeSignal?.relativeEdge) ? `${pedigreeSignal.relativeEdge >= 0 ? '+' : ''}${pedigreeSignal.relativeEdge.toFixed(1)}` : '—';
+    const formCell = `<div class='form-pattern'>${formPattern || '—'}</div>${formTag ? `<div class='form-status-tag'>${formTag}</div>` : ''}${trialTag ? `<div class='form-status-tag'>${trialTag}</div>` : ''}${pedigreeTag ? `<div class='form-status-tag'>${pedigreeTag}</div>` : ''}`;
     const jockeyCell = r.jockey
       ? `<button class='jockey-profile-btn' data-jockey='${escapeAttr(String(r.jockey))}' data-race-key='${escapeAttr(String(race.key || ''))}'>${escapeHtml(String(r.jockey))}</button>`
       : '—';
     const trainerCell = escapeHtml(r.trainer || '—');
     const jockeyEdge = jockeyEdgePct(r);
     const jockeyEdgeTxt = Number.isFinite(jockeyEdge) ? `${jockeyEdge >= 0 ? '+' : ''}${jockeyEdge.toFixed(1)} pts` : '—';
-    return `<tr><td class='runner-num-cell'>${escapeHtml(runnerNumber || '—')}</td><td>${runnerCell}</td><td>${escapeHtml(r.barrier || '—')}</td><td>${jockeyCell}</td><td>${trainerCell}</td><td>${formCell}</td><td>${jockeyEdgeTxt}</td><td class='odds-cell ${winClass}'>${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeled) ? modeled.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(implied) ? implied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(edge) ? (edge>=0?'+':'')+edge.toFixed(1)+' pts' : '—'}</td><td class='odds-cell ${placeClass}'>${Number.isFinite(placeOdds) ? placeOdds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeledPlace) ? modeledPlace.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeImplied) ? placeImplied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeEdge) ? (placeEdge>=0?'+':'')+placeEdge.toFixed(1)+' pts' : '—'}</td></tr>`;
+    return `<tr><td class='runner-num-cell'>${escapeHtml(runnerNumber || '—')}</td><td>${runnerCell}</td><td>${escapeHtml(r.barrier || '—')}</td><td>${jockeyCell}</td><td>${trainerCell}</td><td>${formCell}</td><td>${jockeyEdgeTxt}</td><td>${pedigreeFitTxt}</td><td>${pedigreeConfidenceTxt}</td><td>${pedigreeEdgeTxt}</td><td class='odds-cell ${winClass}'>${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeled) ? modeled.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(implied) ? implied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(edge) ? (edge>=0?'+':'')+edge.toFixed(1)+' pts' : '—'}</td><td class='odds-cell ${placeClass}'>${Number.isFinite(placeOdds) ? placeOdds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeledPlace) ? modeledPlace.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeImplied) ? placeImplied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeEdge) ? (placeEdge>=0?'+':'')+placeEdge.toFixed(1)+' pts' : '—'}</td></tr>`;
   }).join('');
   const topEdgeRunner = winEdgeData.slice().sort((a,b)=>b.edge-a.edge)[0]?.name || 'No clear overs';
   const punterPanel = `<ul>
@@ -8366,7 +8912,7 @@ function renderAnalysis(race, modeOverride){
           <button id='pollOddsBtn' class='btn btn-ghost compact-btn' type='button'>Poll Odds</button>
         </div>
         <div class='analysis-table-scroll'>
-          <table class='analysis-table'><tr><th title='Saddle / runner number'>#</th><th>Runner</th><th title='Barrier draw'>Gate</th><th>Jockey</th><th>Trainer</th><th title='Recent form pattern + status'>Form</th><th title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>Jockey Edge <span class='help-hint' title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>?</span></th><th title='Current market win odds'>Win Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Win Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Win Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Win Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th><th title='Current market place odds'>Place Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Place Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Place Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Place Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th></tr>${oddsRows}</table>
+          <table class='analysis-table'><tr><th title='Saddle / runner number'>#</th><th>Runner</th><th title='Barrier draw'>Gate</th><th>Jockey</th><th>Trainer</th><th title='Recent form pattern + status'>Form</th><th title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>Jockey Edge <span class='help-hint' title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>?</span></th><th title='Pedigree fit score for this race archetype'>Ped Fit</th><th title='Confidence in pedigree assessment'>Ped Conf</th><th title='Field-relative pedigree edge'>Ped Edge</th><th title='Current market win odds'>Win Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Win Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Win Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Win Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th><th title='Current market place odds'>Place Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Place Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Place Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Place Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th></tr>${oddsRows}</table>
         </div>
       </div>
       <div class='analysis-split'>
@@ -8634,9 +9180,9 @@ function buildRaceCardSection(race, runners){
     const silk = r.silk_url_64x64 || r.silk_url_128x128 || '';
     const stats = r.stats || {};
     const breedingParts = [];
-    if (r.sire) breedingParts.push(`Sire: ${escapeHtml(r.sire)}`);
-    if (r.dam) breedingParts.push(`Dam: ${escapeHtml(r.dam)}`);
-    if (r.dam_sire) breedingParts.push(`Dam Sire: ${escapeHtml(r.dam_sire)}`);
+    if (r.sire) breedingParts.push(`Sire: ${renderBloodlineButton(r.sire, 'Sire')}`);
+    if (r.dam) breedingParts.push(`Dam: ${renderBloodlineButton(r.dam, 'Dam')}`);
+    if (r.dam_sire) breedingParts.push(`Dam Sire: ${renderBloodlineButton(r.dam_sire, 'Dam Sire')}`);
     const breeding = breedingParts.length ? breedingParts.join(' · ') : 'n/a';
     const profileBits = [];
     if (r.age) profileBits.push(`${r.age}yo`);

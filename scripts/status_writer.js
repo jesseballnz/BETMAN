@@ -95,6 +95,52 @@ status.earlyWindowMin = (typeof stakeData.earlyWindowMin === 'number') ? stakeDa
 status.aiWindowMin = (typeof stakeData.aiWindowMin === 'number') ? stakeData.aiWindowMin : 10;
 status.betHarderMultiplier = (typeof stakeData.betHarderMultiplier === 'number') ? stakeData.betHarderMultiplier : 1.5;
 
+
+const EDGE_ROUTE_MIN_BETS = Number(process.env.BETMAN_EDGE_ROUTE_MIN_BETS || 25);
+const EDGE_ROUTE_MIN_DELTA = Number(process.env.BETMAN_EDGE_ROUTE_MIN_DELTA || 0.03);
+const EDGE_ROUTE_MIN_CONF = Number(process.env.BETMAN_EDGE_ROUTE_MIN_CONF || 55);
+
+function deriveExecutionPolicy(){
+  const successPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'success_daily.json') : path.join(tenantDataDir, 'success_daily.json');
+  const daily = loadJson(successPath, {});
+  const rows = Object.values(daily || {});
+  const byType = { win: [], odds_runner: [], ew: [], longshots: [] };
+  rows.forEach(r => {
+    if (r?.pick_breakdown?.win) byType.win.push(r.pick_breakdown.win);
+    if (r?.pick_breakdown?.odds_runner) byType.odds_runner.push(r.pick_breakdown.odds_runner);
+    if (r?.pick_breakdown?.ew) byType.ew.push(r.pick_breakdown.ew);
+    if (r?.long_breakdown) byType.longshots.push(r.long_breakdown);
+  });
+
+  const out = {};
+  Object.entries(byType).forEach(([key, vals]) => {
+    let bets = 0; let stake = 0; let spProfit = 0; let toteProfit = 0;
+    vals.forEach(v => {
+      const b = Number(v?.bets || 0);
+      const s = Number(v?.roi_stake_units || v?.stake_units || b || 0);
+      const sp = Number(v?.roi_sp);
+      const tote = Number(v?.roi_tote);
+      bets += b;
+      stake += s;
+      if (Number.isFinite(sp)) spProfit += sp * s;
+      if (Number.isFinite(tote)) toteProfit += tote * s;
+    });
+    const roiSp = stake ? spProfit / stake : null;
+    const roiTote = stake ? toteProfit / stake : null;
+    const delta = (Number.isFinite(roiTote) && Number.isFinite(roiSp)) ? roiTote - roiSp : null;
+    let route = 'NO_EDGE';
+    if (bets >= EDGE_ROUTE_MIN_BETS && Number.isFinite(delta) && Math.abs(delta) >= EDGE_ROUTE_MIN_DELTA) {
+      route = delta > 0 ? 'TOTE' : 'FIXED';
+    }
+    const conf = Math.max(0, Math.min(100, Math.round((bets / EDGE_ROUTE_MIN_BETS) * 40 + (Math.min(Math.abs(delta || 0), 0.1) / 0.1) * 60)));
+    out[key] = { bets, route, confidence: conf, delta, roiSp, roiTote };
+  });
+  return out;
+}
+
+const executionPolicy = deriveExecutionPolicy();
+status.executionPolicy = executionPolicy;
+
 const nzDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
 const dailyPnlPath = path.join(dailyPnlDir, `daily-pnl-${nzDate}.json`);
 const pnlHistoryPath = path.join(dailyPnlDir, 'pnl-history.json');
@@ -294,7 +340,13 @@ let suggested = [...(state.early_plans || []), ...(state.bet_plans || [])].map(b
   odds: b.odds ?? null,
   place_odds: b.place_odds ?? null,
   jumpsIn: minsToEnglish(b.mins_to_start),
-  reason: `p=${b.win_prob || ''}% @ ${b.odds}`
+  reason: `p=${b.win_prob || ''}% @ ${b.odds}`,
+  tags: Array.isArray(b.tags) ? b.tags : [],
+  pedigreeTag: b.pedigreeTag || null,
+  pedigreeScore: b.pedigreeScore ?? null,
+  pedigreeConfidence: b.pedigreeConfidence ?? null,
+  pedigreeRelativeEdge: b.pedigreeRelativeEdge ?? null,
+  pedigreeArchetype: b.pedigreeArchetype || null
 }));
 
 // fallback suggested bets from top market runners if no plans in window
@@ -662,6 +714,45 @@ status.marketOddsSnapshot = nextSnap;
 status.marketOddsHistory = nextHistory;
 status.marketOddsOpening = nextOpening;
 
+
+function normalizeBetType(x){
+  const t = String(x?.type || '').toLowerCase();
+  if (t.includes('ew')) return 'ew';
+  if (t.includes('odds')) return 'odds_runner';
+  if (t.includes('top') || t.includes('trifecta')) return 'exotics';
+  const reason = String(x?.reason || '').toLowerCase();
+  if (reason.includes('long')) return 'longshots';
+  return 'win';
+}
+
+status.suggestedBets = (status.suggestedBets || []).map(row => {
+  const kind = normalizeBetType(row);
+  const policy = executionPolicy[kind] || { route: 'NO_EDGE', confidence: 0, delta: null };
+  const signalPct = inferSignalPct(row);
+  const minsToJump = Number(row?.minsToJump ?? row?.mins_to_start ?? 9999);
+  const eligible = policy.route !== 'NO_EDGE'
+    && policy.confidence >= EDGE_ROUTE_MIN_CONF
+    && Number.isFinite(signalPct)
+    && signalPct >= CONFIDENCE_SIGNAL_THRESHOLD
+    && minsToJump >= 0
+    && minsToJump <= Number(status.earlyWindowMin || 180);
+
+  return {
+    ...row,
+    executionType: kind,
+    executionRoute: policy.route,
+    executionRouteConfidence: policy.confidence,
+    executionDelta: policy.delta,
+    executionEligible: !!eligible,
+    executionBlockReason: eligible ? null : [
+      policy.route === 'NO_EDGE' ? 'no_statistical_edge' : null,
+      policy.confidence < EDGE_ROUTE_MIN_CONF ? 'low_route_confidence' : null,
+      !(Number.isFinite(signalPct) && signalPct >= CONFIDENCE_SIGNAL_THRESHOLD) ? 'low_signal' : null,
+      !(minsToJump >= 0 && minsToJump <= Number(status.earlyWindowMin || 180)) ? 'outside_window' : null
+    ].filter(Boolean)
+  };
+});
+
 const CONFIDENCE_SIGNAL_THRESHOLD = 40;
 const CONFIDENCE_FRINGE_BAND = 5;
 const fringeSignals = (status.suggestedBets || [])
@@ -702,7 +793,13 @@ appendJsonl(betPlanAuditPath, {
     place_odds: x.place_odds ?? null,
     jumpsIn: x.jumpsIn,
     interesting: !!x.interesting,
-    reason: x.reason
+    reason: x.reason,
+    tags: Array.isArray(x.tags) ? x.tags : [],
+    pedigreeTag: x.pedigreeTag || null,
+    pedigreeScore: x.pedigreeScore ?? null,
+    pedigreeConfidence: x.pedigreeConfidence ?? null,
+    pedigreeRelativeEdge: x.pedigreeRelativeEdge ?? null,
+    pedigreeArchetype: x.pedigreeArchetype || null
   })),
   suggestedAll: (status.suggestedBets || []).map(x => ({
     meeting: x.meeting,
@@ -713,7 +810,13 @@ appendJsonl(betPlanAuditPath, {
     place_odds: x.place_odds ?? null,
     jumpsIn: x.jumpsIn,
     interesting: !!x.interesting,
-    reason: x.reason
+    reason: x.reason,
+    tags: Array.isArray(x.tags) ? x.tags : [],
+    pedigreeTag: x.pedigreeTag || null,
+    pedigreeScore: x.pedigreeScore ?? null,
+    pedigreeConfidence: x.pedigreeConfidence ?? null,
+    pedigreeRelativeEdge: x.pedigreeRelativeEdge ?? null,
+    pedigreeArchetype: x.pedigreeArchetype || null
   })),
   interestingTop: (status.interestingRunners || []).slice(0, 12),
   moversTop: (status.marketMovers || []).slice(0, 12),
