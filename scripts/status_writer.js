@@ -38,10 +38,16 @@ function parseReasonWinProb(reason){
 }
 
 function inferSignalPct(row){
-  const direct = Number(row?.confidenceSignalPct ?? row?.win_p ?? row?.signal_score);
-  if (Number.isFinite(direct)) return direct;
+  const cap = Number(process.env.BETMAN_MAX_CONFIDENCE_PCT || 95);
+  const capFn = (v) => {
+    const n = Number(v);
+    const pct = (n >= 0 && n <= 1) ? (n * 100) : n;
+    return Math.max(0, Math.min(cap, pct));
+  };
+  const direct = Number(row?.confidenceSignalPct ?? row?.signal_score ?? row?.win_p);
+  if (Number.isFinite(direct)) return capFn(direct);
   const parsed = parseReasonWinProb(row?.reason);
-  if (Number.isFinite(parsed)) return parsed;
+  if (Number.isFinite(parsed)) return capFn(parsed);
   return NaN;
 }
 
@@ -89,6 +95,21 @@ if ((balanceData.betcha?.openBets == null || balanceData.tab?.openBets == null) 
 const { buildStatus } = require('./status_writer_impl');
 
 const status = buildStatus(state, balanceData, stakeData.stakePerRace || 10);
+
+const MAX_CONFIDENCE_PCT = Number(process.env.BETMAN_MAX_CONFIDENCE_PCT || 95);
+function clampConfidence(v){
+  const n = Number(v);
+  if (!Number.isFinite(n)) return v;
+  const pct = (n >= 0 && n <= 1) ? (n * 100) : n;
+  return Math.max(0, Math.min(MAX_CONFIDENCE_PCT, pct));
+}
+status.suggestedBets = (status.suggestedBets || []).map(row => ({
+  ...row,
+  confidenceSignalPct: clampConfidence(row?.confidenceSignalPct),
+  signal_score: clampConfidence(row?.signal_score),
+  pedigreeConfidence: clampConfidence(row?.pedigreeConfidence)
+}));
+
 status.stakePerRace = stakeData.stakePerRace || 10;
 status.exoticStakePerRace = (typeof stakeData.exoticStakePerRace === 'number') ? stakeData.exoticStakePerRace : 1;
 status.earlyWindowMin = (typeof stakeData.earlyWindowMin === 'number') ? stakeData.earlyWindowMin : 180;
@@ -744,6 +765,7 @@ status.suggestedBets = (status.suggestedBets || []).map(row => {
     executionRouteConfidence: policy.confidence,
     executionDelta: policy.delta,
     executionEligible: !!eligible,
+    recommendedAction: eligible ? 'BET' : 'NO_BET',
     executionBlockReason: eligible ? null : [
       policy.route === 'NO_EDGE' ? 'no_statistical_edge' : null,
       policy.confidence < EDGE_ROUTE_MIN_CONF ? 'low_route_confidence' : null,
@@ -752,6 +774,18 @@ status.suggestedBets = (status.suggestedBets || []).map(row => {
     ].filter(Boolean)
   };
 });
+
+status.noBetPolicy = {
+  defaultAction: 'NO_BET',
+  triggerRequirements: {
+    route: 'TOTE_OR_FIXED',
+    minRouteConfidence: EDGE_ROUTE_MIN_CONF,
+    minSignalPct: 40,
+    jumpWindowMin: Number(status.earlyWindowMin || 180)
+  }
+};
+status.noBetCount = (status.suggestedBets || []).filter(x => x.recommendedAction === 'NO_BET').length;
+status.betAllowedCount = (status.suggestedBets || []).filter(x => x.recommendedAction === 'BET').length;
 
 const CONFIDENCE_SIGNAL_THRESHOLD = 40;
 const CONFIDENCE_FRINGE_BAND = 5;
@@ -799,7 +833,11 @@ appendJsonl(betPlanAuditPath, {
     pedigreeScore: x.pedigreeScore ?? null,
     pedigreeConfidence: x.pedigreeConfidence ?? null,
     pedigreeRelativeEdge: x.pedigreeRelativeEdge ?? null,
-    pedigreeArchetype: x.pedigreeArchetype || null
+    pedigreeArchetype: x.pedigreeArchetype || null,
+    recommendedAction: x.recommendedAction || 'NO_BET',
+    executionRoute: x.executionRoute || 'NO_EDGE',
+    executionRouteConfidence: x.executionRouteConfidence ?? 0,
+    executionBlockReason: x.executionBlockReason || null
   })),
   suggestedAll: (status.suggestedBets || []).map(x => ({
     meeting: x.meeting,
@@ -816,7 +854,11 @@ appendJsonl(betPlanAuditPath, {
     pedigreeScore: x.pedigreeScore ?? null,
     pedigreeConfidence: x.pedigreeConfidence ?? null,
     pedigreeRelativeEdge: x.pedigreeRelativeEdge ?? null,
-    pedigreeArchetype: x.pedigreeArchetype || null
+    pedigreeArchetype: x.pedigreeArchetype || null,
+    recommendedAction: x.recommendedAction || 'NO_BET',
+    executionRoute: x.executionRoute || 'NO_EDGE',
+    executionRouteConfidence: x.executionRouteConfidence ?? 0,
+    executionBlockReason: x.executionBlockReason || null
   })),
   interestingTop: (status.interestingRunners || []).slice(0, 12),
   moversTop: (status.marketMovers || []).slice(0, 12),

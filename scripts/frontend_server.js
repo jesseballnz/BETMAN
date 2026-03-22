@@ -3897,6 +3897,97 @@ const server = http.createServer(async (req, res)=>{
       return;
     }
 
+    if (url.pathname === '/api/autobet-settings') {
+      const principal = req.authPrincipal;
+      if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401);
+      const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
+      const filename = 'autobet_settings.json';
+      const settingsPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', filename), filename);
+
+      if (req.method === 'GET') {
+        const payload = DB_URL ? await loadDataSnapshotFromPg(tenantId, filename) : null;
+        return okJson(res, payload || loadJson(settingsPath, { enabled: false, mode: 'watch', platform: 'TAB', username: '', password: '' }));
+      }
+
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+          let payload = {};
+          try { payload = body ? JSON.parse(body) : {}; } catch {}
+          const modeRaw = String(payload.mode || 'watch').toLowerCase();
+          const normalizedMode = (modeRaw === 'live' || modeRaw === 'bet') ? 'bet' : 'watch';
+          const next = {
+            enabled: normalizedMode === 'bet',
+            mode: normalizedMode,
+            platform: ['TAB','BETCHA','BOTH'].includes(String(payload.platform || '').toUpperCase()) ? String(payload.platform).toUpperCase() : 'TAB',
+            username: String(payload.username || ''),
+            password: String(payload.password || ''),
+            riskProfile: ['conservative','balanced','aggressive'].includes(String(payload.riskProfile || '').toLowerCase()) ? String(payload.riskProfile).toLowerCase() : 'balanced',
+            maxStakePerBet: Math.max(0, Number(payload.maxStakePerBet || 1)),
+            dailyExposureCap: Math.max(0, Number(payload.dailyExposureCap || 100)),
+            minSignalPct: Math.max(0, Math.min(100, Number(payload.minSignalPct || 40))),
+            updatedAt: new Date().toISOString()
+          };
+          fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+          fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2));
+          if (process.env.DATABASE_URL || process.env.BETMAN_DATABASE_URL) {
+            const { spawnSync } = require('child_process');
+            spawnSync('node', [path.join(process.cwd(), 'scripts', 'db_sync.js'), `--tenant=${tenantId}`, '--keys=autobet_settings.json', '--audit=none'], { stdio: 'ignore' });
+          }
+          return okJson(res, { ok: true, saved: true, settings: { ...next, password: next.password ? '********' : '' } });
+        });
+        return;
+      }
+    }
+
+    if (url.pathname === '/api/autobet-test-login') {
+      const principal = req.authPrincipal;
+      if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401);
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        let payload = {};
+        try { payload = body ? JSON.parse(body) : {}; } catch {}
+        const platform = String(payload.platform || 'TAB').toUpperCase();
+        const username = String(payload.username || '');
+        const password = String(payload.password || '');
+        if (!username || !password) return okJson(res, { ok: false, error: 'missing_credentials' }, 400);
+
+        const env = { ...process.env };
+        if (platform === 'TAB' || platform === 'BOTH') {
+          env.TAB_USERNAME = username;
+          env.TAB_PASSWORD = password;
+        }
+        if (platform === 'BETCHA' || platform === 'BOTH') {
+          env.BETCHA_USERNAME = username;
+          env.BETCHA_PASSWORD = password;
+        }
+
+        const { spawnSync } = require('child_process');
+        const run = spawnSync('node', [path.join(process.cwd(), 'scripts', 'bookmaker_status.js')], { encoding: 'utf8', env, timeout: 120000 });
+        const balance = loadJson(path.join(process.cwd(), 'memory', 'balance.json'), {});
+        const tabErr = balance?.tab?.error || null;
+        const betchaErr = balance?.betcha?.error || null;
+        const pass = platform === 'TAB'
+          ? !tabErr
+          : platform === 'BETCHA'
+            ? !betchaErr
+            : (!tabErr && !betchaErr);
+
+        return okJson(res, {
+          ok: pass,
+          testedPlatform: platform,
+          tabError: tabErr,
+          betchaError: betchaErr,
+          exitCode: Number(run.status || 0),
+          stdout: String(run.stdout || '').slice(0, 800),
+          stderr: String(run.stderr || '').slice(0, 800)
+        }, pass ? 200 : 400);
+      });
+      return;
+    }
+
     if (url.pathname === '/api/performance-poll') {
       const principal = req.authPrincipal;
       if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
@@ -3918,7 +4009,8 @@ const server = http.createServer(async (req, res)=>{
       const result = spawnSync('python', [path.join(process.cwd(), 'scripts', 'betman_train_offline.py')], { encoding: 'utf8' });
       const output = (result.stdout || '').trim();
       const error = (result.stderr || '').trim();
-      return okJson(res, { ok: !result.error, output: output.slice(0, 4000), error: error.slice(0, 4000) });
+      const ok = !result.error && Number(result.status || 0) === 0;
+      return okJson(res, { ok, exitCode: Number(result.status || 0), output: output.slice(0, 4000), error: error.slice(0, 4000) });
     }
 
     if (url.pathname === '/api/bakeoff-run-status') {
@@ -4549,6 +4641,17 @@ if (url.pathname === '/api/ask-selection') {
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
     return okJson(res, { ok: true, service: 'betman-api', ts: new Date().toISOString() });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/autobet-settings') {
+    const principal = req.authPrincipal;
+    if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401);
+    const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
+    const filename = 'autobet_settings.json';
+    const settingsPath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', filename), filename);
+    const payload = DB_URL ? await loadDataSnapshotFromPg(tenantId, filename) : null;
+    const out = payload || loadJson(settingsPath, { enabled: false, mode: 'watch', platform: 'TAB', username: '', password: '', riskProfile: 'balanced', maxStakePerBet: 1, dailyExposureCap: 100, minSignalPct: 40 });
+    return okJson(res, { ...out, password: out.password ? '********' : '' });
   }
 
   if (req.method === 'GET' && (url.pathname === '/api/tote-vs-fixed-edge' || url.pathname === '/data/tote_vs_fixed_edge.json')) {

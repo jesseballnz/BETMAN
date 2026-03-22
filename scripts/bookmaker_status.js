@@ -31,10 +31,20 @@ function parseAccountPair(text){
   return { available: vals[0] ?? null, bonus: vals[1] ?? null };
 }
 
+function resolveChromiumPath(){
+  const candidates = [
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+    '/Users/jesseball/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  ].filter(Boolean);
+  return candidates.find(p => fs.existsSync(p)) || null;
+}
+
 async function betchaScrape(){
   const storageState = process.env.BETCHA_STORAGE_STATE || '';
-  const chromiumPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || '/Users/jesseball/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium';
-  const browser = await chromium.launch({ headless: true, executablePath: chromiumPath });
+  const chromiumPath = resolveChromiumPath();
+  const launchOpts = chromiumPath ? { headless: true, executablePath: chromiumPath } : { headless: true };
+  const browser = await chromium.launch(launchOpts);
   const context = await browser.newContext(storageState && fs.existsSync(storageState) ? { storageState } : {});
   const page = await context.newPage();
 
@@ -100,8 +110,9 @@ async function betchaScrape(){
 
 async function tabScrape(){
   const storageState = process.env.TAB_STORAGE_STATE || '';
-  const chromiumPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || '/Users/jesseball/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium';
-  const browser = await chromium.launch({ headless: true, executablePath: chromiumPath });
+  const chromiumPath = resolveChromiumPath();
+  const launchOpts = chromiumPath ? { headless: true, executablePath: chromiumPath } : { headless: true };
+  const browser = await chromium.launch(launchOpts);
   const context = await browser.newContext(storageState && fs.existsSync(storageState) ? { storageState } : {});
   const page = await context.newPage();
 
