@@ -1630,11 +1630,20 @@ function renderMarketMovers(rows){
     })
     .slice()
     .sort((a,b) => {
-      const aRace = normalizeRaceNumber(a.race);
-      const bRace = normalizeRaceNumber(b.race);
-      const aSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(a.meeting) === selectedMeetingKey && aRace === selectedRaceNum;
-      const bSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(b.meeting) === selectedMeetingKey && bRace === selectedRaceNum;
+      const aRace = Number(normalizeRaceNumber(a.race));
+      const bRace = Number(normalizeRaceNumber(b.race));
+      const selectedRaceNo = Number(selectedRaceNum || NaN);
+      const aBucket = Number.isFinite(selectedRaceNo) && Number.isFinite(aRace)
+        ? (aRace === selectedRaceNo ? 0 : (aRace > selectedRaceNo ? 1 : 2))
+        : 3;
+      const bBucket = Number.isFinite(selectedRaceNo) && Number.isFinite(bRace)
+        ? (bRace === selectedRaceNo ? 0 : (bRace > selectedRaceNo ? 1 : 2))
+        : 3;
+      const aSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(a.meeting) === selectedMeetingKey && String(normalizeRaceNumber(a.race)) === selectedRaceNum;
+      const bSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(b.meeting) === selectedMeetingKey && String(normalizeRaceNumber(b.race)) === selectedRaceNum;
       if (aSelected !== bSelected) return aSelected ? -1 : 1;
+      if (aBucket !== bBucket) return aBucket - bBucket;
+      if (Number.isFinite(aRace) && Number.isFinite(bRace) && aRace !== bRace) return aRace - bRace;
       const ma = Number(a.minsToJump);
       const mb = Number(b.minsToJump);
       const hasA = Number.isFinite(ma);
@@ -1917,21 +1926,7 @@ function renderInteresting(rows){
     return;
   }
 
-  const selectedRaceNo = (selectedRace && meetingMatches(selectedRace.meeting))
-    ? Number(String(selectedRace.race_number || selectedRace.race || '').replace(/^R/i,''))
-    : NaN;
-  const ordered = scoped
-    .slice()
-    .sort((a,b) => {
-      if (Number.isFinite(selectedRaceNo)) {
-        const aRace = Number(String(a.race || a.race_number || '').replace(/^R/i,''));
-        const bRace = Number(String(b.race || b.race_number || '').replace(/^R/i,''));
-        const aBefore = Number.isFinite(aRace) && aRace < selectedRaceNo ? 1 : 0;
-        const bBefore = Number.isFinite(bRace) && bRace < selectedRaceNo ? 1 : 0;
-        if (aBefore !== bBefore) return aBefore - bBefore;
-      }
-      return jumpsInToMinutes(a.eta) - jumpsInToMinutes(b.eta);
-    });
+  const ordered = orderRowsAroundSelectedRace(scoped.map(r => ({ ...r, jumpsIn: r.jumpsIn || r.eta })));
 
   ordered.forEach(r=>{
     const row = document.createElement('div');
@@ -10857,6 +10852,28 @@ function bindPollOddsButton(){
   const btn = $('pollOddsBtn');
   if (!btn) return;
   btn.onclick = async ()=>{
+    if (btn.dataset.loading === '1') return;
+    const originalText = btn.textContent || 'Poll Odds';
+    btn.dataset.loading = '1';
+    btn.disabled = true;
+    btn.textContent = 'Polling…';
+    const raceKey = selectedRace?.key;
+    const fallbackMeeting = selectedRace?.meeting;
+    const fallbackRace = selectedRace?.race_number;
+    try {
+      await triggerPoll();
+      if (raceKey) {
+        await selectRace(raceKey, fallbackMeeting, fallbackRace);
+      }
+    } catch (err) {
+      console.error('poll_odds_failed', err);
+    } finally {
+      delete btn.dataset.loading;
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  };
+}btn.onclick = async ()=>{
     if (btn.dataset.loading === '1') return;
     const originalText = btn.textContent || 'Poll Odds';
     btn.dataset.loading = '1';
