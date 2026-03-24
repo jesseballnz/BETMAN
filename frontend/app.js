@@ -10876,26 +10876,4 @@ function bindPollOddsButton(){
       btn.textContent = originalText;
     }
   };
-}btn.onclick = async ()=>{
-    if (btn.dataset.loading === '1') return;
-    const originalText = btn.textContent || 'Poll Odds';
-    btn.dataset.loading = '1';
-    btn.disabled = true;
-    btn.textContent = 'Polling…';
-    const raceKey = selectedRace?.key;
-    const fallbackMeeting = selectedRace?.meeting;
-    const fallbackRace = selectedRace?.race_number;
-    try {
-      await triggerPoll();
-      if (raceKey) {
-        await selectRace(raceKey, fallbackMeeting, fallbackRace);
-      }
-    } catch (err) {
-      console.error('poll_odds_failed', err);
-    } finally {
-      delete btn.dataset.loading;
-      btn.disabled = false;
-      btn.textContent = originalText;
-    }
-  };
 }
