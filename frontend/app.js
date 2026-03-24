@@ -2425,12 +2425,16 @@ function renderSuggested(rows){
     const tag = tags.length ? ` ${tags.join(' ')}` : '';
 
     const odds = parseReasonOdds(r.reason);
+    const suggestedSignalRaw = Number(r.signal_score);
+    const suggestedSignal = Number.isFinite(suggestedSignalRaw)
+      ? suggestedSignalRaw
+      : (isMultiType(r.type) ? exoticSignalScore(r) : signalScore(r.reason, r.type, r.selection));
     row.innerHTML = `
       <div><button class='bet-btn race-cell-btn suggested-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
       <div><button class='bet-btn suggested-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-selection='${escapeAttr(cleanRunnerText(r.selection))}' data-reason='${escapeAttr(r.reason||'')}'><span class='bet-icon'>💡</span>${escapeHtml(cleanRunnerText(r.selection))}${tag}</button></div>
       <div>${r.type}</div>
       <div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div><div class='sub'>${marketEdgeText(r.reason)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
-      <div class='right'>${signalMeter(r.reason, r.type, r.selection)}<div class='sub' style='margin-top:6px'>${reasonToEnglish(r.reason)}</div></div>
+      <div class='right'>${signalMeterFromScore(suggestedSignal)}<div class='sub' style='margin-top:6px'>${reasonToEnglish(r.reason)}</div></div>
     `;
     table.appendChild(row);
   });
