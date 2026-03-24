@@ -2359,25 +2359,46 @@ function baseSuggestedRows(rows){
     });
 }
 
+function orderRowsAroundSelectedRace(rows){
+  const list = Array.isArray(rows) ? rows.slice() : [];
+  const selectedRaceNo = (selectedRace && meetingMatches(selectedRace.meeting))
+    ? Number(String(selectedRace.race_number || selectedRace.race || '').replace(/^R/i,''))
+    : NaN;
+  return list.sort((a,b) => {
+    const aj = jumpsInToMinutes(a.jumpsIn || a.eta);
+    const bj = jumpsInToMinutes(b.jumpsIn || b.eta);
+    if (Number.isFinite(selectedRaceNo)) {
+      const aRace = Number(String(a.race || a.race_number || '').replace(/^R/i,''));
+      const bRace = Number(String(b.race || b.race_number || '').replace(/^R/i,''));
+      const aBucket = Number.isFinite(aRace)
+        ? (aRace === selectedRaceNo ? 0 : (aRace > selectedRaceNo ? 1 : 2))
+        : 3;
+      const bBucket = Number.isFinite(bRace)
+        ? (bRace === selectedRaceNo ? 0 : (bRace > selectedRaceNo ? 1 : 2))
+        : 3;
+      if (aBucket !== bBucket) return aBucket - bBucket;
+      if (aBucket === 2 && Number.isFinite(aRace) && Number.isFinite(bRace) && aRace !== bRace) return aRace - bRace;
+      if ((aBucket === 0 || aBucket === 1) && Number.isFinite(aRace) && Number.isFinite(bRace) && aRace !== bRace) return aRace - bRace;
+    }
+    return aj - bj;
+  });
+}
+
 function renderSuggested(rows){
   const table = $('suggestedTable');
   table.innerHTML = '';
   const suggestedSource = (rows && rows.length) ? rows : (latestSuggestedBets || []);
-  let mainRows = baseSuggestedRows(suggestedSource);
+  let mainRows = orderRowsAroundSelectedRace(baseSuggestedRows(suggestedSource));
   if (!mainRows.length && selectedMeeting && selectedMeeting !== 'ALL') {
     const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
-    mainRows = (latestSuggestedBets || suggestedSource)
+    mainRows = orderRowsAroundSelectedRace((latestSuggestedBets || suggestedSource)
       .filter(r => meetingMatches(r.meeting))
-      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase()))
-      .slice()
-      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
+      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase())));
   }
   if (!mainRows.length) {
     const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
-    mainRows = (latestSuggestedBets || suggestedSource)
-      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase()))
-      .slice()
-      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
+    mainRows = orderRowsAroundSelectedRace((latestSuggestedBets || suggestedSource)
+      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase())));
   }
 
   if (!mainRows.length) {
