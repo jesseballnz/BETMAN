@@ -9282,8 +9282,11 @@ $('meetingSelect')?.addEventListener('change', async (e)=>{
 
   await loadRaces();
   renderRaces(racesCache);
-  renderInteresting(latestInterestingRows);
-  renderMarketMovers(latestMarketMovers);
+  renderSuggested(latestFilteredSuggested || filterSuggestedByWhy(latestSuggestedBets || []));
+  renderMultis(latestFilteredSuggested || filterSuggestedByWhy(latestSuggestedBets || []));
+  renderNextPlanned(latestFilteredSuggested || filterSuggestedByWhy(latestSuggestedBets || []));
+  renderInteresting(latestInterestingRows || []);
+  renderMarketMovers(latestMarketMovers || []);
   refreshTabAccess();
   renderMeetingIntelPanel();
 });
