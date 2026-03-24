@@ -592,6 +592,27 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
   text-transform: uppercase;
 }
 
+.interesting-meta {
+  margin-bottom: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.interesting-note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #c8d4e3;
+}
+
+.interesting-profile {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #8ea0b5;
+}
+
 .strategy-fallback-row {
   padding: 10px 12px;
   border: 1px dashed rgba(255,255,255,0.18);

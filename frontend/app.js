@@ -1944,11 +1944,11 @@ function renderInteresting(rows){
     if (runner?.last_twenty_starts) formBits.push(`Form ${runner.last_twenty_starts}`);
     if (formSignal?.summary) formBits.push(formSignal.summary);
     if (runner?.speedmap) formBits.push(`Speed ${runner.speedmap}`);
-    const profileLine = formBits.length ? `<div class='sub'>${formBits.join(' · ')}</div>` : '';
+    const profileLine = formBits.length ? `<div class='interesting-profile'>${formBits.join(' · ')}</div>` : '';
     row.innerHTML = `
       <div><button class='bet-btn race-cell-btn interesting-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
       <div><button class='bet-btn interesting-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-runner='${escapeAttr(cleanRunnerText(r.runner))}'><span class='bet-icon'>🧠</span>${escapeHtml(cleanRunnerText(r.runner))}</button></div>
-      <div><div style='margin-bottom:6px'>${signalHint(reasonWithOdds, 'win', r.runner || r.selection || '', fallbackSignal)} ${tags.join(' ')}</div>${aiNote}${profileLine}</div>
+      <div><div class='interesting-meta'>${signalHint(reasonWithOdds, 'win', r.runner || r.selection || '', fallbackSignal)} ${tags.join(' ')}</div><div class='interesting-note'>${aiNote}</div>${profileLine}</div>
       <div>${r.odds || '—'}</div>
       <div class='right'>${buildJumpCell(r.meeting, r.race, r.eta || '—')}</div>
     `;
