@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BETMAN</title>
-  <link rel="stylesheet" href="styles.css?v=20260322-1104" />
+  <link rel="stylesheet" href="styles.css?v=20260319-1222" />
 </head>
 <body>
   <div class="app">
@@ -110,7 +110,6 @@
     <nav class="page-nav">
       <button class="page-tab active" data-page="workspace">Meeting Workspace</button>
       <button class="page-tab" data-page="suggested">Suggested Bets</button>
-      <button class="page-tab" data-page="livestream">Live Stream</button>
       <button class="page-tab" data-page="multis">Multis</button>
       <button class="page-tab" data-page="movers">Market Movers</button>
       <button class="page-tab" data-page="interesting">Interesting Runners</button>
@@ -134,57 +133,6 @@
         </div>
       </div>
       <div class="table" id="suggestedTable"></div>
-    </section>
-
-    <section class="section page-section" data-page="livestream" style="display:none">
-      <div class="section-head">
-        <h3>Live Stream · Upcoming Bets</h3>
-      </div>
-      <div class="perf-section perf-wide" style="margin-bottom:12px">
-        <h4>AUTOBET Control</h4>
-        <div class="sub">Admin only. Credentials are masked in UI.</div>
-        <div class="filters" style="margin-top:10px;align-items:flex-end;gap:10px;flex-wrap:wrap">
-          <label class="sub" style="display:flex;flex-direction:column;gap:6px">Mode
-            <select id="autobetModeSelect">
-              <option value="watch">Watch</option>
-              <option value="bet">Bet</option>
-            </select>
-          </label>
-          <label class="sub" style="display:flex;flex-direction:column;gap:6px">Platform
-            <select id="autobetPlatformSelect">
-              <option value="TAB">TAB</option>
-              <option value="BETCHA">BETCHA</option>
-              <option value="BOTH">BOTH</option>
-            </select>
-          </label>
-          <label class="sub" style="display:flex;flex-direction:column;gap:6px">Username
-            <input id="autobetUsername" type="text" placeholder="Account username" />
-          </label>
-          <label class="sub" style="display:flex;flex-direction:column;gap:6px">Password
-            <input id="autobetPassword" type="password" placeholder="••••••••" autocomplete="new-password" />
-          </label>
-          <label class="sub" style="display:flex;flex-direction:column;gap:6px">Risk Profile
-            <select id="autobetRiskProfile">
-              <option value="conservative">Conservative</option>
-              <option value="balanced">Balanced</option>
-              <option value="aggressive">Aggressive</option>
-            </select>
-          </label>
-          <label class="sub" style="display:flex;flex-direction:column;gap:6px">Max Stake / Bet
-            <input id="autobetMaxStake" type="number" min="0" step="0.5" placeholder="1" />
-          </label>
-          <label class="sub" style="display:flex;flex-direction:column;gap:6px">Daily Exposure Cap
-            <input id="autobetDailyCap" type="number" min="0" step="1" placeholder="100" />
-          </label>
-          <label class="sub" style="display:flex;flex-direction:column;gap:6px">Min Signal %
-            <input id="autobetMinSignal" type="number" min="0" max="100" step="1" placeholder="40" />
-          </label>
-          <button id="saveAutobetSettingsBtn" class="btn btn-ghost compact-btn">Save AUTOBET Settings</button>
-        </div>
-        <div id="autobetSettingsHint" class="sub" style="margin-top:8px">AUTOBET is OFF</div>
-      </div>
-      <div class="sub">Real-time queue of eligible/blocked bets in jump-time order.</div>
-      <div id="liveBetStream" class="table"></div>
     </section>
 
     <section class="section page-section" data-page="strategy" style="display:none">
@@ -276,7 +224,7 @@
         <h3>Performance</h3>
         <div class="section-actions">
           <button id="refreshPerformanceBtn" class="btn btn-ghost compact-btn">Refresh</button>
-          <button id="trainModelsBtn" class="btn btn-ghost compact-btn" title="Runs offline trainer (betman_train_offline.py) on local historical data. Does not place bets.">Train Models</button>
+          <button id="trainModelsBtn" class="btn btn-ghost compact-btn">Train Models</button>
         </div>
       </div>
       <div id="roiAdminHint" class="perf-hint" style="display:none">ROI figures are visible to admin only.</div>
@@ -297,13 +245,6 @@
         <div id="betPlanPerformanceMetrics"></div>
         <div id="betPlanPerformanceBreakdown" class="bet-plan-breakdown"></div>
         <div id="betPlanPerformanceTable" class="table"></div>
-      </div>
-
-      <div class="perf-section perf-wide" data-roi-only>
-        <h4>TOTE vs FIXED Edge Report</h4>
-        <div class="sub">Delta = Tote profit − Fixed profit. Thresholds filter low-sample noise.</div>
-        <div id="toteFixedEdgeCards" class="perf-kpis" style="margin-top:10px"></div>
-        <div id="toteFixedEdgeTables" class="table" style="margin-top:10px"></div>
       </div>
 
       <div class="perf-section perf-wide">
@@ -328,30 +269,33 @@
           <h4>30D Win Rate</h4>
           <canvas id="winRateTrendChart"></canvas>
         </div>
-        
-      </div>
-
-      <div class="perf-section perf-wide perf-return" data-roi-only>
-        <div class="perf-logo-line">
-          <img src="assets/logo.png" alt="BETMAN" />
-        </div>
-        <h4>BETMAN RETURN</h4>
-        <div class="return-meter">
-          <div class="sub" style="margin-bottom:6px">Total ROI intensity bar (all-time settled)</div>
-          <div class="return-bar"><span id="betmanReturnBar"></span></div>
-          <div class="return-cards" id="betmanReturnCards">
-            <div class="return-card"><div class="return-card-label">Combined P/L</div><div class="return-card-value" id="betmanReturnValue">—</div><div class="return-card-sub" id="betmanReturnSub">ROI — · Stake —</div></div>
-            <div class="return-card"><div class="return-card-label">Base Strategies P/L</div><div class="return-card-value" id="betmanBaseReturnValue">—</div><div class="return-card-sub" id="betmanBaseReturnSub">ROI — · Stake —</div></div>
-            <div class="return-card"><div class="return-card-label">Exotics P/L</div><div class="return-card-value" id="betmanExoticReturnValue">—</div><div class="return-card-sub" id="betmanExoticReturnSub">ROI — · Stake —</div></div>
+        <div class="perf-section perf-return">
+          <div class="perf-logo-line">
+            <img src="assets/logo.png" alt="BETMAN" />
+          </div>
+          <h4>BETMAN RETURN</h4>
+          <div class="return-meter">
+            <div class="return-bar"><span id="betmanReturnBar"></span></div>
+            <div class="return-cards">
+              <div class="return-card return-card-combined">
+                <div class="return-card-label">Combined P/L</div>
+                <div class="return-card-value" id="betmanReturnValue">—</div>
+                <div class="return-card-sub" id="betmanReturnSub">ROI — · Stake —</div>
+              </div>
+              <div class="return-card return-card-base">
+                <div class="return-card-label">Base Strategies P/L</div>
+                <div class="return-card-value" id="betmanBaseReturnValue">—</div>
+                <div class="return-card-sub" id="betmanBaseReturnSub">ROI — · Stake —</div>
+              </div>
+              <div class="return-card return-card-exotic">
+                <div class="return-card-label">Exotics P/L</div>
+                <div class="return-card-value" id="betmanExoticReturnValue">—</div>
+                <div class="return-card-sub" id="betmanExoticReturnSub">ROI — · Stake —</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-
-      <div class="perf-section perf-wide" data-roi-only>
-        <h4>BETMAN Summary</h4>
-        <div id="perfSummary" class="table"></div>
-      </div>
-
       <div class="perf-dashboard">
         <div class="perf-section">
           <h4>Latest Day Snapshot</h4>
@@ -407,11 +351,11 @@
                 <div id="perfRoiTote" class="value">—</div>
               </div>
               <div class="perf-card">
-                <div class="label">ROI (Fixed)</div>
+                <div class="label">ROI (Rec)</div>
                 <div id="perfRoiRec" class="value">—</div>
               </div>
               <div class="perf-card">
-                <div class="label">ROI (Model Rec)</div>
+                <div class="label">ROI (Fixed)</div>
                 <div id="perfRoiFixed" class="value">—</div>
               </div>
               <div class="perf-card">
@@ -440,6 +384,10 @@
         </div>
         <div class="perf-insights">
           <div class="perf-section win">
+            <h4>Performance Summary</h4>
+            <div id="perfSummary" class="table"></div>
+          </div>
+          <div class="perf-section win">
             <h4>30 Day Best BETMAN Strategy (Win / Odds Runner / EW)</h4>
             <div id="perfBestStrategy" class="table"></div>
           </div>
@@ -462,11 +410,6 @@
         <div class="perf-section">
           <h4>Monthly</h4>
           <div id="perfMonthlyTable" class="table"></div>
-        </div>
-        <div class="perf-section perf-wide">
-          <h4>Performance Log (Daily)</h4>
-          <div class="sub">Latest settled daily stats log.</div>
-          <div id="perfDailyLog" class="table"></div>
         </div>
         <div class="perf-section perf-wide">
           <h4>Bet Performance (Win / Odds / EW / Long)</h4>
@@ -729,6 +672,6 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
   <script src="perf-utils.js?v=20260318-2120"></script>
-  <script src="app.js?v=20260322-1400"></script>
+  <script src="app.js?v=20260320-0726"></script>
 </body>
 </html>

@@ -9,13 +9,11 @@
       total_bets: 0,
       total_stake: 0,
       roi_stake: 0,
-      roi_stake_base: 0,
       win_bets: 0,
       wins: 0,
       races_run: 0,
       races_won: 0,
       roi_rec_profit: 0,
-      roi_rec_base_profit: 0,
       roi_sp_profit: 0,
       roi_sp_stake: 0,
       roi_tote_profit: 0,
@@ -35,19 +33,16 @@
       const bets = r.total_bets ?? r.win_bets ?? 0;
       const stake = r.total_stake ?? bets;
       const roiStake = r.roi_stake ?? stake;
-      const roiStakeBase = r.roi_stake_base ?? roiStake;
       const winBets = r.win_bets ?? 0;
       const wins = r.wins ?? Math.round((r.win_rate ?? 0) * winBets);
       agg.total_bets += bets;
       agg.total_stake += stake;
       agg.roi_stake += roiStake;
-      agg.roi_stake_base += roiStakeBase;
       agg.win_bets += winBets;
       agg.wins += wins;
       agg.races_run += r.races_run ?? 0;
       agg.races_won += r.races_won ?? 0;
       if (Number.isFinite(r.roi_rec)) agg.roi_rec_profit += r.roi_rec * roiStake;
-      if (Number.isFinite(r.roi_rec_base)) agg.roi_rec_base_profit += r.roi_rec_base * roiStakeBase;
       if (Number.isFinite(r.roi_sp)) {
         agg.roi_sp_profit += r.roi_sp * roiStake;
         agg.roi_sp_stake += roiStake;

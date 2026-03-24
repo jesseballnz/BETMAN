@@ -4,6 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const dns = require('dns');
+const { mergePublicStatusLists } = require('./status_snapshot_merge');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -295,13 +296,7 @@ async function initAuthPersistence(){
 }
 
 function send(res, code, body, type='text/plain'){
-  const headers = { 'Content-Type': type };
-  if (typeof type === 'string' && /text\/|javascript|json|css|html/i.test(type)) {
-    headers['Cache-Control'] = 'no-store, no-cache, must-revalidate';
-    headers['Pragma'] = 'no-cache';
-    headers['Expires'] = '0';
-  }
-  res.writeHead(code, headers);
+  res.writeHead(code, {'Content-Type': type});
   res.end(body);
 }
 
@@ -3049,109 +3044,6 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   };
 }
 
-
-
-function edgeThresholds(){
-  return {
-    periodMinBets: Number(process.env.BETMAN_EDGE_PERIOD_MIN_BETS || 20),
-    typeMinBets: Number(process.env.BETMAN_EDGE_TYPE_MIN_BETS || 8),
-    exoticMinBets: Number(process.env.BETMAN_EDGE_EXOTIC_MIN_BETS || 10)
-  };
-}
-
-function num(v){
-  return Number.isFinite(Number(v)) ? Number(v) : null;
-}
-
-function aggregateEdgeRows(rows, periodLabel, minBets){
-  const totalBets = rows.reduce((a,r)=>a+(Number(r.total_bets||0)),0);
-  const baseStake = rows.reduce((a,r)=>a+(Number(r.roi_stake_base || r.roi_stake || 0)),0);
-  const fixedProfit = rows.reduce((a,r)=>a+((num(r.roi_sp)||0) * Number(r.roi_stake_base || r.roi_stake || 0)),0);
-  const toteProfit = rows.reduce((a,r)=>a+((num(r.roi_tote)||0) * Number(r.roi_stake_base || r.roi_stake || 0)),0);
-  const deltaProfit = toteProfit - fixedProfit;
-  return {
-    period: periodLabel,
-    totalBets,
-    comparableBets: baseStake,
-    roiFixed: baseStake ? (fixedProfit / baseStake) : null,
-    roiTote: baseStake ? (toteProfit / baseStake) : null,
-    profitFixed: fixedProfit,
-    profitTote: toteProfit,
-    profitDelta: deltaProfit,
-    qualified: totalBets >= minBets,
-    thresholdMinBets: minBets
-  };
-}
-
-function aggregateTypeRows(rows, key, minBets){
-  let bets=0, stake=0, fixedProfit=0, toteProfit=0;
-  rows.forEach(r=>{
-    const src = key === 'longshots' ? (r.long_breakdown || {})
-      : key === 'exotics' ? (r.exotic_breakdown || {})
-      : ((r.pick_breakdown || {})[key] || {});
-    if (key === 'exotics') {
-      Object.values(src).forEach(ex => {
-        const b = Number(ex?.bets || 0);
-        const roiT = num(ex?.roi_tote);
-        bets += b;
-        if (Number.isFinite(roiT)) {
-          toteProfit += roiT * b;
-          stake += b;
-        }
-      });
-      return;
-    }
-    const b = Number(src.bets || 0);
-    const s = Number(src.roi_stake_units || src.stake_units || b || 0);
-    const roiF = num(src.roi_sp);
-    const roiT = num(src.roi_tote);
-    bets += b;
-    stake += s;
-    if (Number.isFinite(roiF)) fixedProfit += roiF * s;
-    if (Number.isFinite(roiT)) toteProfit += roiT * s;
-  });
-  const deltaProfit = toteProfit - fixedProfit;
-  return {
-    type: key,
-    bets,
-    comparableBets: stake,
-    roiFixed: stake ? (fixedProfit / stake) : null,
-    roiTote: stake ? (toteProfit / stake) : null,
-    profitFixed: fixedProfit,
-    profitTote: toteProfit,
-    profitDelta: deltaProfit,
-    qualified: bets >= minBets,
-    thresholdMinBets: minBets,
-    toteOnly: key === 'exotics'
-  };
-}
-
-function buildToteVsFixedEdgeReport(daily){
-  const data = (daily && typeof daily === 'object') ? daily : {};
-  const keys = Object.keys(data).sort();
-  const rows = keys.map(k => ({ key:k, ...(data[k]||{}) }));
-  const thresholds = edgeThresholds();
-  const latestDay = rows.length ? aggregateEdgeRows([rows[rows.length-1]], rows[rows.length-1].key, thresholds.periodMinBets) : null;
-  const weekRows = rows.slice(-7);
-  const monthRows = rows.slice(-30);
-  const periods = {
-    day: latestDay,
-    week: aggregateEdgeRows(weekRows, `Last ${weekRows.length} days`, thresholds.periodMinBets),
-    month: aggregateEdgeRows(monthRows, `Last ${monthRows.length} days`, thresholds.periodMinBets)
-  };
-  const typeKeys = ['win','ew','longshots','exotics'];
-  const byType = {
-    day: typeKeys.map(k => aggregateTypeRows(latestDay ? [rows[rows.length-1]] : [], k, k === 'exotics' ? thresholds.exoticMinBets : thresholds.typeMinBets)),
-    week: typeKeys.map(k => aggregateTypeRows(weekRows, k, k === 'exotics' ? thresholds.exoticMinBets : thresholds.typeMinBets)),
-    month: typeKeys.map(k => aggregateTypeRows(monthRows, k, k === 'exotics' ? thresholds.exoticMinBets : thresholds.typeMinBets))
-  };
-  return {
-    generatedAt: new Date().toISOString(),
-    thresholds,
-    periods,
-    byType
-  };
-}
 const server = http.createServer(async (req, res)=>{
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -3479,7 +3371,7 @@ const server = http.createServer(async (req, res)=>{
     const types = { '.css':'text/css', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp' };
     const mime = types[ext] || 'application/octet-stream';
     if (req.method === 'HEAD') {
-      res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' });
+      res.writeHead(200, { 'Content-Type': mime });
       return res.end();
     }
     return send(res, 200, fs.readFileSync(p), mime);
@@ -3489,7 +3381,7 @@ const server = http.createServer(async (req, res)=>{
     const p = safePath('/app.js');
     if (!p || !fs.existsSync(p)) return send(res, 404, 'not found');
     if (req.method === 'HEAD') {
-      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' });
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
       return res.end();
     }
     return send(res, 200, fs.readFileSync(p), 'application/javascript; charset=utf-8');
@@ -3897,97 +3789,6 @@ const server = http.createServer(async (req, res)=>{
       return;
     }
 
-    if (url.pathname === '/api/autobet-settings') {
-      const principal = req.authPrincipal;
-      if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401);
-      const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-      const filename = 'autobet_settings.json';
-      const settingsPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', filename), filename);
-
-      if (req.method === 'GET') {
-        const payload = DB_URL ? await loadDataSnapshotFromPg(tenantId, filename) : null;
-        return okJson(res, payload || loadJson(settingsPath, { enabled: false, mode: 'watch', platform: 'TAB', username: '', password: '' }));
-      }
-
-      if (req.method === 'POST') {
-        let body = '';
-        req.on('data', c => body += c);
-        req.on('end', () => {
-          let payload = {};
-          try { payload = body ? JSON.parse(body) : {}; } catch {}
-          const modeRaw = String(payload.mode || 'watch').toLowerCase();
-          const normalizedMode = (modeRaw === 'live' || modeRaw === 'bet') ? 'bet' : 'watch';
-          const next = {
-            enabled: normalizedMode === 'bet',
-            mode: normalizedMode,
-            platform: ['TAB','BETCHA','BOTH'].includes(String(payload.platform || '').toUpperCase()) ? String(payload.platform).toUpperCase() : 'TAB',
-            username: String(payload.username || ''),
-            password: String(payload.password || ''),
-            riskProfile: ['conservative','balanced','aggressive'].includes(String(payload.riskProfile || '').toLowerCase()) ? String(payload.riskProfile).toLowerCase() : 'balanced',
-            maxStakePerBet: Math.max(0, Number(payload.maxStakePerBet || 1)),
-            dailyExposureCap: Math.max(0, Number(payload.dailyExposureCap || 100)),
-            minSignalPct: Math.max(0, Math.min(100, Number(payload.minSignalPct || 40))),
-            updatedAt: new Date().toISOString()
-          };
-          fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-          fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2));
-          if (process.env.DATABASE_URL || process.env.BETMAN_DATABASE_URL) {
-            const { spawnSync } = require('child_process');
-            spawnSync('node', [path.join(process.cwd(), 'scripts', 'db_sync.js'), `--tenant=${tenantId}`, '--keys=autobet_settings.json', '--audit=none'], { stdio: 'ignore' });
-          }
-          return okJson(res, { ok: true, saved: true, settings: { ...next, password: next.password ? '********' : '' } });
-        });
-        return;
-      }
-    }
-
-    if (url.pathname === '/api/autobet-test-login') {
-      const principal = req.authPrincipal;
-      if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401);
-      let body = '';
-      req.on('data', c => body += c);
-      req.on('end', () => {
-        let payload = {};
-        try { payload = body ? JSON.parse(body) : {}; } catch {}
-        const platform = String(payload.platform || 'TAB').toUpperCase();
-        const username = String(payload.username || '');
-        const password = String(payload.password || '');
-        if (!username || !password) return okJson(res, { ok: false, error: 'missing_credentials' }, 400);
-
-        const env = { ...process.env };
-        if (platform === 'TAB' || platform === 'BOTH') {
-          env.TAB_USERNAME = username;
-          env.TAB_PASSWORD = password;
-        }
-        if (platform === 'BETCHA' || platform === 'BOTH') {
-          env.BETCHA_USERNAME = username;
-          env.BETCHA_PASSWORD = password;
-        }
-
-        const { spawnSync } = require('child_process');
-        const run = spawnSync('node', [path.join(process.cwd(), 'scripts', 'bookmaker_status.js')], { encoding: 'utf8', env, timeout: 120000 });
-        const balance = loadJson(path.join(process.cwd(), 'memory', 'balance.json'), {});
-        const tabErr = balance?.tab?.error || null;
-        const betchaErr = balance?.betcha?.error || null;
-        const pass = platform === 'TAB'
-          ? !tabErr
-          : platform === 'BETCHA'
-            ? !betchaErr
-            : (!tabErr && !betchaErr);
-
-        return okJson(res, {
-          ok: pass,
-          testedPlatform: platform,
-          tabError: tabErr,
-          betchaError: betchaErr,
-          exitCode: Number(run.status || 0),
-          stdout: String(run.stdout || '').slice(0, 800),
-          stderr: String(run.stderr || '').slice(0, 800)
-        }, pass ? 200 : 400);
-      });
-      return;
-    }
-
     if (url.pathname === '/api/performance-poll') {
       const principal = req.authPrincipal;
       if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
@@ -4009,8 +3810,7 @@ const server = http.createServer(async (req, res)=>{
       const result = spawnSync('python', [path.join(process.cwd(), 'scripts', 'betman_train_offline.py')], { encoding: 'utf8' });
       const output = (result.stdout || '').trim();
       const error = (result.stderr || '').trim();
-      const ok = !result.error && Number(result.status || 0) === 0;
-      return okJson(res, { ok, exitCode: Number(result.status || 0), output: output.slice(0, 4000), error: error.slice(0, 4000) });
+      return okJson(res, { ok: !result.error, output: output.slice(0, 4000), error: error.slice(0, 4000) });
     }
 
     if (url.pathname === '/api/bakeoff-run-status') {
@@ -4643,26 +4443,6 @@ if (url.pathname === '/api/ask-selection') {
     return okJson(res, { ok: true, service: 'betman-api', ts: new Date().toISOString() });
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/autobet-settings') {
-    const principal = req.authPrincipal;
-    if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401);
-    const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-    const filename = 'autobet_settings.json';
-    const settingsPath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', filename), filename);
-    const payload = DB_URL ? await loadDataSnapshotFromPg(tenantId, filename) : null;
-    const out = payload || loadJson(settingsPath, { enabled: false, mode: 'watch', platform: 'TAB', username: '', password: '', riskProfile: 'balanced', maxStakePerBet: 1, dailyExposureCap: 100, minSignalPct: 40 });
-    return okJson(res, { ...out, password: out.password ? '********' : '' });
-  }
-
-  if (req.method === 'GET' && (url.pathname === '/api/tote-vs-fixed-edge' || url.pathname === '/data/tote_vs_fixed_edge.json')) {
-    const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-    const payload = DB_URL ? await loadDataSnapshotFromPg(tenantId, 'success_daily.json') : null;
-    const filename = 'success_daily.json';
-    const filePath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', filename), filename);
-    const daily = payload || loadJson(filePath, {});
-    return okJson(res, buildToteVsFixedEdgeReport(daily));
-  }
-
   if (req.method === 'GET' && url.pathname === '/api/ai-models') {
     const principal = req.authPrincipal;
     const openAiAllowed = canUseOpenAiByPrincipal(principal);
@@ -4687,10 +4467,7 @@ if (url.pathname === '/api/ask-selection') {
         ok: true,
         providerDefault: resolveAiProvider(),
         ollamaBase: resolvedBase,
-        ollamaModels: Array.from(new Set([
-          ...((Array.isArray(models) && models.length) ? models : []),
-          ...fallbackOllama
-        ].filter(Boolean))),
+        ollamaModels: (Array.isArray(models) && models.length) ? models : fallbackOllama,
         ...basePayload
       }))
       .catch(() => okJson(res, {
@@ -4721,64 +4498,11 @@ if (url.pathname === '/api/ask-selection') {
 
   if (req.method === 'GET' && url.pathname === '/api/status') {
     const statusFile = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json');
-    const status = loadJson(statusFile, {});
+    let status = loadJson(statusFile, {});
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
     if (tenantId !== 'default') {
       const globalStatus = loadJson(path.join(process.cwd(), 'frontend', 'data', 'status.json'), {});
-      const normMeeting = (val = '') => String(val || '').trim().toLowerCase();
-      const normRace = (val = '') => String(val || '').replace(/^R/i, '').trim();
-      const normText = (val = '') => String(val || '').replace(/\s+/g, ' ').trim().toLowerCase();
-      const mergeList = (key, keyBuilder) => {
-        const rows = new Map();
-        (globalStatus[key] || []).forEach(row => {
-          const dedupe = keyBuilder(row);
-          if (dedupe) rows.set(dedupe, row);
-        });
-        (status[key] || []).forEach(row => {
-          const dedupe = keyBuilder(row);
-          if (dedupe) rows.set(dedupe, row);
-        });
-        if (rows.size) status[key] = Array.from(rows.values());
-      };
-      mergeList('marketMovers', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const runner = normText(row.runner);
-        if (!meeting || !race || !runner) return null;
-        return `${meeting}|${race}|${runner}`;
-      });
-      mergeList('suggestedBets', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const selection = normText(row.selection);
-        const type = normText(row.type);
-        if (!meeting || !race || !selection || !type) return null;
-        return `${meeting}|${race}|${selection}|${type}`;
-      });
-      mergeList('nextPlans', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const selection = normText(row.selection);
-        const type = normText(row.type);
-        const state = normText(row.state || row.status || 'pending');
-        if (!meeting || !race || !selection) return null;
-        return `${meeting}|${race}|${selection}|${type}|${state}`;
-      });
-      mergeList('betPlans', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const selection = normText(row.selection);
-        const type = normText(row.type);
-        if (!meeting || !race || !selection) return null;
-        return `${meeting}|${race}|${selection}|${type}`;
-      });
-      mergeList('interestingRunners', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const runner = normText(row.runner);
-        if (!meeting || !race || !runner) return null;
-        return `${meeting}|${race}|${runner}`;
-      });
+      status = mergePublicStatusLists(globalStatus, status);
     }
     const audited = buildDecisionAudit(status);
     return okJson(res, { ...status, ...audited, tenantId, decisionStandardDoc: '/docs/BETMAN_DECISION_STANDARD.md', aiHealth });
@@ -4910,19 +4634,10 @@ if (url.pathname === '/api/ask-selection') {
   if (req.method === 'GET' && url.pathname === '/data/status.json') {
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
     const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json');
-    const status = (DB_URL ? await loadDataSnapshotFromPg(tenantId, 'status.json') : null) || loadJson(p, {});
+    let status = (DB_URL ? await loadDataSnapshotFromPg(tenantId, 'status.json') : null) || loadJson(p, {});
     if (tenantId !== 'default') {
       const globalStatus = (DB_URL ? await loadDataSnapshotFromPg('default', 'status.json') : null) || loadJson(path.join(process.cwd(), 'frontend', 'data', 'status.json'), {});
-      const merged = new Map();
-      for (const row of (globalStatus.marketMovers || [])) {
-        const key = `${String(row.meeting || '').toLowerCase()}|${String(row.race || '')}|${String(row.runner || '').toLowerCase()}`;
-        merged.set(key, row);
-      }
-      for (const row of (status.marketMovers || [])) {
-        const key = `${String(row.meeting || '').toLowerCase()}|${String(row.race || '')}|${String(row.runner || '').toLowerCase()}`;
-        merged.set(key, row);
-      }
-      status.marketMovers = Array.from(merged.values());
+      status = mergePublicStatusLists(globalStatus, status);
     }
     return send(res, 200, JSON.stringify(status), 'application/json');
   }

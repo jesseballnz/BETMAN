@@ -73,8 +73,7 @@ async function main(){
     'races.json',
     'feel_meter.json',
     'placed_bets.json',
-    'ai_bet_queue.json',
-    'autobet_settings.json'
+    'ai_bet_queue.json'
   ];
 
   const keys = keysArg

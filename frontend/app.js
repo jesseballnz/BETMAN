@@ -552,7 +552,6 @@ const filterCache = {
   movers: { key: '', version: 0, result: [] }
 };
 let latestAiCompare = [];
-let autobetSettingsCache = null;
 let draggedSelections = [];
 let moversMode = (localStorage.getItem('moversMode') === 'drifters') ? 'drifters' : 'firmers';
 let aiModelCatalog = {
@@ -633,7 +632,7 @@ function refreshTabAccess(){
 function setActivePage(page){
   if ((page === 'bakeoff' || page === 'performance') && !isAdminUser) page = 'workspace';
   if (page !== 'workspace' && selectedMeeting === 'ALL') {
-    if (page !== 'help' && page !== 'livestream' && (page !== 'performance' || !isAdminUser)) page = 'workspace';
+    if (page !== 'help' && (page !== 'performance' || !isAdminUser)) page = 'workspace';
   }
   activePage = page;
   document.querySelectorAll('.page-tab').forEach(btn=>{
@@ -847,9 +846,6 @@ async function loadStatus(){
     renderInteresting(latestInterestingRows);
     renderMarketMovers(latestMarketMovers);
     renderSuggested(filteredSuggested);
-    renderLiveBetStream();
-    await syncAutobetSettingsFromApi();
-    renderAutobetControls();
     renderMultis(filteredSuggested);
     renderNextPlanned(filteredSuggested);
     renderRaces(racesCache);
@@ -2361,180 +2357,6 @@ function baseSuggestedRows(rows){
       const bi = b.interesting ? 0 : 1;
       return ai - bi;
     });
-}
-
-function loadAutobetSettings(){
-  if (autobetSettingsCache && typeof autobetSettingsCache === 'object') return autobetSettingsCache;
-  try {
-    return JSON.parse(localStorage.getItem('autobetSettings') || '{}') || {};
-  } catch {
-    return {};
-  }
-}
-
-async function syncAutobetSettingsFromApi(){
-  try {
-    const res = await fetchLocal('./api/autobet-settings', { cache: 'no-store' });
-    const out = await res.json();
-    if (res.ok && out && typeof out === 'object') {
-      autobetSettingsCache = {
-        enabled: !!out.enabled,
-        mode: out.mode || 'watch',
-        platform: out.platform || 'TAB',
-        username: out.username || '',
-        password: out.password || '',
-        riskProfile: out.riskProfile || 'balanced',
-        maxStakePerBet: Number(out.maxStakePerBet ?? 1),
-        dailyExposureCap: Number(out.dailyExposureCap ?? 100),
-        minSignalPct: Number(out.minSignalPct ?? 40)
-      };
-      localStorage.setItem('autobetSettings', JSON.stringify(autobetSettingsCache));
-    }
-  } catch {}
-}
-
-function renderAutobetControls(){
-  try {
-    const mode = $('autobetModeSelect');
-    const platform = $('autobetPlatformSelect');
-    const username = $('autobetUsername');
-    const password = $('autobetPassword');
-    const riskProfile = $('autobetRiskProfile');
-    const maxStake = $('autobetMaxStake');
-    const dailyCap = $('autobetDailyCap');
-    const minSignal = $('autobetMinSignal');
-    const hint = $('autobetSettingsHint');
-    const saveBtn = $('saveAutobetSettingsBtn');
-    if (!mode || !platform || !username || !password || !riskProfile || !maxStake || !dailyCap || !minSignal || !hint || !saveBtn) return;
-
-    const settings = loadAutobetSettings();
-    const modeRaw = String(settings.mode || '').toLowerCase();
-    mode.value = ['watch', 'bet', 'live'].includes(modeRaw)
-      ? (modeRaw === 'live' ? 'bet' : modeRaw)
-      : 'watch';
-    platform.value = ['TAB', 'BETCHA', 'BOTH'].includes(String(settings.platform || '').toUpperCase())
-      ? String(settings.platform).toUpperCase()
-      : 'TAB';
-    username.value = settings.username || '';
-    password.value = settings.password || '';
-    riskProfile.value = settings.riskProfile || 'balanced';
-    maxStake.value = Number(settings.maxStakePerBet ?? 1);
-    dailyCap.value = Number(settings.dailyExposureCap ?? 100);
-    minSignal.value = Number(settings.minSignalPct ?? 40);
-
-    [mode, platform, username, password, riskProfile, maxStake, dailyCap, minSignal, saveBtn].forEach(el => { el.disabled = false; });
-    hint.textContent = `AUTOBET ${mode.value.toUpperCase()} · ${platform.value} · ${riskProfile.value.toUpperCase()} risk`;
-
-  } catch (err) {
-    const hint = $('autobetSettingsHint');
-    if (hint) hint.textContent = `AUTOBET control error: ${err?.message || 'unknown'}`;
-  }
-}
-
-async function saveAutobetSettings(){
-  const mode = $('autobetModeSelect');
-  const platform = $('autobetPlatformSelect');
-  const username = $('autobetUsername');
-  const password = $('autobetPassword');
-  const riskProfile = $('autobetRiskProfile');
-  const maxStake = $('autobetMaxStake');
-  const dailyCap = $('autobetDailyCap');
-  const minSignal = $('autobetMinSignal');
-  const hint = $('autobetSettingsHint');
-  if (!mode || !platform || !username || !password || !riskProfile || !maxStake || !dailyCap || !minSignal || !hint) return;
-  try {
-    const payload = {
-      mode: mode.value,
-      enabled: mode.value === 'bet',
-      platform: platform.value,
-      username: username.value || '',
-      password: password.value || '',
-      riskProfile: riskProfile.value || 'balanced',
-      maxStakePerBet: Number(maxStake.value || 0),
-      dailyExposureCap: Number(dailyCap.value || 0),
-      minSignalPct: Number(minSignal.value || 40)
-    };
-    localStorage.setItem('autobetSettings', JSON.stringify(payload));
-    autobetSettingsCache = payload;
-    const res = await fetchLocal('./api/autobet-settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const out = await res.json().catch(()=>({}));
-    if (!res.ok || out?.ok === false) {
-      hint.textContent = `Save failed: ${out?.error || res.statusText || 'unknown'}`;
-      return;
-    }
-    if (out?.settings && typeof out.settings === 'object') {
-      autobetSettingsCache = {
-        enabled: !!out.settings.enabled,
-        mode: out.settings.mode || payload.mode,
-        platform: out.settings.platform || payload.platform,
-        username: out.settings.username || payload.username,
-        password: out.settings.password || '********',
-        riskProfile: out.settings.riskProfile || payload.riskProfile,
-        maxStakePerBet: Number(out.settings.maxStakePerBet ?? payload.maxStakePerBet),
-        dailyExposureCap: Number(out.settings.dailyExposureCap ?? payload.dailyExposureCap),
-        minSignalPct: Number(out.settings.minSignalPct ?? payload.minSignalPct)
-      };
-      localStorage.setItem('autobetSettings', JSON.stringify(autobetSettingsCache));
-      renderAutobetControls();
-    }
-    hint.textContent = `Saved · AUTOBET ${payload.mode.toUpperCase()} · ${payload.platform} · testing login...`;
-
-    const loginRes = await fetchLocal('./api/autobet-test-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform: payload.platform, username: payload.username, password: payload.password })
-    });
-    const loginOut = await loginRes.json().catch(()=>({}));
-    if (loginRes.ok && loginOut?.ok) {
-      hint.textContent = `Saved · Login PASS (${payload.platform})`;
-    } else {
-      hint.textContent = `Saved · Login FAIL (${payload.platform}) · ${loginOut?.tabError || loginOut?.betchaError || loginOut?.error || 'check credentials'}`;
-    }
-  } catch (err) {
-    hint.textContent = `Save failed: ${err?.message || 'unknown'}`;
-  }
-}
-
-function renderLiveBetStream(){
-  const el = $('liveBetStream');
-  if (!el) return;
-  const section = el.closest('.section') || el.closest('.perf-section');
-  if (!isAdminUser) {
-    if (section) section.style.display = 'none';
-    return;
-  }
-  if (section) section.style.display = '';
-  const rows = (latestSuggestedBets || [])
-    .filter(selectionIsUpcoming)
-    .sort((a,b) => Number(a.sortTime || Infinity) - Number(b.sortTime || Infinity))
-    .slice(0, 25)
-    .map(r => {
-      const action = String(r.recommendedAction || 'NO_BET');
-      const route = String(r.executionRoute || 'NO_EDGE');
-      const conf = Number(r.executionRouteConfidence || 0);
-      const badgeColor = action === 'BET' ? '#1fd184' : '#ffb347';
-      const reason = Array.isArray(r.executionBlockReason) && r.executionBlockReason.length
-        ? r.executionBlockReason.join(', ')
-        : 'eligible';
-      return `<tr>
-        <td data-label="ETA">${escapeHtml(r.eta || 'upcoming')}</td>
-        <td data-label="Race">${escapeHtml(`${r.meeting || '—'} R${r.race || '—'}`)}</td>
-        <td data-label="Selection">${escapeHtml(r.selection || '—')}</td>
-        <td data-label="Route">${route}</td>
-        <td data-label="Conf">${conf}%</td>
-        <td data-label="Action"><span style="color:${badgeColor};font-weight:700">${action}</span></td>
-        <td data-label="Reason">${escapeHtml(reason)}</td>
-      </tr>`;
-    }).join('');
-
-  el.innerHTML = `<table class="perf-table">
-    <thead><tr><th>ETA</th><th>Race</th><th>Selection</th><th>Route</th><th>Conf</th><th>Action</th><th>Status</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="7">No upcoming bets.</td></tr>'}</tbody>
-  </table>`;
 }
 
 function renderSuggested(rows){
@@ -4548,6 +4370,7 @@ function renderPerformanceTable(targetId, data, opts = {}){
 
 function renderPerformanceCharts(daily){
   if (!daily || typeof daily !== 'object') return;
+  if (typeof Chart === 'undefined') return;
   const keys = Object.keys(daily).sort();
   if (!keys.length) return;
 
@@ -4594,40 +4417,25 @@ function renderPerformanceCharts(daily){
   const feelCanvas = $('feelGoodChart');
   if (feelCanvas) {
     const scoreColor = score >= 65 ? '#c5ff00' : (score >= 40 ? '#f5c066' : '#ff6b6b');
-    if (typeof Chart !== 'undefined') {
-      if (feelGoodChart) feelGoodChart.destroy();
-      feelGoodChart = new Chart(feelCanvas, {
-        type: 'doughnut',
-        data: {
-          labels: ['Score', 'Remaining'],
-          datasets: [{
-            data: [score, 100 - score],
-            backgroundColor: [scoreColor, 'rgba(255,255,255,.08)'],
-            borderWidth: 0
-          }]
-        },
-        options: {
-          cutout: '72%',
-          circumference: 260,
-          rotation: 230,
-          plugins: { legend: { display: false }, tooltip: { enabled: false } }
-        }
-      });
-    } else {
-      const ctx = feelCanvas.getContext('2d');
-      if (ctx) {
-        const w = feelCanvas.width = feelCanvas.clientWidth || 220;
-        const h = feelCanvas.height = feelCanvas.clientHeight || 180;
-        ctx.clearRect(0,0,w,h);
-        ctx.fillStyle = 'rgba(255,255,255,0.08)';
-        ctx.fillRect(0, h - 18, w, 10);
-        ctx.fillStyle = scoreColor;
-        ctx.fillRect(0, h - 18, Math.round((score / 100) * w), 10);
+    if (feelGoodChart) feelGoodChart.destroy();
+    feelGoodChart = new Chart(feelCanvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['Score', 'Remaining'],
+        datasets: [{
+          data: [score, 100 - score],
+          backgroundColor: [scoreColor, 'rgba(255,255,255,.08)'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        cutout: '78%',
+        circumference: 180,
+        rotation: 270,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } }
       }
-    }
+    });
   }
-
-  if (typeof Chart === 'undefined') return;
 
   const roiCanvas = $('roiTrendChart');
   if (roiCanvas) {
@@ -5159,110 +4967,38 @@ function renderBetPlanPerformance(daily){
         <tbody>${rows}</tbody>
       </table>`
     : '<div class="sub">No bet-plan history available.</div>';
-  updateBetmanReturn();
+  updateBetmanReturn(stats);
   applyPerformanceVisibility();
 }
 
-function gaugeSvg(roi){
-  const pct = Number.isFinite(roi) ? Math.min(Math.abs(roi) * 100, 100) : 0;
-  const label = Number.isFinite(roi) ? `${(roi * 100).toFixed(1)}%` : '—';
-  const r = 18;
-  const c = 2 * Math.PI * r;
-  const fill = (pct / 100) * c;
-  const color = Number.isFinite(roi) && roi < 0 ? '#ff6b6b' : '#1fd184';
-  return `<svg width="58" height="58" viewBox="0 0 58 58" role="img" aria-label="ROI gauge ${label}">
-    <circle cx="29" cy="29" r="18" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6"></circle>
-    <circle cx="29" cy="29" r="18" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${fill} ${c}" transform="rotate(-90 29 29)"></circle>
-    <text x="29" y="33" text-anchor="middle" font-size="9" font-weight="700" fill="#dbe6f3">${label}</text>
-  </svg>`;
-}
-
-function renderReturnCardsGraphical(data){
-  const wrap = $('betmanReturnCards');
-  if (!wrap) return;
-  const maxStake = Math.max(1, data.invested || 0, data.baseInvested || 0, data.exoticInvested || 0);
-  const card = (title, value, roi, stake) => {
-    const roiPct = Number.isFinite(roi) ? Math.min(Math.abs(roi) * 100, 100) : 0;
-    const stakePct = Number.isFinite(stake) ? Math.min((Math.abs(stake) / maxStake) * 100, 100) : 0;
-    const color = value < 0 ? '#ff6b6b' : '#1fd184';
-    return `<div style="border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:170px;">
-      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8ea3b7;font-weight:700;">${title}</div>
-      <div style="font-size:clamp(24px,3vw,34px);font-weight:800;color:${color};line-height:1.1;word-break:break-word;">${fmtUnits(value)}</div>
-      <div style="font-size:13px;color:#9fb2c4;line-height:1.35;word-break:break-word;">ROI ${roi != null ? fmtPct(roi) : '—'} · Stake ${fmtUnits(stake)}</div>
-      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;">
-        ${gaugeSvg(roi)}
-        <div style="flex:1;min-width:170px;display:flex;flex-direction:column;gap:8px;">
-          <div>
-            <div style="font-size:10px;color:#90a5b9;margin-bottom:2px;">ROI intensity</div>
-            <div style="height:7px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden;"><span style="display:block;height:100%;width:${roiPct}%;background:${color};"></span></div>
-          </div>
-          <div>
-            <div style="font-size:10px;color:#90a5b9;margin-bottom:2px;">Stake weight</div>
-            <div style="height:7px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden;"><span style="display:block;height:100%;width:${stakePct}%;background:#6bb6ff;"></span></div>
-          </div>
-        </div>
-      </div>
-    </div>`;
-  };
-  wrap.innerHTML = [
-    card('Combined P/L', data.netReturn, data.roi, data.invested),
-    card('Base Strategies P/L', data.baseReturn, data.baseRoi, data.baseInvested),
-    card('Exotics P/L', data.exoticReturn, data.exoticRoi, data.exoticInvested)
-  ].join('');
-}
-
-function setReturnMeter(id, roi){
-  const el = $(id);
-  if (!el) return;
-  const pct = Number.isFinite(roi) ? Math.min(Math.abs(roi) * 100, 100) : 0;
-  el.style.width = `${pct}%`;
-  el.classList.toggle('neg', Number.isFinite(roi) && roi < 0);
-}
-
-function setReturnGauge(id, roi){
-  const el = $(id);
-  if (!el) return;
-  const pct = Number.isFinite(roi) ? Math.min(Math.abs(roi) * 100, 100) : 0;
-  const label = Number.isFinite(roi) ? `${(roi * 100).toFixed(1)}%` : '—';
-  const r = 18;
-  const c = 2 * Math.PI * r;
-  const fill = (pct / 100) * c;
-  const color = Number.isFinite(roi) && roi < 0 ? '#ff6b6b' : '#1fd184';
-  el.innerHTML = `<svg width="58" height="58" viewBox="0 0 58 58" role="img" aria-label="ROI gauge ${label}">
-    <circle cx="29" cy="29" r="18" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6"></circle>
-    <circle cx="29" cy="29" r="18" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${fill} ${c}" transform="rotate(-90 29 29)"></circle>
-    <text x="29" y="33" text-anchor="middle" font-size="9" font-weight="700" fill="#dbe6f3">${label}</text>
-  </svg>`;
-}
-
-function updateBetmanReturn(){
-  const daily = performanceDailyCache;
-  const allDays = daily ? Object.keys(daily).length : 0;
-  const agg = aggregateLastNDays(daily, allDays || 1);
-  const baseReturn = agg ? (agg.roi_rec_base_profit ?? agg.roi_rec_profit ?? null) : null;
-  const baseInvested = agg ? (agg.roi_stake_base ?? agg.roi_stake ?? null) : null;
-  const exoticReturn = agg ? (agg.exotic_profit || 0) : null;
-  const exoticInvested = agg ? (agg.exotic_stake || 0) : null;
+function updateBetmanReturn(stats){
+  const baseReturn = stats?.baseProfit ?? null;
+  const baseInvested = stats?.baseStake ?? null;
+  const exoticReturn = stats?.exoticProfit ?? null;
+  const exoticInvested = stats?.exoticStake ?? null;
   const netReturn = (baseReturn ?? 0) + (exoticReturn ?? 0);
   const invested = (baseInvested ?? 0) + (exoticInvested ?? 0);
-  const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
-  const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
-  const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
-
-  renderReturnCardsGraphical({
-    netReturn,
-    roi,
-    invested,
-    baseReturn,
-    baseRoi,
-    baseInvested,
-    exoticReturn,
-    exoticRoi,
-    exoticInvested
-  });
-
+  const returnValueEl = $('betmanReturnValue');
+  const returnSubEl = $('betmanReturnSub');
   const returnBarEl = $('betmanReturnBar');
+  if (returnValueEl) {
+    const isNeg = Number.isFinite(netReturn) && netReturn < 0;
+    returnValueEl.textContent = Number.isFinite(netReturn) ? fmtUnits(netReturn) : '—';
+    returnValueEl.classList.toggle('neg', !!isNeg);
+  }
+  if (returnSubEl) {
+    const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
+    const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
+    const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
+    const winBets = stats?.winRate != null ? `Win Bets: ${fmtPct(stats.winRate)}` : 'Win Bets: —';
+    const winBreakdown = Number.isFinite(baseReturn) ? `Win P/L ${fmtUnits(baseReturn)}${baseRoi != null ? ` (${fmtPct(baseRoi)})` : ''}` : 'Win P/L: —';
+    const exoticBreakdown = Number.isFinite(exoticReturn) ? `Exotics P/L ${fmtUnits(exoticReturn)}${exoticRoi != null ? ` (${fmtPct(exoticRoi)})` : ''}` : 'Exotics P/L: —';
+    const exoticHit = stats?.exoticHit != null ? `Exotic Hit: ${fmtPct(stats.exoticHit)}` : 'Exotic Hit: —';
+    const roiText = roi != null ? `Total ROI: ${fmtPct(roi)}` : 'Total ROI: —';
+    returnSubEl.textContent = `${winBets} · ${winBreakdown} · ${exoticHit} · ${exoticBreakdown} · ${roiText}`;
+  }
   if (returnBarEl) {
+    const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
     const pct = roi != null ? Math.min(Math.abs(roi) * 100, 100) : 0;
     returnBarEl.style.width = `${pct}%`;
     returnBarEl.classList.toggle('neg', roi != null && roi < 0);
@@ -5728,89 +5464,13 @@ function renderConfidenceBasedBets(){
   boostInput?.addEventListener('change', applyStakeSettings);
 }
 
-function renderToteVsFixedEdge(report){
-  const cardsEl = $('toteFixedEdgeCards');
-  const tablesEl = $('toteFixedEdgeTables');
-  if (!cardsEl || !tablesEl) return;
-  if (!report || !report.periods) {
-    cardsEl.innerHTML = '<div class="sub">No edge report available.</div>';
-    tablesEl.innerHTML = '';
-    return;
-  }
-  const periodOrder = ['day','week','month'];
-  cardsEl.innerHTML = periodOrder.map(key => {
-    const row = report.periods[key] || {};
-    const low = !row.qualified ? `<div class="low-sample-warning">Low sample (&lt;${row.thresholdMinBets || '—'} bets)</div>` : '';
-    return `<div class="perf-card">
-      <div class="label">${escapeHtml(String(row.period || key).toUpperCase())}</div>
-      <div class="value">${fmtUnits(row.profitDelta)}</div>
-      <div class="sub">Tote ${fmtRoiZero(row.roiTote)} · Fixed ${fmtRoi(row.roiFixed)}</div>
-      <div class="sub">Comparable ${Math.round(row.comparableBets || 0)} bets</div>
-      ${low}
-    </div>`;
-  }).join('');
-
-  const typeLabel = { win: 'Win', ew: 'EW', longshots: 'Longshots', exotics: 'Exotics' };
-  const section = (key) => {
-    const rows = Array.isArray(report.byType?.[key]) ? report.byType[key] : [];
-    const body = rows.map(r => {
-      const low = r.qualified ? '' : ' ⚠️';
-      return `<tr>
-        <td data-label="Type">${typeLabel[r.type] || r.type}${low}</td>
-        <td data-label="Bets">${r.bets ?? 0}</td>
-        <td data-label="Comparable">${Math.round(r.comparableBets || 0)}</td>
-        <td data-label="Profit Δ">${fmtUnits(r.profitDelta)}</td>
-        <td data-label="ROI Tote">${fmtRoiZero(r.roiTote)}</td>
-        <td data-label="ROI Fixed">${r.toteOnly ? '—' : fmtRoi(r.roiFixed)}</td>
-      </tr>`;
-    }).join('') || '<tr><td colspan="6">No data</td></tr>';
-    return `<h5 style="margin:14px 0 8px">${escapeHtml(String(report.periods?.[key]?.period || key))}</h5>
-      <table class="perf-table">
-        <thead><tr><th>Type</th><th>Bets</th><th>Comparable</th><th>Profit Δ (T-F)</th><th>ROI Tote</th><th>ROI Fixed</th></tr></thead>
-        <tbody>${body}</tbody>
-      </table>`;
-  };
-
-  tablesEl.innerHTML = section('day') + section('week') + section('month');
-}
-
-function renderPerformanceLog(daily){
-  const el = $('perfDailyLog');
-  if (!el) return;
-  if (!daily || typeof daily !== 'object') {
-    el.innerHTML = '<div class="sub">No daily performance log yet.</div>';
-    return;
-  }
-  const rows = Object.entries(daily)
-    .sort((a,b)=>String(b[0]).localeCompare(String(a[0])))
-    .slice(0, 60)
-    .map(([date, r]) => `<tr>
-      <td data-label="Date">${date}</td>
-      <td data-label="Bets">${r?.total_bets ?? 0}</td>
-      <td data-label="Win Rate">${fmtPct(r?.win_rate)}</td>
-      <td data-label="ROI Fixed">${fmtRoi(r?.roi_sp)}</td>
-      <td data-label="ROI Tote">${fmtRoiZero(r?.roi_tote)}</td>
-      <td data-label="ROI Rec">${fmtRoi(r?.roi_rec)}</td>
-      <td data-label="Exotic ROI">${fmtRoi(r?.exotic_roi_tote)}</td>
-    </tr>`)
-    .join('');
-  el.innerHTML = `<table class="perf-table">
-    <thead><tr><th>Date</th><th>Bets</th><th>Win Rate</th><th>ROI Fixed</th><th>ROI Tote</th><th>ROI Rec</th><th>Exotic ROI</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="7">No rows</td></tr>'}</tbody>
-  </table>`;
-}
-
 async function loadPerformance(){
   const daily = await fetchLocal('./data/success_daily.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const weekly = await fetchLocal('./data/success_weekly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const monthly = await fetchLocal('./data/success_monthly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
-  const toteFixedEdge = await fetchLocal('./api/tote-vs-fixed-edge', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   signalThresholdAuditCache = await fetchLocal('./data/signal_threshold_audit_v2.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
 
-  renderToteVsFixedEdge(toteFixedEdge);
-
   renderBetPlanPerformance(daily);
-  renderPerformanceLog(daily);
 
   const latestDailyKey = latestKey(daily);
   const latestDaily = latestDailyKey ? daily[latestDailyKey] : null;
@@ -5829,7 +5489,7 @@ async function loadPerformance(){
     $('perfWinRate').textContent = fmtPct(latestDaily.win_rate);
     $('perfWinPickPct').textContent = fmtPct(latestDaily.pick_breakdown?.win?.win_rate);
     $('perfRoiTote').textContent = fmtRoiZero(latestDaily.roi_tote);
-    $('perfRoiRec').textContent = fmtRoi(latestDaily.roi_sp);
+    $('perfRoiRec').textContent = fmtRoi(latestDaily.roi_rec);
     $('perfRoiFixed').textContent = fmtRoi(latestDaily.roi_rec);
     $('perfRoiSp').textContent = fmtRoi(latestDaily.roi_sp);
     $('perfRoiEw').textContent = fmtRoi(latestDaily.roi_ew);
@@ -8591,12 +8251,12 @@ function renderAnalysis(race, modeOverride){
     })
     .filter(item => Number.isFinite(item.odds));
   const ewCandidates = ewCandidateMetrics
-    .filter(item => item.formStatus !== 'COLD' && item.odds >= 4 && item.odds <= 15 && item.edge >= 1 && item.winProb >= 0.05 && item.placeProb >= 0.25 && item.placeProb <= 0.85)
+    .filter(item => item.odds >= 4 && item.odds <= 15 && item.edge >= 1 && item.winProb >= 0.05 && item.placeProb >= 0.25 && item.placeProb <= 0.85)
     .sort((a,b) => b.score - a.score);
   let ewRunner = ewCandidates.length ? ewCandidates[0].runnerName : null;
   if (!ewRunner) {
     const valueFallback = ewCandidateMetrics
-      .filter(item => item.formStatus !== 'COLD' && item.edge > 0.5 && item.odds >= 3 && item.odds <= 15 && item.winProb >= 0.02)
+      .filter(item => item.edge > 0.5 && item.odds >= 3 && item.odds <= 15 && item.winProb >= 0.02)
       .sort((a,b) => (b.edge - a.edge) || (b.winProb - a.winProb))[0];
     if (valueFallback) ewRunner = valueFallback.runnerName;
   }
@@ -8604,9 +8264,6 @@ function renderAnalysis(race, modeOverride){
     for (const [runnerName] of topSim) {
       const candidateObj = runners.find(r => cleanRunnerText(r.name || r.runner_name || '') === runnerName);
       const odds = candidateObj ? oddsOf(candidateObj) : NaN;
-      const formSignal = candidateObj ? runnerFormSignal(candidateObj) : null;
-      const formStatus = formSignal?.status || 'UNKNOWN';
-      if (formStatus === 'COLD') continue;
       if (Number.isFinite(odds) && odds >= 3 && odds <= 30) {
         ewRunner = runnerName;
         break;
@@ -11167,11 +10824,6 @@ loadRaces().then(()=>{
   restoreLastRaceSelection();
 });
 setInterval(async ()=>{ await loadStake(); await loadStatus(); }, 60000);
-
-$('saveAutobetSettingsBtn')?.addEventListener('click', saveAutobetSettings);
-$('autobetModeSelect')?.addEventListener('change', renderAutobetControls);
-$('autobetPlatformSelect')?.addEventListener('change', renderAutobetControls);
-
 setInterval(()=>{ if (isAdminUser) { triggerPerformancePoll(false); loadPerformance(); } }, 5 * 60 * 1000);
 setInterval(tickQueuedCountdowns, 1000);
 

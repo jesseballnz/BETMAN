@@ -38,16 +38,10 @@ function parseReasonWinProb(reason){
 }
 
 function inferSignalPct(row){
-  const cap = Number(process.env.BETMAN_MAX_CONFIDENCE_PCT || 95);
-  const capFn = (v) => {
-    const n = Number(v);
-    const pct = (n >= 0 && n <= 1) ? (n * 100) : n;
-    return Math.max(0, Math.min(cap, pct));
-  };
-  const direct = Number(row?.confidenceSignalPct ?? row?.signal_score ?? row?.win_p);
-  if (Number.isFinite(direct)) return capFn(direct);
+  const direct = Number(row?.confidenceSignalPct ?? row?.win_p ?? row?.signal_score);
+  if (Number.isFinite(direct)) return direct;
   const parsed = parseReasonWinProb(row?.reason);
-  if (Number.isFinite(parsed)) return capFn(parsed);
+  if (Number.isFinite(parsed)) return parsed;
   return NaN;
 }
 
@@ -95,72 +89,11 @@ if ((balanceData.betcha?.openBets == null || balanceData.tab?.openBets == null) 
 const { buildStatus } = require('./status_writer_impl');
 
 const status = buildStatus(state, balanceData, stakeData.stakePerRace || 10);
-
-const MAX_CONFIDENCE_PCT = Number(process.env.BETMAN_MAX_CONFIDENCE_PCT || 95);
-function clampConfidence(v){
-  const n = Number(v);
-  if (!Number.isFinite(n)) return v;
-  const pct = (n >= 0 && n <= 1) ? (n * 100) : n;
-  return Math.max(0, Math.min(MAX_CONFIDENCE_PCT, pct));
-}
-status.suggestedBets = (status.suggestedBets || []).map(row => ({
-  ...row,
-  confidenceSignalPct: clampConfidence(row?.confidenceSignalPct),
-  signal_score: clampConfidence(row?.signal_score),
-  pedigreeConfidence: clampConfidence(row?.pedigreeConfidence)
-}));
-
 status.stakePerRace = stakeData.stakePerRace || 10;
 status.exoticStakePerRace = (typeof stakeData.exoticStakePerRace === 'number') ? stakeData.exoticStakePerRace : 1;
 status.earlyWindowMin = (typeof stakeData.earlyWindowMin === 'number') ? stakeData.earlyWindowMin : 180;
 status.aiWindowMin = (typeof stakeData.aiWindowMin === 'number') ? stakeData.aiWindowMin : 10;
 status.betHarderMultiplier = (typeof stakeData.betHarderMultiplier === 'number') ? stakeData.betHarderMultiplier : 1.5;
-
-
-const EDGE_ROUTE_MIN_BETS = Number(process.env.BETMAN_EDGE_ROUTE_MIN_BETS || 25);
-const EDGE_ROUTE_MIN_DELTA = Number(process.env.BETMAN_EDGE_ROUTE_MIN_DELTA || 0.03);
-const EDGE_ROUTE_MIN_CONF = Number(process.env.BETMAN_EDGE_ROUTE_MIN_CONF || 55);
-
-function deriveExecutionPolicy(){
-  const successPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'success_daily.json') : path.join(tenantDataDir, 'success_daily.json');
-  const daily = loadJson(successPath, {});
-  const rows = Object.values(daily || {});
-  const byType = { win: [], odds_runner: [], ew: [], longshots: [] };
-  rows.forEach(r => {
-    if (r?.pick_breakdown?.win) byType.win.push(r.pick_breakdown.win);
-    if (r?.pick_breakdown?.odds_runner) byType.odds_runner.push(r.pick_breakdown.odds_runner);
-    if (r?.pick_breakdown?.ew) byType.ew.push(r.pick_breakdown.ew);
-    if (r?.long_breakdown) byType.longshots.push(r.long_breakdown);
-  });
-
-  const out = {};
-  Object.entries(byType).forEach(([key, vals]) => {
-    let bets = 0; let stake = 0; let spProfit = 0; let toteProfit = 0;
-    vals.forEach(v => {
-      const b = Number(v?.bets || 0);
-      const s = Number(v?.roi_stake_units || v?.stake_units || b || 0);
-      const sp = Number(v?.roi_sp);
-      const tote = Number(v?.roi_tote);
-      bets += b;
-      stake += s;
-      if (Number.isFinite(sp)) spProfit += sp * s;
-      if (Number.isFinite(tote)) toteProfit += tote * s;
-    });
-    const roiSp = stake ? spProfit / stake : null;
-    const roiTote = stake ? toteProfit / stake : null;
-    const delta = (Number.isFinite(roiTote) && Number.isFinite(roiSp)) ? roiTote - roiSp : null;
-    let route = 'NO_EDGE';
-    if (bets >= EDGE_ROUTE_MIN_BETS && Number.isFinite(delta) && Math.abs(delta) >= EDGE_ROUTE_MIN_DELTA) {
-      route = delta > 0 ? 'TOTE' : 'FIXED';
-    }
-    const conf = Math.max(0, Math.min(100, Math.round((bets / EDGE_ROUTE_MIN_BETS) * 40 + (Math.min(Math.abs(delta || 0), 0.1) / 0.1) * 60)));
-    out[key] = { bets, route, confidence: conf, delta, roiSp, roiTote };
-  });
-  return out;
-}
-
-const executionPolicy = deriveExecutionPolicy();
-status.executionPolicy = executionPolicy;
 
 const nzDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
 const dailyPnlPath = path.join(dailyPnlDir, `daily-pnl-${nzDate}.json`);
@@ -342,6 +275,44 @@ function capStakeForType(type, stake, entry){
   return Math.max(0, Math.min(n, cap));
 }
 
+function clamp(n, lo, hi){
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function computeWinSignalScore(winProbPct, odds){
+  const p = Number(winProbPct);
+  const o = Number(odds);
+  if (Number.isFinite(p) && Number.isFinite(o) && o > 0) {
+    const implied = 100 / o;
+    return clamp(Math.round(50 + ((p - implied) * 2.2)), 5, 95);
+  }
+  if (Number.isFinite(p)) return clamp(Math.round(p * 2.4), 5, 95);
+  return null;
+}
+
+function computeFallbackSignalScore(odds){
+  const o = Number(odds);
+  if (!Number.isFinite(o) || o <= 0) return null;
+  const implied = 100 / o;
+  return clamp(Math.round(25 + (implied * 1.1)), 25, 80);
+}
+
+function computeExoticSignalScore(plan){
+  const selections = Array.isArray(plan?.selections) ? plan.selections : [];
+  const probs = selections
+    .map(s => Number(s?.win_prob))
+    .filter(v => Number.isFinite(v) && v > 0)
+    .slice(0, 2);
+  if (probs.length) {
+    const avgTopTwo = probs.reduce((a, b) => a + b, 0) / probs.length;
+    return clamp(Math.round(avgTopTwo * 2.2), 10, 90);
+  }
+  const market = String(plan?.market || '').toLowerCase();
+  if (market === 'trifecta') return 48;
+  if (['top2','top3','top4','multi'].includes(market)) return 42;
+  return null;
+}
+
 function minsToEnglish(v){
   const n = Number(v);
   if (!Number.isFinite(n)) return 'upcoming';
@@ -357,6 +328,8 @@ let suggested = [...(state.early_plans || []), ...(state.bet_plans || [])].map(b
   selection: b.selection,
   type: b.bet_type,
   aiWinProb: Number.isFinite(Number(b.win_prob)) ? Number(b.win_prob) : null,
+  confidenceSignalPct: Number.isFinite(Number(b.win_prob)) ? Number(b.win_prob) : null,
+  signal_score: computeWinSignalScore(Number(b.win_prob), Number(b.odds)),
   stake: capStakeForType(b.bet_type, b.stake, b),
   odds: b.odds ?? null,
   place_odds: b.place_odds ?? null,
@@ -389,6 +362,7 @@ if (!suggested.length) {
         stake: stakeData.stakePerRace || 10,
         odds,
         place_odds: null,
+        signal_score: computeFallbackSignalScore(odds),
         jumpsIn: etaFromRace(r),
         reason: `fallback ${confidence} profile · market leader @ $${odds.toFixed(2)}`
       };
@@ -410,6 +384,7 @@ const exoticSuggested = (state.exotic_plans || []).map(x => {
     selection,
     type: x.market,
     stake: capStakeForType(x.market, x.stake, x),
+    signal_score: computeExoticSignalScore(x),
     jumpsIn: minsToEnglish(x.mins_to_start),
     reason: `${x.note || 'exotic profile'} · ${minsToEnglish(x.mins_to_start)}`
   };
@@ -735,58 +710,6 @@ status.marketOddsSnapshot = nextSnap;
 status.marketOddsHistory = nextHistory;
 status.marketOddsOpening = nextOpening;
 
-
-function normalizeBetType(x){
-  const t = String(x?.type || '').toLowerCase();
-  if (t.includes('ew')) return 'ew';
-  if (t.includes('odds')) return 'odds_runner';
-  if (t.includes('top') || t.includes('trifecta')) return 'exotics';
-  const reason = String(x?.reason || '').toLowerCase();
-  if (reason.includes('long')) return 'longshots';
-  return 'win';
-}
-
-status.suggestedBets = (status.suggestedBets || []).map(row => {
-  const kind = normalizeBetType(row);
-  const policy = executionPolicy[kind] || { route: 'NO_EDGE', confidence: 0, delta: null };
-  const signalPct = inferSignalPct(row);
-  const minsToJump = Number(row?.minsToJump ?? row?.mins_to_start ?? 9999);
-  const eligible = policy.route !== 'NO_EDGE'
-    && policy.confidence >= EDGE_ROUTE_MIN_CONF
-    && Number.isFinite(signalPct)
-    && signalPct >= CONFIDENCE_SIGNAL_THRESHOLD
-    && minsToJump >= 0
-    && minsToJump <= Number(status.earlyWindowMin || 180);
-
-  return {
-    ...row,
-    executionType: kind,
-    executionRoute: policy.route,
-    executionRouteConfidence: policy.confidence,
-    executionDelta: policy.delta,
-    executionEligible: !!eligible,
-    recommendedAction: eligible ? 'BET' : 'NO_BET',
-    executionBlockReason: eligible ? null : [
-      policy.route === 'NO_EDGE' ? 'no_statistical_edge' : null,
-      policy.confidence < EDGE_ROUTE_MIN_CONF ? 'low_route_confidence' : null,
-      !(Number.isFinite(signalPct) && signalPct >= CONFIDENCE_SIGNAL_THRESHOLD) ? 'low_signal' : null,
-      !(minsToJump >= 0 && minsToJump <= Number(status.earlyWindowMin || 180)) ? 'outside_window' : null
-    ].filter(Boolean)
-  };
-});
-
-status.noBetPolicy = {
-  defaultAction: 'NO_BET',
-  triggerRequirements: {
-    route: 'TOTE_OR_FIXED',
-    minRouteConfidence: EDGE_ROUTE_MIN_CONF,
-    minSignalPct: 40,
-    jumpWindowMin: Number(status.earlyWindowMin || 180)
-  }
-};
-status.noBetCount = (status.suggestedBets || []).filter(x => x.recommendedAction === 'NO_BET').length;
-status.betAllowedCount = (status.suggestedBets || []).filter(x => x.recommendedAction === 'BET').length;
-
 const CONFIDENCE_SIGNAL_THRESHOLD = 40;
 const CONFIDENCE_FRINGE_BAND = 5;
 const fringeSignals = (status.suggestedBets || [])
@@ -833,11 +756,7 @@ appendJsonl(betPlanAuditPath, {
     pedigreeScore: x.pedigreeScore ?? null,
     pedigreeConfidence: x.pedigreeConfidence ?? null,
     pedigreeRelativeEdge: x.pedigreeRelativeEdge ?? null,
-    pedigreeArchetype: x.pedigreeArchetype || null,
-    recommendedAction: x.recommendedAction || 'NO_BET',
-    executionRoute: x.executionRoute || 'NO_EDGE',
-    executionRouteConfidence: x.executionRouteConfidence ?? 0,
-    executionBlockReason: x.executionBlockReason || null
+    pedigreeArchetype: x.pedigreeArchetype || null
   })),
   suggestedAll: (status.suggestedBets || []).map(x => ({
     meeting: x.meeting,
@@ -854,11 +773,7 @@ appendJsonl(betPlanAuditPath, {
     pedigreeScore: x.pedigreeScore ?? null,
     pedigreeConfidence: x.pedigreeConfidence ?? null,
     pedigreeRelativeEdge: x.pedigreeRelativeEdge ?? null,
-    pedigreeArchetype: x.pedigreeArchetype || null,
-    recommendedAction: x.recommendedAction || 'NO_BET',
-    executionRoute: x.executionRoute || 'NO_EDGE',
-    executionRouteConfidence: x.executionRouteConfidence ?? 0,
-    executionBlockReason: x.executionBlockReason || null
+    pedigreeArchetype: x.pedigreeArchetype || null
   })),
   interestingTop: (status.interestingRunners || []).slice(0, 12),
   moversTop: (status.marketMovers || []).slice(0, 12),
