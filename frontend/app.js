@@ -35,6 +35,8 @@ const ODDS_SIGNAL_TTL_MS = 45000;
 let feelGoodChart = null;
 let roiTrendChart = null;
 let winRateTrendChart = null;
+let returnUnitsChart = null;
+let returnRoiChart = null;
 let analysisEdgeChart = null;
 let analysisMonteChart = null;
 let currentUserDisplayName = 'User';
@@ -4576,6 +4578,109 @@ function renderPerformanceCharts(daily){
       }
     });
   }
+
+  const netUnitsSeries = lastKeys.map(k => {
+    const r = daily[k] || {};
+    const roiStake = Number.isFinite(r.roi_stake)
+      ? r.roi_stake
+      : (Number.isFinite(r.total_stake) ? r.total_stake : (Number.isFinite(r.win_bets) ? r.win_bets : 0));
+    const baseProfit = Number.isFinite(r.roi_rec) ? r.roi_rec * roiStake : 0;
+    const exoticStake = Number.isFinite(r.exotic_roi_stake) ? r.exotic_roi_stake : 0;
+    const exoticProfit = (Number.isFinite(r.exotic_roi_tote) && exoticStake)
+      ? r.exotic_roi_tote * exoticStake
+      : 0;
+    const netProfit = baseProfit + exoticProfit;
+    return Number.isFinite(netProfit) ? netProfit : null;
+  });
+  const cumulativeUnits = [];
+  netUnitsSeries.forEach((v, idx) => {
+    const prev = idx ? (cumulativeUnits[idx - 1] || 0) : 0;
+    cumulativeUnits.push(prev + (Number.isFinite(v) ? v : 0));
+  });
+  const netRoiSeries = lastKeys.map(k => {
+    const r = daily[k] || {};
+    const roiStake = Number.isFinite(r.roi_stake)
+      ? r.roi_stake
+      : (Number.isFinite(r.total_stake) ? r.total_stake : (Number.isFinite(r.win_bets) ? r.win_bets : 0));
+    const exoticStake = Number.isFinite(r.exotic_roi_stake) ? r.exotic_roi_stake : 0;
+    const stake = (roiStake || 0) + (exoticStake || 0);
+    const baseProfit = Number.isFinite(r.roi_rec) ? r.roi_rec * roiStake : 0;
+    const exoticProfit = (Number.isFinite(r.exotic_roi_tote) && exoticStake)
+      ? r.exotic_roi_tote * exoticStake
+      : 0;
+    const netProfit = baseProfit + exoticProfit;
+    return stake ? (netProfit / stake) * 100 : null;
+  });
+
+  const returnUnitsCanvas = $('returnUnitsChart');
+  if (returnUnitsCanvas) {
+    if (returnUnitsChart) returnUnitsChart.destroy();
+    returnUnitsChart = new Chart(returnUnitsCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Units',
+            data: cumulativeUnits,
+            borderColor: '#c5ff00',
+            backgroundColor: 'rgba(197,255,0,.12)',
+            borderWidth: 2,
+            tension: 0.35,
+            fill: true,
+            pointRadius: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `Units: ${fmtUnits(ctx.raw)}` } }
+        },
+        scales: {
+          x: { ticks: { display: false }, grid: { display: false } },
+          y: { ticks: { color: '#8ea0b5', callback: v => fmtUnits(v) }, grid: { color: 'rgba(255,255,255,.06)' } }
+        }
+      }
+    });
+  }
+
+  const returnRoiCanvas = $('returnRoiChart');
+  if (returnRoiCanvas) {
+    if (returnRoiChart) returnRoiChart.destroy();
+    returnRoiChart = new Chart(returnRoiCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'ROI',
+            data: netRoiSeries,
+            borderColor: '#7aa3c7',
+            backgroundColor: 'rgba(122,163,199,.12)',
+            borderWidth: 2,
+            tension: 0.35,
+            fill: true,
+            pointRadius: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `ROI: ${Number.isFinite(ctx.raw) ? ctx.raw.toFixed(1) : '—'}%` } }
+        },
+        scales: {
+          x: { ticks: { display: false }, grid: { display: false } },
+          y: { ticks: { color: '#8ea0b5', callback: v => `${v}%` }, grid: { color: 'rgba(255,255,255,.06)' } }
+        }
+      }
+    });
+  }
 }
 
 function renderExoticsTable(targetId, data){
@@ -5594,6 +5699,9 @@ async function loadPerformance(){
   const returnExoticValueEl = $('betmanExoticReturnValue');
   const returnExoticEl = $('betmanExoticReturnSub');
   const returnBarEl = $('betmanReturnBar');
+  const returnRoiEl = $('betmanReturnRoi');
+  const returnUnitsEl = $('betmanReturnUnits');
+  const returnStakeEl = $('betmanReturnStake');
   const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
   const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
   const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
@@ -5620,6 +5728,18 @@ async function loadPerformance(){
   }
   if (returnExoticEl) {
     returnExoticEl.textContent = `ROI ${exoticRoi != null ? fmtPct(exoticRoi) : '—'} · Stake ${fmtUnits(exoticInvested)}`;
+  }
+  if (returnRoiEl) {
+    returnRoiEl.textContent = roi != null ? fmtPct(roi) : '—';
+    returnRoiEl.classList.toggle('neg', roi != null && roi < 0);
+  }
+  if (returnUnitsEl) {
+    const isNeg = Number.isFinite(netReturn) && netReturn < 0;
+    returnUnitsEl.textContent = Number.isFinite(netReturn) ? fmtUnits(netReturn) : '—';
+    returnUnitsEl.classList.toggle('neg', !!isNeg);
+  }
+  if (returnStakeEl) {
+    returnStakeEl.textContent = Number.isFinite(invested) ? fmtUnits(invested) : '—';
   }
   if (returnBarEl) {
     const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;

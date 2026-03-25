@@ -273,32 +273,6 @@
           <h4>30D Win Rate</h4>
           <canvas id="winRateTrendChart"></canvas>
         </div>
-        <div class="perf-section perf-return">
-          <div class="perf-logo-line">
-            <img src="assets/logo.png" alt="BETMAN" />
-          </div>
-          <h4>BETMAN RETURN</h4>
-          <div class="return-meter">
-            <div class="return-bar"><span id="betmanReturnBar"></span></div>
-            <div class="return-cards">
-              <div class="return-card return-card-combined">
-                <div class="return-card-label">Combined P/L</div>
-                <div class="return-card-value" id="betmanReturnValue">—</div>
-                <div class="return-card-sub" id="betmanReturnSub">ROI — · Stake —</div>
-              </div>
-              <div class="return-card return-card-base">
-                <div class="return-card-label">Base Strategies P/L</div>
-                <div class="return-card-value" id="betmanBaseReturnValue">—</div>
-                <div class="return-card-sub" id="betmanBaseReturnSub">ROI — · Stake —</div>
-              </div>
-              <div class="return-card return-card-exotic">
-                <div class="return-card-label">Exotics P/L</div>
-                <div class="return-card-value" id="betmanExoticReturnValue">—</div>
-                <div class="return-card-sub" id="betmanExoticReturnSub">ROI — · Stake —</div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
       <div class="perf-dashboard">
         <div class="perf-section">
@@ -394,6 +368,56 @@
           <div class="perf-section win">
             <h4>30 Day Best BETMAN Strategy (Win / Odds Runner / EW)</h4>
             <div id="perfBestStrategy" class="table"></div>
+          </div>
+        </div>
+      </div>
+      <div class="perf-section perf-return">
+        <div class="perf-logo-line">
+          <img src="assets/logo.png" alt="BETMAN" />
+        </div>
+        <h4>BETMAN RETURN</h4>
+        <div class="return-meter">
+          <div class="return-bar"><span id="betmanReturnBar"></span></div>
+          <div class="return-kpis">
+            <div class="return-kpi">
+              <div class="label">ROI</div>
+              <div class="value" id="betmanReturnRoi">—</div>
+            </div>
+            <div class="return-kpi">
+              <div class="label">Units</div>
+              <div class="value" id="betmanReturnUnits">—</div>
+            </div>
+            <div class="return-kpi">
+              <div class="label">Stake</div>
+              <div class="value" id="betmanReturnStake">—</div>
+            </div>
+          </div>
+          <div class="return-visuals">
+            <div class="return-graph">
+              <div class="return-graph-label">30D Units (Net)</div>
+              <canvas id="returnUnitsChart"></canvas>
+            </div>
+            <div class="return-graph">
+              <div class="return-graph-label">30D ROI (Net)</div>
+              <canvas id="returnRoiChart"></canvas>
+            </div>
+          </div>
+          <div class="return-cards">
+            <div class="return-card return-card-combined">
+              <div class="return-card-label">Combined P/L</div>
+              <div class="return-card-value" id="betmanReturnValue">—</div>
+              <div class="return-card-sub" id="betmanReturnSub">ROI — · Stake —</div>
+            </div>
+            <div class="return-card return-card-base">
+              <div class="return-card-label">Base Strategies P/L</div>
+              <div class="return-card-value" id="betmanBaseReturnValue">—</div>
+              <div class="return-card-sub" id="betmanBaseReturnSub">ROI — · Stake —</div>
+            </div>
+            <div class="return-card return-card-exotic">
+              <div class="return-card-label">Exotics P/L</div>
+              <div class="return-card-value" id="betmanExoticReturnValue">—</div>
+              <div class="return-card-sub" id="betmanExoticReturnSub">ROI — · Stake —</div>
+            </div>
           </div>
         </div>
       </div>
