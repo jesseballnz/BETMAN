@@ -7733,7 +7733,7 @@ function buildAiAnalysisPrompt(race){
     loveracingLines.push(`Weather fallback: official weather feed unavailable; use track condition (${track}) as surface proxy.`);
   }
   const loveracingBlock = loveracingLines.length ? `${loveracingLines.join('\n')}\n` : '';
-  const runners = race.runners.slice().sort((a,b)=>{
+  const runners = (race.runners || []).filter(r => !r.is_scratched).slice().sort((a,b)=>{
     const oa = Number(a?.odds || a?.fixed_win || a?.tote_win || a?.price || 0);
     const ob = Number(b?.odds || b?.fixed_win || b?.tote_win || b?.price || 0);
     if (Number.isFinite(oa) && Number.isFinite(ob)) return oa - ob;
@@ -7909,11 +7909,11 @@ function renderAnalysis(race, modeOverride){
     return m > 0 ? `${m}:${sTxt}` : s.toFixed(2);
   };
 
-  const runners = (race.runners||[]).slice().sort((a,b)=> {
+  const runners = (race.runners||[]).filter(r => !r.is_scratched).slice().sort((a,b)=> {
     const oa = oddsOf(a); const ob = oddsOf(b);
     return (Number.isFinite(oa) ? oa : 999) - (Number.isFinite(ob) ? ob : 999);
   });
-  const fullRunners = Array.isArray(race.runners) ? race.runners : [];
+  const fullRunners = Array.isArray(race.runners) ? race.runners.filter(r => !r.is_scratched) : [];
 
   // simple market-implied probabilities
   const probs = runners.map(r=>({
@@ -7973,7 +7973,7 @@ function renderAnalysis(race, modeOverride){
   model.forEach(x=>x.p = x.score/sumM);
   model.sort((a,b)=>b.p-a.p);
   const modelProbMap = new Map(model.map(entry => [normalizeRunnerName(entry.name), entry.p]));
-  const enrichedRunners = (race.runners || []).map(r => {
+  const enrichedRunners = (race.runners || []).filter(r => !r.is_scratched).map(r => {
     const norm = normalizeRunnerName(r.name || r.runner_name || '');
     const prob = modelProbMap.get(norm);
     return { ...r, modelProb: Number.isFinite(prob) ? prob : null };
