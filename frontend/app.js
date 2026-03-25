@@ -7698,6 +7698,7 @@ function bindAiAnalyseButton(){
     setAiAnswerPanel(`<div class='ai-answer-block pending'>Running AI analysis…</div>`);
     const cacheKey = buildAiAnalysisCacheKey();
     const cooldownKey = buildAiCooldownKey(selectedRace);
+    if (cooldownKey) startAiAnalyseCooldown(cooldownKey);
     await ensureInstructionsLoaded().catch(()=>{});
     await loadRunnerMetrics().catch(()=>{});
     const autoTuneSelection = resolveAutoTuneModelSelection();
@@ -7737,7 +7738,6 @@ function bindAiAnalyseButton(){
       const meta = `<div class='analysis-meta'>${modeBadge} · Answer ${new Date(generatedAt).toLocaleTimeString()} · Response ${responseLabel} · ${modelLabel}</div>`;
       setAiAnswerPanel(`<div class='ai-answer-block'>${oddsTableHtml}${answerHtml}</div>${meta}`);
       hideAnalysisProcessingHint();
-      if (cooldownKey) startAiAnalyseCooldown(cooldownKey);
       if (cacheKey) {
         aiAnalysisCache.set(cacheKey, { answerHtml, modelName, timestamp: generatedAt, durationMs: responseMs });
         persistAiAnalysisCache();
