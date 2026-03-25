@@ -6143,7 +6143,9 @@ async function selectRace(key, fallbackMeeting = null, fallbackRace = null){
   makeSelectionsDraggable();
   ensureAiAnswerHost();
   clearAiAnswerPanel();
-  renderCachedAiAnalysisIfPresent(selectedRace);
+  if (!renderCachedAiAnalysisIfPresent(selectedRace)) {
+    loadServerRaceAnalysisCache(selectedRace).catch(()=>{});
+  }
   refreshAiAnalyseButtonState();
   renderRaces(racesCache);
   renderInteresting(latestInterestingRows || []);
@@ -6169,10 +6171,33 @@ function refreshSelectedRaceAnalysis(){
   $('analysisTitle').textContent = `${selectedRace.meeting} R${selectedRace.race_number} — ${selectedRace.description || ''}`;
   if (!renderCachedAiAnalysisIfPresent(selectedRace)) {
     clearAiAnswerPanel();
+    loadServerRaceAnalysisCache(selectedRace).catch(()=>{});
   }
 }
 
-
+async function loadServerRaceAnalysisCache(race){
+  if (!race) return;
+  const meeting = String(race.meeting || '').trim();
+  const raceNo = String(race.race_number || race.race || '').replace(/^R/i,'').trim();
+  if (!meeting || !raceNo) return;
+  try {
+    const url = `./api/race-analysis?meeting=${encodeURIComponent(meeting)}&race=${encodeURIComponent(raceNo)}`;
+    const res = await fetchLocal(url, { cache: 'no-store' });
+    const out = await res.json();
+    if (!out || !out.answer) return;
+    const answerHtml = formatAiAnswer(out.answer);
+    const responseLabel = 'cache';
+    const modelLabel = out.modelUsed || out.modelRequested || selectedAiModel.model || '—';
+    const meta = `<div class='analysis-meta'>[CACHE] · Answer ${new Date(out.createdAt || Date.now()).toLocaleTimeString()} · Response ${responseLabel} · ${modelLabel}</div>`;
+    ensureAiAnswerHost();
+    setAiAnswerPanel(`<div class='ai-answer-block'>${answerHtml}</div>${meta}`);
+    const cacheKey = buildAiAnalysisCacheKey();
+    if (cacheKey) {
+      aiAnalysisCache.set(cacheKey, { answerHtml, modelName: modelLabel, timestamp: Date.now(), durationMs: null });
+      persistAiAnalysisCache();
+    }
+  } catch {}
+}
 
 function cleanRunnerText(v){
   return String(v || '')
@@ -7742,6 +7767,7 @@ function bindAiAnalyseButton(){
       model: autoTuneSelection.model,
       selectionCount: 0,
       selections: [],
+      edgeSignals: Array.isArray(latestAnalysisSignals?.edgeRows) ? latestAnalysisSignals.edgeRows : [],
       uiContext: { day: selectedDay, country: selectedCountry, meeting: selectedMeeting },
       raceContext: { meeting: selectedRace.meeting, raceNumber: selectedRace.race_number, raceName: selectedRace.description }
     };

@@ -2436,6 +2436,15 @@ function buildAiContextSummary({
 
   if (jointRows?.length) lines.push(`Joint likelihoods: ${summarizeList(jointRows, 3, formatJoint)}`);
 
+  const edgeSignals = Array.isArray(clientContext?.edgeSignals) ? clientContext.edgeSignals : [];
+  if (edgeSignals.length) {
+    const formatted = edgeSignals
+      .slice(0, 8)
+      .map(r => `${r.name || '—'} ${Number.isFinite(r.impliedPct) ? `implied ${Number(r.impliedPct).toFixed(1)}%` : ''}${Number.isFinite(r.modeledPct) ? ` model ${Number(r.modeledPct).toFixed(1)}%` : ''}${Number.isFinite(r.edgePct) ? ` edge ${Number(r.edgePct) >= 0 ? '+' : ''}${Number(r.edgePct).toFixed(1)}pts` : ''}`.trim())
+      .join(' | ');
+    lines.push(`Edge viz: ${formatted}`);
+  }
+
   const raceLookup = buildRaceLookup(races);
   const explicitSelections = Array.isArray(clientContext?.selections) ? clientContext.selections.slice(0, 6) : [];
   const inferredSelections = inferSelectionsFromQuestion(question, suggested, races);
