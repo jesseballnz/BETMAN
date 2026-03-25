@@ -10985,7 +10985,6 @@ toggleAiChat(false);
 loadStake().then(async ()=>{
   await loadStatus();
   await loadAuthenticatedUser();
-  await loadOfferStrip();
   loadAiModels().catch(err => console.warn('ai_model_catalog_failed', err));
   const p = new URLSearchParams(window.location.search).get('page');
   if (p === 'help') setActivePage('help');
