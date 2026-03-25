@@ -9692,53 +9692,27 @@ async function loadBakeoffLeaderboard(manualData = null){
     if (coverage) coverage.innerHTML = '<div class="sub">Unable to load model coverage.</div>';
   }
 }
-async function runBakeoffFullSoak(){
-  const btn = $('runFullSoakBtn');
-  if (btn) btn.disabled = true;
-  setBakeoffRunIndicator('running', '🔥 Full Soak running (npm run bakeoff)…');
-  try {
-    const res = await fetchLocal('./api/bakeoff-run', { method: 'POST' });
-    const out = await res.json().catch(() => ({}));
-    if (!res.ok || out?.ok === false) throw new Error(out?.error || 'failed_to_start');
-    const startedAt = Date.now();
-    const poll = async () => {
-      try {
-        const sRes = await fetchLocal('./api/bakeoff-run-status');
-        const sOut = await sRes.json().catch(() => ({}));
-        if (sOut?.running) {
-          const secs = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-          setBakeoffRunIndicator('running', `🔥 Full Soak running… ${secs}s`);
-          setTimeout(poll, 2500);
-          return;
-        }
-        if (Number(sOut?.exitCode) === 0) {
-          setBakeoffRunIndicator('success', '✅ Full Soak completed');
-          await loadBakeoffLeaderboard();
-        } else {
-          setBakeoffRunIndicator('error', `⚠️ Full Soak failed (exit ${sOut?.exitCode ?? 'n/a'})`);
-        }
-        if (btn) btn.disabled = false;
-      } catch (err) {
-        setBakeoffRunIndicator('error', `⚠️ Full Soak status error: ${err?.message || 'unknown'}`);
-        if (btn) btn.disabled = false;
-      }
-    };
-    setTimeout(poll, 1500);
-  } catch (err) {
-    setBakeoffRunIndicator('error', `⚠️ Full Soak start failed: ${err?.message || 'unknown error'}`);
-    if (btn) btn.disabled = false;
-  }
-}
-
 let bakeoffFullSoakPoll = null;
 
-async function pollBakeoffFullSoakStatus(){
+function renderBakeoffRunFeedback(out, startedAt){
+  const results = $('bakeoffTestResults');
+  if (!results) return;
+  const secs = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  const tail = Array.isArray(out?.tail) ? out.tail.slice(-10) : [];
+  const logLines = tail.length
+    ? `<div class='sub' style='margin-top:8px'>Live log tail</div><pre style='margin-top:6px;max-height:220px;overflow:auto;white-space:pre-wrap;font-size:11px;line-height:1.35;background:#0b1220;border:1px solid rgba(255,255,255,0.08);padding:10px;border-radius:8px'>${escapeHtml(tail.join('\n'))}</pre>`
+    : `<div class='sub' style='margin-top:8px'>Waiting for bakeoff log output…</div>`;
+  results.innerHTML = `<div class='sub'>🔥 Full soak running for ${secs}s</div>${logLines}`;
+}
+
+async function pollBakeoffFullSoakStatus(startedAt = Date.now()){
   try {
-    const res = await fetchLocal('./api/bakeoff-run-status', { method: 'POST' });
-    const out = await res.json();
+    const res = await fetchLocal('./api/bakeoff-run-status');
+    const out = await res.json().catch(() => ({}));
     if (!res.ok || out?.ok === false) return;
     if (out.running) {
-      setBakeoffRunIndicator('running', '🔥 Full soak running (npm run bakeoff)…');
+      setBakeoffRunIndicator('running', `🔥 Full soak running… ${Math.max(0, Math.round((Date.now() - startedAt) / 1000))}s`);
+      renderBakeoffRunFeedback(out, startedAt);
       return;
     }
     if (bakeoffFullSoakPoll) {
@@ -9747,15 +9721,19 @@ async function pollBakeoffFullSoakStatus(){
     }
     const ok = out.exitCode === 0;
     setBakeoffRunIndicator(ok ? 'success' : 'error', ok ? '✅ Full soak complete.' : `⚠️ Full soak failed (exit ${out.exitCode ?? 'n/a'})`);
+    renderBakeoffRunFeedback(out, startedAt);
     const btn = $('runFullSoakBtn');
     if (btn) btn.disabled = false;
-    loadBakeoffLeaderboard();
-  } catch {}
+    if (ok) loadBakeoffLeaderboard();
+  } catch (err) {
+    setBakeoffRunIndicator('error', `⚠️ Full soak status error: ${err?.message || 'unknown'}`);
+  }
 }
 
 async function runBakeoffFullSoak(){
   const btn = $('runFullSoakBtn');
   if (btn) btn.disabled = true;
+  const startedAt = Date.now();
   try {
     const res = await fetchLocal('./api/bakeoff-run', { method: 'POST' });
     const out = await res.json().catch(() => ({}));
@@ -9764,9 +9742,10 @@ async function runBakeoffFullSoak(){
       return;
     }
     setBakeoffRunIndicator('running', '🔥 Full soak running (npm run bakeoff)…');
+    renderBakeoffRunFeedback(out, startedAt);
     if (bakeoffFullSoakPoll) clearInterval(bakeoffFullSoakPoll);
-    bakeoffFullSoakPoll = setInterval(pollBakeoffFullSoakStatus, 3000);
-    setTimeout(() => { if (btn) btn.disabled = false; }, 5000);
+    bakeoffFullSoakPoll = setInterval(() => pollBakeoffFullSoakStatus(startedAt), 3000);
+    setTimeout(() => pollBakeoffFullSoakStatus(startedAt), 1000);
   } catch (err) {
     setBakeoffRunIndicator('error', `⚠️ Full soak start error: ${err?.message || 'network_error'}`);
   } finally {

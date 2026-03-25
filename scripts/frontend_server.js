@@ -89,7 +89,7 @@ let lastPollCacheTs = 0;
 let lastPollCacheKey = '';
 let lastPerformancePollTs = 0;
 const PERFORMANCE_POLL_COOLDOWN_MS = 5 * 60 * 1000;
-let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null, signal: null, error: null };
+let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null, signal: null, error: null, log: 'logs/bakeoff-run.log', tail: [] };
 
 function normalizeTenantId(v){
   const raw = String(v || 'default').trim();
@@ -3816,7 +3816,15 @@ const server = http.createServer(async (req, res)=>{
     if (url.pathname === '/api/bakeoff-run-status') {
       const principal = req.authPrincipal;
       if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
-      return okJson(res, { ok: true, ...bakeoffRunState });
+      const logPath = path.join(process.cwd(), 'logs', 'bakeoff-run.log');
+      let tail = [];
+      try {
+        if (fs.existsSync(logPath)) {
+          const raw = fs.readFileSync(logPath, 'utf8');
+          tail = raw.split(/\r?\n/).filter(Boolean).slice(-12);
+        }
+      } catch {}
+      return okJson(res, { ok: true, ...bakeoffRunState, log: 'logs/bakeoff-run.log', tail });
     }
 
     if (url.pathname === '/api/bakeoff-run') {
