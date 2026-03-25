@@ -644,6 +644,10 @@ function setActivePage(page){
   refreshTabAccess();
   renderMeetingIntelPanel();
   if (page === 'performance') loadPerformance();
+  if (page === 'bakeoff') {
+    loadBakeoffLeaderboard();
+    restoreBakeoffRunFeedback();
+  }
 }
 
 function openSummaryPopup(title, html){
@@ -9728,6 +9732,29 @@ async function pollBakeoffFullSoakStatus(startedAt = Date.now()){
   } catch (err) {
     setBakeoffRunIndicator('error', `⚠️ Full soak status error: ${err?.message || 'unknown'}`);
   }
+}
+
+async function restoreBakeoffRunFeedback(){
+  try {
+    const res = await fetchLocal('./api/bakeoff-run-status');
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || out?.ok === false) return;
+    const startedAt = Number(out.startedAt || Date.now());
+    if (out.running) {
+      setBakeoffRunIndicator('running', `🔥 Full soak running… ${Math.max(0, Math.round((Date.now() - startedAt) / 1000))}s`);
+      renderBakeoffRunFeedback(out, startedAt);
+      const btn = $('runFullSoakBtn');
+      if (btn) btn.disabled = true;
+      if (bakeoffFullSoakPoll) clearInterval(bakeoffFullSoakPoll);
+      bakeoffFullSoakPoll = setInterval(() => pollBakeoffFullSoakStatus(startedAt), 3000);
+      return;
+    }
+    if (Number.isFinite(Number(out.exitCode)) || out.tail?.length) {
+      const ok = out.exitCode === 0;
+      setBakeoffRunIndicator(ok ? 'success' : 'error', ok ? '✅ Full soak complete.' : `⚠️ Full soak failed (exit ${out.exitCode ?? 'n/a'})`);
+      renderBakeoffRunFeedback(out, startedAt);
+    }
+  } catch {}
 }
 
 async function runBakeoffFullSoak(){
