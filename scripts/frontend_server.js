@@ -3826,15 +3826,31 @@ const server = http.createServer(async (req, res)=>{
       const { spawn } = require('child_process');
       bakeoffRunState = { running: true, startedAt: Date.now(), endedAt: 0, exitCode: null, signal: null, error: null };
       try {
-        const child = spawn('npm', ['run', 'bakeoff'], { cwd: process.cwd(), stdio: 'ignore', detached: true });
+        const logDir = path.join(process.cwd(), 'logs');
+        fs.mkdirSync(logDir, { recursive: true });
+        const logPath = path.join(logDir, 'bakeoff-run.log');
+        const logFd = fs.openSync(logPath, 'a');
+        const childEnv = {
+          ...process.env,
+          BETMAN_OLLAMA_BASE_URL: process.env.BETMAN_OLLAMA_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE,
+          BAKEOFF_URL: process.env.BAKEOFF_URL || 'http://127.0.0.1:8080'
+        };
+        const child = spawn('npm', ['run', 'bakeoff'], {
+          cwd: process.cwd(),
+          env: childEnv,
+          stdio: ['ignore', logFd, logFd],
+          detached: true
+        });
         child.on('error', (err) => {
           bakeoffRunState = { running: false, startedAt: bakeoffRunState.startedAt, endedAt: Date.now(), exitCode: -1, signal: null, error: String(err?.message || 'spawn_error') };
+          try { fs.closeSync(logFd); } catch {}
         });
         child.on('exit', (code, signal) => {
           bakeoffRunState = { running: false, startedAt: bakeoffRunState.startedAt, endedAt: Date.now(), exitCode: Number.isFinite(code) ? code : null, signal: signal || null, error: null };
+          try { fs.closeSync(logFd); } catch {}
         });
         child.unref();
-        return okJson(res, { ok: true, started: true, running: true, startedAt: bakeoffRunState.startedAt });
+        return okJson(res, { ok: true, started: true, running: true, startedAt: bakeoffRunState.startedAt, log: 'logs/bakeoff-run.log' });
       } catch (err) {
         bakeoffRunState = { running: false, startedAt: 0, endedAt: Date.now(), exitCode: -1, signal: null, error: String(err?.message || 'spawn_error') };
         return okJson(res, { ok: false, error: bakeoffRunState.error }, 500);
