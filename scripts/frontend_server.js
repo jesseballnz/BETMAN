@@ -3233,7 +3233,7 @@ const server = http.createServer(async (req, res)=>{
     return okJson(res, {
       ok: true,
       single: { price: '$9.95/week', paymentLink: STRIPE_LINK_SINGLE || null },
-      single_day: { price: 'Single Day', paymentLink: STRIPE_LINK_SINGLE_DAY || null },
+      single_day: { price: '$7.95/day', paymentLink: STRIPE_LINK_SINGLE_DAY || null },
       commercial: { price: '$250/month', paymentLink: STRIPE_LINK_COMMERCIAL || null },
       tester: { price: 'Free/signup', paymentLink: STRIPE_LINK_TESTER || null }
     });
