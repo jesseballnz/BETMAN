@@ -2753,22 +2753,22 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     if (m.includes('deepseek-r1:8b') || m.includes('llama3.1:8b') || m.includes('qwen2.5:1.5b')) {
       return {
         contextRace: envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS_SMALL', 8000, 3000, 16000),
-        contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL_SMALL', 4000, 900, 10000),
-        historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS_SMALL', 8, 0, 16),
-        historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS_SMALL', 1800, 300, 4000),
+        contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL_SMALL', 2600, 900, 10000),
+        historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS_SMALL', 6, 0, 16),
+        historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS_SMALL', 1200, 300, 4000),
         maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS_SMALL', 1100, 500, 2200),
-        maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS_SMALL', 1400, 300, 3000),
+        maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS_SMALL', 900, 300, 3000),
         temperatureRace: 0.15,
         temperatureGeneral: 0.28
       };
     }
     return {
       contextRace: envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS', 12000, 4000, 24000),
-      contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL', 7000, 1000, 16000),
-      historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS', 12, 0, 24),
-      historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS', 2400, 300, 5000),
+      contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL', 4200, 1000, 16000),
+      historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS', 8, 0, 24),
+      historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS', 1600, 300, 5000),
       maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS', 1400, 600, 3000),
-      maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS', 1800, 400, 4000),
+      maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS', 1100, 400, 4000),
       temperatureRace: 0.2,
       temperatureGeneral: 0.35
     };

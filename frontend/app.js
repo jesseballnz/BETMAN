@@ -10873,9 +10873,19 @@ loadRaces().then(()=>{
   }
   restoreLastRaceSelection();
 });
-setInterval(async ()=>{ await loadStake(); await loadStatus(); }, 60000);
-setInterval(()=>{ if (isAdminUser) { triggerPerformancePoll(false); loadPerformance(); } }, 5 * 60 * 1000);
-setInterval(tickQueuedCountdowns, 1000);
+setInterval(async ()=>{
+  if (document.hidden) return;
+  await loadStake();
+  await loadStatus();
+}, 60000);
+setInterval(()=>{
+  if (document.hidden) return;
+  if (isAdminUser) { triggerPerformancePoll(false); loadPerformance(); }
+}, 5 * 60 * 1000);
+setInterval(()=>{
+  if (document.hidden) return;
+  tickQueuedCountdowns();
+}, 1000);
 
 
 function bindPollOddsButton(){
