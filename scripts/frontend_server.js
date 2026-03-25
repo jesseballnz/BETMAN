@@ -2769,21 +2769,29 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const contextSummary = buildAiContextSummary({
     status: { updatedAt: status.updatedAt, apiStatus: status.apiStatusPublic || status.apiStatus },
     stakeProfile,
-    suggested: scopedSuggested,
-    interesting: status.interestingRunners || [],
-    marketMovers: status.marketMovers || [],
-    upcoming: status.upcomingRaces || [],
-    activity: status.activity || [],
-    webContext,
+    suggested: hasDraggedSelections ? scopedSuggested.filter(x => scopedSelections.some(s => String(x.meeting||'').trim() === s.meeting && String(x.race||'').trim() === s.race && String(x.selection||'').trim() === s.selection)) : scopedSuggested,
+    interesting: hasDraggedSelections ? [] : (status.interestingRunners || []),
+    marketMovers: hasDraggedSelections ? [] : (status.marketMovers || []),
+    upcoming: hasDraggedSelections ? [] : (status.upcomingRaces || []),
+    activity: hasDraggedSelections ? [] : (status.activity || []),
+    webContext: hasDraggedSelections ? { results: [], domains: [] } : webContext,
     clientContext,
     jointRows,
     question,
-    races: racesData.races || [],
+    races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : (racesData.races || []),
     maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral
   });
 
   const customInstructions = loadText(AI_INSTRUCTIONS_FILE, '').trim();
   const systemPrompt = (isRaceAnalysis || isStrategy) ? BETMAN_ANALYST_SYSTEM_PROMPT : BETMAN_CHAT_SYSTEM_PROMPT;
+  const scopedSelections = hasDraggedSelections
+    ? selections.map((s) => ({
+        meeting: String(s.meeting || '').trim(),
+        race: String(s.race || '').trim(),
+        selection: String(s.selection || s.runner || '').trim(),
+        reason: String(s.reason || '').trim()
+      }))
+    : [];
   const messages = [
     {
       role: 'system',
@@ -4126,6 +4134,18 @@ if (url.pathname === '/api/ask-selection') {
           ok: true,
           mode: 'web_required',
           answer: 'I could not retrieve internet sources right now, so I cannot complete a bespoke web-backed answer. Please retry in 30–60 seconds.'
+        });
+      }
+      if (fallbackReason === 'openai_401') {
+        return okJson(res, {
+          ok: true,
+          mode: 'auth_error',
+          answer: 'OpenAI is configured but the server API key is invalid. Update OPENAI_API_KEY on the BETMAN server to use OpenAI models.',
+          provider: aiProvider,
+          modelRequested: String(payload?.model || '').trim() || null,
+          modelUsed: String(payload?.model || '').trim() || null,
+          modelAdjusted: false,
+          fallbackReason
         });
       }
     }
