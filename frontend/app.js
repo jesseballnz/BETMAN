@@ -10281,6 +10281,7 @@ async function sendAiChat(){
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question: q,
+        source: draggedSelections.length ? 'strategy' : 'chat',
         selectionCount,
         selections: draggedSelections,
         multiRaceContext: {

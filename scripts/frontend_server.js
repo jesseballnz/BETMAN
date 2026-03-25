@@ -2632,6 +2632,7 @@ function rememberAiTurn(tenantId, question, answer, sourceTag = '') {
 async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = 'default', providerOverride = ''){
   const provider = String(providerOverride || '').trim().toLowerCase() || resolveAiProvider();
   const key = process.env.OPENAI_API_KEY || process.env.BETMAN_OPENAI_API_KEY;
+  const openAiBase = String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
   const ollamaBase = String(process.env.OLLAMA_BASE_URL || process.env.BETMAN_OLLAMA_BASE_URL || process.env.BETMAN_CHAT_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE).replace(/\/$/, '');
   if (provider === 'openai' && !key) return null;
   console.log('[ai-chat] provider', provider, 'question', question);
@@ -2643,6 +2644,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const sourceTag = String(clientContext?.source || '').toLowerCase();
   const isRaceAnalysis = sourceTag === 'race-analysis';
   const isStrategy = sourceTag === 'strategy' || /\bstrategy\b/i.test(String(question || ''));
+  const selections = Array.isArray(clientContext.selections) ? clientContext.selections : [];
+  const hasDraggedSelections = selections.length > 0;
   const isGeneralChat = !isRaceAnalysis && !isStrategy;
   const webOptional = true;
   let webContext = { results: [], domains: [] };
@@ -2716,7 +2719,6 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   };
 
   const jointRows = sameRaceJointLikelihoods();
-  const selections = Array.isArray(clientContext.selections) ? clientContext.selections : [];
 
   const analysisSource = String(clientContext?.source || '').toLowerCase();
   const rcMeeting = String(clientContext?.raceContext?.meeting || '').trim().toLowerCase();
@@ -2788,6 +2790,13 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       content: `${systemPrompt}\n\nPriority rule: answer the user's latest question directly first. Do not ignore, rewrite, or replace the question with a generic template.`
     }
   ];
+  if (hasDraggedSelections) {
+    const draggedScope = selections.map((s, i) => `${i + 1}. ${String(s.meeting || '').trim()} R${String(s.race || '').trim()} ${String(s.selection || s.runner || '').trim()}`).join('\n');
+    messages.push({
+      role: 'system',
+      content: `Selection lock: answer ONLY using the explicitly dragged selections below unless the user clearly asks to broaden scope. Do not switch to other meetings, races, or generic NZ angles.\n${draggedScope}`
+    });
+  }
   if (customInstructions) {
     messages.push({ role: 'system', content: `Mandatory House Instructions:\n${customInstructions}` });
   }
@@ -2946,7 +2955,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         payload.reasoning = { effort: 'medium' };
       }
 
-      const r = await fetch('https://api.openai.com/v1/responses', {
+      const r = await fetch(`${openAiBase}/responses`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2994,7 +3003,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         payload.reasoning_effort = 'medium';
       }
 
-      const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      const r = await fetch(`${openAiBase}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
