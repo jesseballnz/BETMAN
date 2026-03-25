@@ -382,7 +382,7 @@ function inferPlanTypeFromStripe(obj = {}){
   return 'single';
 }
 
-function upsertProvisionedUser({ email, firstName = '', lastName = '', companyName = '', planType = 'single', stripeCustomerId = '' }){
+function upsertProvisionedUser({ email, firstName = '', lastName = '', companyName = '', planType = 'single', stripeCustomerId = '', accessExpiresAt = null }){
   const normEmail = normalizeEmail(email);
   if (!normEmail) return null;
   const users = [...(authState.users || [])];
@@ -403,6 +403,7 @@ function upsertProvisionedUser({ email, firstName = '', lastName = '', companyNa
       name: planType === 'commercial' ? (companyName || existing.companyName || existing.name || normEmail) : ([firstName || existing.firstName || '', lastName || existing.lastName || ''].filter(v => v !== '').join(' ') || existing.name || normEmail),
       role: nextRole,
       stripeCustomerId: stripeCustomerId || existing.stripeCustomerId || null,
+      accessExpiresAt: accessExpiresAt || existing.accessExpiresAt || null,
       subscriptionStatus: 'active',
       subscriptionActive: true,
       setupToken: token,
@@ -425,6 +426,7 @@ function upsertProvisionedUser({ email, firstName = '', lastName = '', companyNa
     role: 'user',
     tenantId: 'default',
     stripeCustomerId: stripeCustomerId || null,
+    accessExpiresAt: accessExpiresAt || null,
     subscriptionStatus: 'active',
     subscriptionActive: true,
     setupToken: token,
@@ -458,6 +460,23 @@ async function checkSubscriptionByUser(user){
   if (!stripe) return { enforceable: false, active: true, reason: 'stripe_not_configured' };
   const email = normalizeEmail(user?.email || user?.username || '');
   if (!email) return { enforceable: true, active: false, reason: 'email_missing' };
+
+  const explicitPlanType = String(user?.planType || '').toLowerCase();
+  if (explicitPlanType === 'single_day') {
+    const exp = new Date(user?.accessExpiresAt || 0).getTime();
+    if (Number.isFinite(exp) && exp > 0) {
+      const active = Date.now() < exp;
+      return {
+        enforceable: true,
+        active,
+        reason: active ? 'ok' : 'single_day_expired',
+        customerId: user?.stripeCustomerId || '',
+        planType: 'single_day',
+        customerName: String(user?.name || ''),
+        accessExpiresAt: user?.accessExpiresAt || null
+      };
+    }
+  }
 
   let customerRecord = null;
   let customerId = user?.stripeCustomerId || '';
@@ -497,6 +516,12 @@ async function checkSubscriptionByUser(user){
   try {
     const subs = preloadSubs || await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 20 });
     const activeSub = (subs?.data || []).find(s => ['active', 'trialing', 'past_due'].includes(String(s.status || '').toLowerCase()));
+    if (planType === 'single_day') {
+      const baseTs = Number(activeSub?.current_period_end || activeSub?.trial_end || customerRecord?.created || 0);
+      const expIso = baseTs ? new Date(baseTs * 1000).toISOString() : null;
+      const active = !!baseTs && Date.now() < (baseTs * 1000);
+      return { enforceable: true, active, reason: active ? 'ok' : 'single_day_expired', customerId, planType, customerName, accessExpiresAt: expIso };
+    }
     const active = !!activeSub;
     return { enforceable: true, active, reason: active ? 'ok' : 'subscription_inactive', customerId, planType, customerName };
   } catch {
@@ -517,6 +542,7 @@ async function syncProvisioningFromStripe(){
       const next = {
         ...u,
         stripeCustomerId: sub.customerId || u.stripeCustomerId || null,
+        accessExpiresAt: sub.accessExpiresAt || u.accessExpiresAt || null,
         subscriptionActive: !!sub.active,
         subscriptionStatus: sub.reason || null,
         updatedAt: new Date().toISOString()
@@ -3239,7 +3265,7 @@ const server = http.createServer(async (req, res)=>{
             firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : (nameParts[0] || email.split('@')[0]);
             lastName = nameParts.length > 1 ? nameParts.slice(-1).join(' ') : '';
           }
-          const upsert = upsertProvisionedUser({ email, firstName, lastName, companyName, planType, stripeCustomerId: lookup.customerId });
+          const upsert = upsertProvisionedUser({ email, firstName, lastName, companyName, planType, stripeCustomerId: lookup.customerId, accessExpiresAt: lookup.accessExpiresAt || null });
           user = upsert?.user || null;
           sub = lookup;
           idx = (authState.users || []).findIndex(u => normalizeUsername(u.username) === normalizeUsername(email));
@@ -3257,7 +3283,7 @@ const server = http.createServer(async (req, res)=>{
       const setupExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
       const users = [...(authState.users || [])];
       if (idx >= 0) {
-        users[idx] = { ...users[idx], setupToken: token, setupExpiresAt, subscriptionActive: true, subscriptionStatus: 'active', stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, updatedAt: new Date().toISOString() };
+        users[idx] = { ...users[idx], setupToken: token, setupExpiresAt, subscriptionActive: true, subscriptionStatus: 'active', stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
         saveAuthState({ username: authState.username, password: authState.password, users });
       }
       const setupLink = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}/set-password?token=${encodeURIComponent(token)}`;
@@ -3321,7 +3347,12 @@ const server = http.createServer(async (req, res)=>{
             const firstName = String(obj?.customer_details?.name || '').trim().split(' ').slice(0, -1).join(' ');
             const lastName = String(obj?.customer_details?.name || '').trim().split(' ').slice(-1).join(' ');
             const companyName = planType === 'commercial' ? String(obj?.customer_details?.name || '') : '';
-            upsertProvisionedUser({ email, firstName, lastName, companyName, planType, stripeCustomerId: customerId });
+            let accessExpiresAt = null;
+            if (planType === 'single_day') {
+              const baseTs = Number(obj?.expires_at || obj?.current_period_end || obj?.trial_end || obj?.created || 0);
+              if (baseTs) accessExpiresAt = new Date(baseTs * 1000).toISOString();
+            }
+            upsertProvisionedUser({ email, firstName, lastName, companyName, planType, stripeCustomerId: customerId, accessExpiresAt });
           }
         }
 
