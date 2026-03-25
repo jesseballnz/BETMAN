@@ -6512,27 +6512,31 @@ function runnerFormSignal(runner){
 
   let status = 'COLD';
   const lastStartHotEligible = lastStart !== null && lastStart <= 3;
-  if (lastStartHotEligible && (winsLast4 >= 2 || recent3Podiums >= 2 || recent5Top4 >= 3) && formScore >= 12) {
+  const twoWinsIntoToday = recent.length >= 2 && recent[0] === 1 && recent[1] === 1;
+  const twoStartSample = recent.length === 2;
+
+  if (twoWinsIntoToday || (twoStartSample && wins >= 1)) {
+    status = 'HOT';
+  } else if (lastStartHotEligible && (winsLast4 >= 2 || recent3Podiums >= 2 || recent5Top4 >= 3) && formScore >= 12) {
     status = 'HOT';
   } else if ((lastStart !== null && lastStart <= 5 && (recent3Podiums >= 1 || top4 >= 2)) || formScore >= 5) {
     status = 'SOLID';
   } else if (podiums >= 1 || top5 >= 2 || avgFinish <= 6 || streakTop3 >= 2 || formScore >= -2) {
     status = 'MIXED';
   }
-  if (lastStart !== null && lastStart > 3 && status === 'HOT') status = 'SOLID';
+  if (lastStart !== null && lastStart > 3 && status === 'HOT' && !twoWinsIntoToday && !twoStartSample) status = 'SOLID';
   const recent4Podiums = recent4.filter(v => v <= 3).length;
   if (recent4Podiums === 0 && status === 'SOLID') status = 'MIXED';
   if (recent.length < 3) {
-    if (status === 'HOT') status = 'SOLID';
     if (recent.length === 1 && wins === 1) status = 'SOLID';
-    if (recent.length === 2 && wins >= 1 && podiums >= 1) status = 'SOLID';
+    if (recent.length === 2 && wins === 0 && podiums >= 1 && status === 'HOT') status = 'SOLID';
   }
   if (lastStart !== null && lastStart >= 8 && formScore < 5 && status !== 'COLD') status = 'MIXED';
   if (lastStart !== null && lastStart >= 9 && formScore < 0) status = 'COLD';
   const legacy = (status === 'HOT' || status === 'SOLID') ? 'GOOD'
     : (status === 'MIXED' ? 'MIXED' : (status === 'COLD' ? 'POOR' : 'UNKNOWN'));
   const sampleNote = recent.length < 3 ? ' · limited sample' : '';
-  const hotGateNote = lastStart !== null && lastStart > 3 ? ' · last start missed HOT gate' : '';
+  const hotGateNote = lastStart !== null && lastStart > 3 && !twoWinsIntoToday && !twoStartSample ? ' · last start missed HOT gate' : '';
   const summary = `${wins} win${wins === 1 ? '' : 's'}, ${podiums} podium${podiums === 1 ? '' : 's'} last ${recent.length} · avg finish ${avgFinish.toFixed(1)} · form ${formScore.toFixed(1)}${sampleNote}${hotGateNote}`;
   const sample = recent.map(v => (v >= 10 ? '0' : v)).join('');
   const details = { status, legacy, summary, wins, podiums, top5, avgFinish, streakTop3, sample, recentLength: recent.length, raw: placements, formScore, lastStart };
