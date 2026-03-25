@@ -2601,7 +2601,7 @@ const aiHealth = {
   lastError: null
 };
 
-function recordAiOutcome({ question, payload, mode, provider, error }){
+function recordAiOutcome({ question, payload, mode, provider, error, modelRequested, modelUsed, modelAdjusted }){
   const ts = new Date().toISOString();
   if (mode === 'ai' || mode === 'cache') {
     aiHealth.lastSuccess = ts;
@@ -2616,6 +2616,9 @@ function recordAiOutcome({ question, payload, mode, provider, error }){
     mode: mode || null,
     provider: provider || null,
     error: error || null,
+    modelRequested: modelRequested || String(payload?.model || '').trim() || null,
+    modelUsed: modelUsed || null,
+    modelAdjusted: !!modelAdjusted,
     selectionCount: Number(payload?.selectionCount || 0),
     races: Array.isArray(payload?.selections) ? payload.selections.map(s => `${s.meeting || ''} R${s.race || ''}`) : [],
     question: String(question || '').slice(0, 400)
@@ -4268,7 +4271,16 @@ if (url.pathname === '/api/ask-selection') {
     }
 
     rememberAiTurn(tenantId, question, answerText, String(payload?.source || ''));
-    recordAiOutcome({ question, payload, mode, provider: aiProvider, error: mode === 'fallback' ? fallbackReason : null });
+    recordAiOutcome({
+      question,
+      payload,
+      mode,
+      provider: aiProvider,
+      error: mode === 'fallback' ? fallbackReason : null,
+      modelRequested: String(payload?.model || '').trim() || null,
+      modelUsed: aiMeta?.modelUsed || null,
+      modelAdjusted: !!aiMeta?.modelAdjusted
+    });
 
     const resolvedModelForMeta = String(aiMeta?.modelUsed || payload?.model || process.env.BETMAN_CHAT_MODEL || '').toLowerCase();
     const smallModelForMeta = resolvedModelForMeta.includes('deepseek-r1:8b') || resolvedModelForMeta.includes('llama3.1:8b') || resolvedModelForMeta.includes('qwen2.5:1.5b');

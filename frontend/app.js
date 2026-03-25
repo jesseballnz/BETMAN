@@ -221,9 +221,14 @@ function loadSavedAiModel(){
     if (saved && saved.model) selectedAiModel = { provider: saved.provider || inferProviderFromModel(saved.model), model: saved.model };
   } catch {}
   try {
-    aiModelManualLock = localStorage.getItem('betmanAiModelManualLock') === '1';
+    const stored = localStorage.getItem('betmanAiModelManualLock');
+    if (stored === null) {
+      aiModelManualLock = true;
+    } else {
+      aiModelManualLock = stored === '1';
+    }
   } catch {
-    aiModelManualLock = false;
+    aiModelManualLock = true;
   }
 }
 
@@ -7693,7 +7698,6 @@ function bindAiAnalyseButton(){
     setAiAnswerPanel(`<div class='ai-answer-block pending'>Running AI analysis…</div>`);
     const cacheKey = buildAiAnalysisCacheKey();
     const cooldownKey = buildAiCooldownKey(selectedRace);
-    if (cooldownKey) startAiAnalyseCooldown(cooldownKey);
     await ensureInstructionsLoaded().catch(()=>{});
     await loadRunnerMetrics().catch(()=>{});
     const autoTuneSelection = resolveAutoTuneModelSelection();
@@ -7722,13 +7726,18 @@ function bindAiAnalyseButton(){
       if (raceKey) aiRaceRuns.add(raceKey);
       const answerHtml = formatAiAnswer(out.answer);
       const oddsTableHtml = buildOddsSummaryTable(selectedRace);
-      const modelName = out.modelUsed || autoTuneSelection.model;
+      const requestedModel = out.modelRequested || autoTuneSelection.model || selectedAiModel.model || '—';
+      const usedModel = out.modelUsed || requestedModel || '—';
+      const modelLabel = (requestedModel && usedModel && requestedModel !== usedModel)
+        ? `${usedModel} (req ${requestedModel})`
+        : usedModel;
       const generatedAt = Date.now();
       const responseLabel = formatResponseTime(responseMs) || 'n/a';
       const modeBadge = formatAiModeBadge(out.mode);
-      const meta = `<div class='analysis-meta'>${modeBadge} · Answer ${new Date(generatedAt).toLocaleTimeString()} · Response ${responseLabel} · ${modelName}</div>`;
+      const meta = `<div class='analysis-meta'>${modeBadge} · Answer ${new Date(generatedAt).toLocaleTimeString()} · Response ${responseLabel} · ${modelLabel}</div>`;
       setAiAnswerPanel(`<div class='ai-answer-block'>${oddsTableHtml}${answerHtml}</div>${meta}`);
       hideAnalysisProcessingHint();
+      if (cooldownKey) startAiAnalyseCooldown(cooldownKey);
       if (cacheKey) {
         aiAnalysisCache.set(cacheKey, { answerHtml, modelName, timestamp: generatedAt, durationMs: responseMs });
         persistAiAnalysisCache();
@@ -7740,7 +7749,8 @@ function bindAiAnalyseButton(){
       }
       if (responseMs === null) responseMs = performance.now() - requestStarted;
       const responseLabel = formatResponseTime(responseMs) || 'n/a';
-      setAiAnswerPanel(`<div class='ai-answer-block error'>AI analysis failed — showing base panel.</div><div class='analysis-meta'>Fallback ${new Date().toLocaleTimeString()} · Response ${responseLabel} · ${autoTuneSelection.model}</div>`);
+      const requestedModel = autoTuneSelection.model || selectedAiModel.model || '—';
+      setAiAnswerPanel(`<div class='ai-answer-block error'>AI analysis failed — showing base panel.</div><div class='analysis-meta'>Fallback ${new Date().toLocaleTimeString()} · Response ${responseLabel} · ${requestedModel}</div>`);
       hideAnalysisProcessingHint();
     } finally {
       attachAnalysisSelectionHandlers(selectedRace);
