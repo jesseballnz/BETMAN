@@ -2909,9 +2909,12 @@ function buildStrategyPlanCandidates(type){
 }
 
 function strategyEdgePts(row){
-  const winProb = parseReasonWinProb(row?.reason);
-  const odds = parseReasonOdds(row?.reason) || Number(row?.odds || 0);
-  const implied = Number.isFinite(odds) && odds > 0 ? (100 / odds) : NaN;
+  const rowWinProb = Number(row?.aiWinProb ?? row?.win_p);
+  const winProb = Number.isFinite(rowWinProb) ? rowWinProb : parseReasonWinProb(row?.reason);
+  const odds = Number(row?.odds);
+  const parsedOdds = parseReasonOdds(row?.reason);
+  const useOdds = Number.isFinite(odds) ? odds : parsedOdds;
+  const implied = Number.isFinite(useOdds) && useOdds > 0 ? (100 / useOdds) : NaN;
   return Number.isFinite(winProb) && Number.isFinite(implied) ? (winProb - implied) : NaN;
 }
 
@@ -2920,9 +2923,12 @@ function scoreStrategyCandidate(row){
   if (Number.isFinite(directSignal)) return directSignal;
   const derivedSignal = signalScore(row?.reason || '', row?.type || 'win', row?.selection || row?.runner || '');
   if (Number.isFinite(derivedSignal)) return derivedSignal;
-  const winProb = parseReasonWinProb(row.reason);
-  const odds = parseReasonOdds(row.reason) || Number(row.odds || 0);
-  const implied = Number.isFinite(odds) && odds > 0 ? (100 / odds) : null;
+  const rowWinProb = Number(row?.aiWinProb ?? row?.win_p);
+  const winProb = Number.isFinite(rowWinProb) ? rowWinProb : parseReasonWinProb(row.reason);
+  const odds = Number(row?.odds);
+  const parsedOdds = parseReasonOdds(row.reason);
+  const useOdds = Number.isFinite(odds) ? odds : parsedOdds;
+  const implied = Number.isFinite(useOdds) && useOdds > 0 ? (100 / useOdds) : null;
   if (Number.isFinite(winProb)) return winProb;
   if (Number.isFinite(implied)) return implied;
   return 0;
@@ -5517,6 +5523,11 @@ async function loadPerformance(){
   const weekly = await fetchLocal('./data/success_weekly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const monthly = await fetchLocal('./data/success_monthly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   signalThresholdAuditCache = await fetchLocal('./data/signal_threshold_audit_v2.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
+
+  const summaryEl = $('perfSummary');
+  if (!daily || !weekly || !monthly) {
+    if (summaryEl) summaryEl.innerHTML = '<div class="sub">Performance data is incomplete or still generating. Refresh again shortly.</div>';
+  }
 
   renderBetPlanPerformance(daily);
 
