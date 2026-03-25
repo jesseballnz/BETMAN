@@ -10121,15 +10121,30 @@ function renderAiSelectionBasket(){
 }
 
 function makeSelectionsDraggable(){
-  document.querySelectorAll('.suggested-btn, .next-planned-btn, .interesting-btn, .multi-btn, .analysis-drag-btn').forEach(el => {
+  const selector = [
+    '.suggested-btn',
+    '.next-planned-btn',
+    '.interesting-btn',
+    '.multi-btn',
+    '.analysis-drag-btn',
+    '.analysis-runner-btn',
+    '.analysis-odds-runner-btn',
+    '[data-runner]',
+    '[data-selection]',
+    '[data-jockey]'
+  ].join(', ');
+
+  document.querySelectorAll(selector).forEach(el => {
     if (el.dataset.dndBound === '1') return;
+    const selection = el.dataset.selection || el.dataset.runner || el.dataset.jockey || el.textContent?.trim() || '';
+    if (!String(selection || '').trim()) return;
     el.dataset.dndBound = '1';
     el.setAttribute('draggable', 'true');
     el.addEventListener('dragstart', (e) => {
       const payload = {
-        meeting: el.dataset.meeting || '',
-        race: el.dataset.race || '',
-        selection: el.dataset.selection || el.dataset.runner || el.textContent?.trim() || '',
+        meeting: el.dataset.meeting || selectedRace?.meeting || selectedMeeting || '',
+        race: el.dataset.race || el.dataset.raceNumber || selectedRace?.race_number || '',
+        selection,
         reason: el.dataset.reason || ''
       };
       e.dataTransfer.setData('application/json', JSON.stringify(payload));
