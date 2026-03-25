@@ -61,6 +61,7 @@ function readStripeWebhookSecretFromCreds(){
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || process.env.BETMAN_STRIPE_SECRET_KEY || readStripeSecretFromCreds();
 const STRIPE_LINK_SINGLE = process.env.STRIPE_LINK_SINGLE || process.env.BETMAN_STRIPE_LINK_SINGLE || 'https://buy.stripe.com/8x2cN538qbMqaiY8mocZa00';
+const STRIPE_LINK_SINGLE_DAY = process.env.STRIPE_LINK_SINGLE_DAY || process.env.BETMAN_STRIPE_LINK_SINGLE_DAY || 'https://buy.stripe.com/5kQ7sL9wOcQudva9qscZa03';
 const STRIPE_LINK_COMMERCIAL = process.env.STRIPE_LINK_COMMERCIAL || process.env.BETMAN_STRIPE_LINK_COMMERCIAL || 'https://buy.stripe.com/6oU7sL10ig2G0IobyAcZa01';
 const STRIPE_LINK_TESTER = process.env.STRIPE_LINK_TESTER || process.env.BETMAN_STRIPE_LINK_TESTER || 'https://buy.stripe.com/aFa00j9wO4jYbn26egcZa02';
 let pgPool = null;
@@ -363,6 +364,7 @@ function getStripe(){
 
 function paymentLinkForPlan(planType){
   const p = String(planType || '').toLowerCase();
+  if (p === 'single_day' || p === 'single-day' || p === 'day') return STRIPE_LINK_SINGLE_DAY;
   if (p === 'commercial') return STRIPE_LINK_COMMERCIAL;
   if (p === 'tester') return STRIPE_LINK_TESTER;
   return STRIPE_LINK_SINGLE;
@@ -374,6 +376,7 @@ function makeSetupToken(){
 
 function inferPlanTypeFromStripe(obj = {}){
   const text = JSON.stringify(obj).toLowerCase();
+  if (text.includes('single day') || text.includes('single_day') || text.includes('single-day')) return 'single_day';
   if (text.includes('commercial')) return 'commercial';
   if (text.includes('tester') || text.includes('free')) return 'tester';
   return 'single';
@@ -3200,6 +3203,7 @@ const server = http.createServer(async (req, res)=>{
     return okJson(res, {
       ok: true,
       single: { price: '$9.95/week', paymentLink: STRIPE_LINK_SINGLE || null },
+      single_day: { price: 'Single Day', paymentLink: STRIPE_LINK_SINGLE_DAY || null },
       commercial: { price: '$250/month', paymentLink: STRIPE_LINK_COMMERCIAL || null },
       tester: { price: 'Free/signup', paymentLink: STRIPE_LINK_TESTER || null }
     });
@@ -3343,7 +3347,8 @@ const server = http.createServer(async (req, res)=>{
     req.on('end', async ()=>{
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
-      const planType = String(payload.planType || 'single').toLowerCase() === 'commercial' ? 'commercial' : 'single';
+      const planTypeInput = String(payload.planType || 'single').toLowerCase();
+      const planType = planTypeInput === 'commercial' ? 'commercial' : (planTypeInput === 'single_day' || planTypeInput === 'single-day' || planTypeInput === 'day' ? 'single_day' : 'single');
       const firstNameInput = String(payload.firstName || '');
       const lastNameInput = String(payload.lastName || '');
       const companyNameInput = String(payload.companyName || '');
@@ -3383,7 +3388,7 @@ const server = http.createServer(async (req, res)=>{
       let newUser = {
         username: email,
         email,
-        planType: planType === 'commercial' ? 'commercial' : 'single',
+        planType: planType === 'commercial' ? 'commercial' : (planType === 'single_day' ? 'single_day' : 'single'),
         firstName,
         lastName,
         companyName,
@@ -4348,7 +4353,7 @@ if (url.pathname === '/api/ask-selection') {
         let newUser = {
           username: email,
           email,
-          planType: planType === 'commercial' ? 'commercial' : 'single',
+          planType: planType === 'commercial' ? 'commercial' : (planType === 'single_day' ? 'single_day' : 'single'),
           firstName,
           lastName,
           companyName,

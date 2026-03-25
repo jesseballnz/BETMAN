@@ -10575,10 +10575,10 @@ async function createAuthUser(){
   const verified = !!$('createUserVerified')?.checked;
   const hasPersonName = !!(firstName && lastName);
   const hasCompany = !!companyName;
-  if ((planType === 'single' && !hasPersonName) || (planType === 'commercial' && !hasCompany) || !email || !password) {
+  if (((planType === 'single' || planType === 'single_day') && !hasPersonName) || (planType === 'commercial' && !hasCompany) || !email || !password) {
     return alert(planType === 'commercial'
       ? 'Commercial plan requires Company name, email, and password.'
-      : 'Single User plan requires First + Last name, email, and password.');
+      : 'Single User / Single DAY plan requires First + Last name, email, and password.');
   }
 
   try {
