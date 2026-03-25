@@ -2646,6 +2646,14 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const isStrategy = sourceTag === 'strategy' || /\bstrategy\b/i.test(String(question || ''));
   const selections = Array.isArray(clientContext.selections) ? clientContext.selections : [];
   const hasDraggedSelections = selections.length > 0;
+  const scopedSelections = hasDraggedSelections
+    ? selections.map((s) => ({
+        meeting: String(s.meeting || '').trim(),
+        race: String(s.race || '').trim(),
+        selection: String(s.selection || s.runner || '').trim(),
+        reason: String(s.reason || '').trim()
+      }))
+    : [];
   const isGeneralChat = !isRaceAnalysis && !isStrategy;
   const webOptional = true;
   let webContext = { results: [], domains: [] };
@@ -2784,14 +2792,6 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   const customInstructions = loadText(AI_INSTRUCTIONS_FILE, '').trim();
   const systemPrompt = (isRaceAnalysis || isStrategy) ? BETMAN_ANALYST_SYSTEM_PROMPT : BETMAN_CHAT_SYSTEM_PROMPT;
-  const scopedSelections = hasDraggedSelections
-    ? selections.map((s) => ({
-        meeting: String(s.meeting || '').trim(),
-        race: String(s.race || '').trim(),
-        selection: String(s.selection || s.runner || '').trim(),
-        reason: String(s.reason || '').trim()
-      }))
-    : [];
   const messages = [
     {
       role: 'system',
