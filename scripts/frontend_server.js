@@ -90,6 +90,7 @@ let lastPollCacheKey = '';
 let lastPerformancePollTs = 0;
 const PERFORMANCE_POLL_COOLDOWN_MS = 5 * 60 * 1000;
 let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null, signal: null, error: null, log: 'logs/bakeoff-run.log', tail: [] };
+let aiModelsCache = { ts: 0, payload: null };
 
 function normalizeTenantId(v){
   const raw = String(v || 'default').trim();
