@@ -643,7 +643,10 @@ function setActivePage(page){
   });
   refreshTabAccess();
   renderMeetingIntelPanel();
-  if (page === 'performance') loadPerformance();
+  if (page === 'performance') {
+    loadPerformance();
+    loadRuntimeHealth();
+  }
   if (page === 'bakeoff') {
     loadBakeoffLeaderboard();
     restoreBakeoffRunFeedback();
@@ -5363,6 +5366,26 @@ function updatePerformanceRefreshState(){
   btn.textContent = 'Refresh';
 }
 
+async function loadRuntimeHealth(){
+  const el = $('runtimeHealthPanel');
+  if (!el || !isAdminUser) return;
+  try {
+    const out = await fetchLocal('./api/runtime-health', { cache: 'no-store' }).then(r=>r.json());
+    if (!out?.ok) throw new Error(out?.error || 'runtime_health_failed');
+    el.innerHTML = `
+      <div class='perf-card'><div class='label'>PID</div><div class='value'>${out.pid ?? '—'}</div></div>
+      <div class='perf-card'><div class='label'>Uptime</div><div class='value'>${out.uptimeSec ?? '—'}s</div></div>
+      <div class='perf-card'><div class='label'>RSS</div><div class='value'>${out.rssMb ?? '—'} MB</div></div>
+      <div class='perf-card'><div class='label'>Heap Used</div><div class='value'>${out.heapUsedMb ?? '—'} MB</div></div>
+      <div class='perf-card'><div class='label'>OpenAI</div><div class='value'>${out.openAiConfigured ? 'Configured' : 'Missing'}</div></div>
+      <div class='perf-card'><div class='label'>Bakeoff</div><div class='value'>${out.bakeoffRunning ? 'Running' : (out.bakeoffExitCode === 0 ? 'Last OK' : (out.bakeoffExitCode == null ? 'Idle' : 'Last Failed'))}</div></div>
+      <div class='perf-card'><div class='label'>AI Model Cache</div><div class='value'>${out.aiModelsCacheAgeSec == null ? 'cold' : `${out.aiModelsCacheAgeSec}s`}</div></div>
+    `;
+  } catch (err) {
+    el.innerHTML = `<div class='sub'>Runtime health unavailable: ${escapeHtml(err?.message || 'unknown')}</div>`;
+  }
+}
+
 async function triggerPerformancePoll(manual = false){
   if (!isAdminUser) return;
   try {
@@ -5375,6 +5398,7 @@ async function triggerPerformancePoll(manual = false){
     }
     updatePerformanceRefreshState();
   } catch {}
+  await loadRuntimeHealth();
   if (manual) await loadPerformance();
 }
 

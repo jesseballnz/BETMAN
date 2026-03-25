@@ -4496,6 +4496,27 @@ if (url.pathname === '/api/ask-selection') {
     return okJson(res, { ok: true, service: 'betman-api', ts: new Date().toISOString() });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/runtime-health') {
+    const principal = req.authPrincipal;
+    if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
+    const mem = process.memoryUsage();
+    return okJson(res, {
+      ok: true,
+      pid: process.pid,
+      uptimeSec: Math.round(process.uptime()),
+      rssMb: Math.round((mem.rss || 0) / 1048576),
+      heapUsedMb: Math.round((mem.heapUsed || 0) / 1048576),
+      heapTotalMb: Math.round((mem.heapTotal || 0) / 1048576),
+      openAiConfigured: !!(process.env.OPENAI_API_KEY || process.env.BETMAN_OPENAI_API_KEY),
+      openAiBaseUrl: String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'),
+      ollamaBaseUrl: String(process.env.OLLAMA_BASE_URL || process.env.BETMAN_OLLAMA_BASE_URL || process.env.BETMAN_CHAT_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE),
+      bakeoffRunning: !!bakeoffRunState.running,
+      bakeoffExitCode: bakeoffRunState.exitCode,
+      aiModelsCacheAgeSec: aiModelsCache.ts ? Math.round((Date.now() - aiModelsCache.ts) / 1000) : null,
+      ts: new Date().toISOString()
+    });
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/ai-models') {
     const principal = req.authPrincipal;
     const openAiAllowed = canUseOpenAiByPrincipal(principal);
@@ -4515,21 +4536,33 @@ if (url.pathname === '/api/ask-selection') {
       openAiUiEnabled,
       ollamaBases
     };
+    const now = Date.now();
+    if (aiModelsCache.payload && (now - aiModelsCache.ts) < 60000) {
+      return okJson(res, { ok: true, ...aiModelsCache.payload, ...basePayload, cached: true });
+    }
     fetchOllamaModelsFromBases(ollamaBases)
-      .then(({ base: resolvedBase, models }) => okJson(res, {
-        ok: true,
-        providerDefault: resolveAiProvider(),
-        ollamaBase: resolvedBase,
-        ollamaModels: (Array.isArray(models) && models.length) ? models : fallbackOllama,
-        ...basePayload
-      }))
-      .catch(() => okJson(res, {
-        ok: true,
-        providerDefault: resolveAiProvider(),
-        ollamaBase: ollamaBases[0] || BETMAN_OLLAMA_DEFAULT_BASE,
-        ollamaModels: fallbackOllama,
-        ...basePayload
-      }));
+      .then(({ base: resolvedBase, models }) => {
+        aiModelsCache = {
+          ts: Date.now(),
+          payload: {
+            providerDefault: resolveAiProvider(),
+            ollamaBase: resolvedBase,
+            ollamaModels: (Array.isArray(models) && models.length) ? models : fallbackOllama
+          }
+        };
+        return okJson(res, { ok: true, ...aiModelsCache.payload, ...basePayload, cached: false });
+      })
+      .catch(() => {
+        aiModelsCache = {
+          ts: Date.now(),
+          payload: {
+            providerDefault: resolveAiProvider(),
+            ollamaBase: ollamaBases[0] || BETMAN_OLLAMA_DEFAULT_BASE,
+            ollamaModels: fallbackOllama
+          }
+        };
+        return okJson(res, { ok: true, ...aiModelsCache.payload, ...basePayload, cached: false });
+      });
     return;
   }
 
