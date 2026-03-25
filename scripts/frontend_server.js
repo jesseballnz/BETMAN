@@ -2552,9 +2552,7 @@ function buildAiContextSummary({
 
   const summary = lines.filter(Boolean).join('\n');
   const truncated = summary.length > maxLength;
-  const out = truncated ? `${summary.slice(0, maxLength - 1)}…` : summary;
-  out._meta = { length: summary.length, maxLength, truncated };
-  return out;
+  return truncated ? `${summary.slice(0, maxLength - 1)}…` : summary;
 }
 
 const BETMAN_ANALYST_SYSTEM_PROMPT = `You are BETMAN's senior racing analyst. Be direct, structured, and evidence-first.
@@ -2837,7 +2835,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     };
   })();
 
-  const contextSummaryRaw = buildAiContextSummary({
+  const contextSummary = buildAiContextSummary({
     status: { updatedAt: status.updatedAt, apiStatus: status.apiStatusPublic || status.apiStatus },
     stakeProfile,
     suggested: hasDraggedSelections ? scopedSuggested.filter(x => scopedSelections.some(s => String(x.meeting||'').trim() === s.meeting && String(x.race||'').trim() === s.race && String(x.selection||'').trim() === s.selection)) : scopedSuggested,
@@ -2852,8 +2850,11 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : (racesData.races || []),
     maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral
   });
-  const contextMeta = contextSummaryRaw && contextSummaryRaw._meta ? contextSummaryRaw._meta : { length: String(contextSummaryRaw || '').length, maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral, truncated: false };
-  const contextSummary = typeof contextSummaryRaw === 'string' ? contextSummaryRaw : String(contextSummaryRaw || '');
+  const contextMeta = {
+    length: String(contextSummary || '').length,
+    maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
+    truncated: String(contextSummary || '').length > (isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral)
+  };
 
   const customInstructions = loadText(AI_INSTRUCTIONS_FILE, '').trim();
   const systemPrompt = (isRaceAnalysis || isStrategy) ? BETMAN_ANALYST_SYSTEM_PROMPT : BETMAN_CHAT_SYSTEM_PROMPT;
@@ -2919,7 +2920,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       modelAdjusted: !!requestedModel && requestedModel !== effectiveModel,
       contextMaxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
       historyTurnsUsed: modelProfile.historyTurns,
-      historyCharsUsed: modelProfile.historyChars
+      historyCharsUsed: modelProfile.historyChars,
+      contextMeta
     };
   }
 
@@ -3136,7 +3138,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     modelAdjusted: !!requestedModel && requestedModel !== effectiveModel,
     contextMaxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
     historyTurnsUsed: modelProfile.historyTurns,
-    historyCharsUsed: modelProfile.historyChars
+    historyCharsUsed: modelProfile.historyChars,
+    contextMeta
   };
 }
 
@@ -4299,9 +4302,9 @@ if (url.pathname === '/api/ask-selection') {
       modelRequested: String(payload?.model || '').trim() || null,
       modelUsed: aiMeta?.modelUsed || null,
       modelAdjusted: !!aiMeta?.modelAdjusted,
-      contextLen: contextMeta?.length,
-      contextMax: contextMeta?.maxLength,
-      contextTruncated: contextMeta?.truncated,
+      contextLen: aiMeta?.contextMeta?.length,
+      contextMax: aiMeta?.contextMeta?.maxLength,
+      contextTruncated: aiMeta?.contextMeta?.truncated,
       historyTurnsUsed: aiMeta?.historyTurnsUsed,
       historyCharsUsed: aiMeta?.historyCharsUsed,
       edgeSignalsCount: Array.isArray(payload?.edgeSignals) ? payload.edgeSignals.length : 0
