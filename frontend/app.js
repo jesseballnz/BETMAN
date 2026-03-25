@@ -220,10 +220,41 @@ function loadSavedAiModel(){
     const saved = JSON.parse(localStorage.getItem('betmanAiModel') || '{}');
     if (saved && saved.model) selectedAiModel = { provider: saved.provider || inferProviderFromModel(saved.model), model: saved.model };
   } catch {}
+  try {
+    aiModelManualLock = localStorage.getItem('betmanAiModelManualLock') === '1';
+  } catch {
+    aiModelManualLock = false;
+  }
 }
 
 function persistAiModel(){
-  try { localStorage.setItem('betmanAiModel', JSON.stringify(selectedAiModel)); } catch {}
+  try {
+    localStorage.setItem('betmanAiModel', JSON.stringify(selectedAiModel));
+    localStorage.setItem('betmanAiModelManualLock', aiModelManualLock ? '1' : '0');
+  } catch {}
+}
+
+function setAiModelManualLock(state){
+  aiModelManualLock = !!state;
+  persistAiModel();
+  updateAiModelLockUi();
+}
+
+function updateAiModelLockUi(){
+  const note = $('aiModelManualLockNote');
+  const resetBtn = $('aiModelAutoResetBtn');
+  if (note) {
+    note.style.display = aiModelManualLock ? 'block' : 'none';
+  }
+  if (resetBtn) {
+    resetBtn.disabled = !aiModelManualLock;
+    resetBtn.onclick = () => {
+      if (!aiModelManualLock) return;
+      setAiModelManualLock(false);
+      refreshAiAnalyseButtonState();
+      updateAnalysisAiModelNote();
+    };
+  }
 }
 
 function renderAiModelSelect(){
@@ -272,12 +303,15 @@ function renderAiModelSelect(){
     const [provider, model] = String(e.target.value || '').split('::');
     if (!model) return;
     selectedAiModel = { provider: provider || inferProviderFromModel(model), model };
+    aiModelManualLock = true;
     persistAiModel();
+    updateAiModelLockUi();
     refreshAiAnalyseButtonState();
     updateAnalysisAiModelNote();
   };
   refreshAiAnalyseButtonState();
   updateAnalysisAiModelNote();
+  updateAiModelLockUi();
 }
 
 async function loadAiModels(){
@@ -564,6 +598,7 @@ let aiModelCatalog = {
   openaiBlockedReason: ''
 };
 let selectedAiModel = { provider: 'ollama', model: 'deepseek-r1:8b' };
+let aiModelManualLock = false;
 let analysisViewMode = 'engine';
 let latestAnalysisSignals = null;
 let performanceCooldownUntil = 0;
@@ -7693,6 +7728,7 @@ function bindAiAnalyseButton(){
       const modeBadge = formatAiModeBadge(out.mode);
       const meta = `<div class='analysis-meta'>${modeBadge} · Answer ${new Date(generatedAt).toLocaleTimeString()} · Response ${responseLabel} · ${modelName}</div>`;
       setAiAnswerPanel(`<div class='ai-answer-block'>${oddsTableHtml}${answerHtml}</div>${meta}`);
+      hideAnalysisProcessingHint();
       if (cacheKey) {
         aiAnalysisCache.set(cacheKey, { answerHtml, modelName, timestamp: generatedAt, durationMs: responseMs });
         persistAiAnalysisCache();
@@ -7705,6 +7741,7 @@ function bindAiAnalyseButton(){
       if (responseMs === null) responseMs = performance.now() - requestStarted;
       const responseLabel = formatResponseTime(responseMs) || 'n/a';
       setAiAnswerPanel(`<div class='ai-answer-block error'>AI analysis failed — showing base panel.</div><div class='analysis-meta'>Fallback ${new Date().toLocaleTimeString()} · Response ${responseLabel} · ${autoTuneSelection.model}</div>`);
+      hideAnalysisProcessingHint();
     } finally {
       attachAnalysisSelectionHandlers(selectedRace);
       makeSelectionsDraggable();
@@ -9587,6 +9624,9 @@ function pickWeightedModel(weights){
 
 function resolveAutoTuneModelSelection(){
   const s = getBakeoffAutoTuneState();
+  if (aiModelManualLock) {
+    return { provider: selectedAiModel.provider || inferProviderFromModel(selectedAiModel.model), model: selectedAiModel.model, source: 'manual-lock' };
+  }
   if (!s?.enabled) return { ...selectedAiModel, source: 'manual' };
 
   if (s.useWeighted && Array.isArray(s.weights) && s.weights.length) {

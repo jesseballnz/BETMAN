@@ -14,24 +14,27 @@ loadEnvFile();
 
 function loadEnvFile(file = '.env'){
   try {
-    const envPath = path.join(process.cwd(), file);
-    if (!fs.existsSync(envPath)) return;
-    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
-    lines.forEach((line) => {
-      let trimmed = (line || '').trim();
-      if (!trimmed || trimmed.startsWith('#')) return;
-      if (trimmed.startsWith('export ')) trimmed = trimmed.slice(7).trim();
-      const idx = trimmed.indexOf('=');
-      if (idx < 0) return;
-      const key = trimmed.slice(0, idx).trim();
-      if (!key) return;
-      let value = trimmed.slice(idx + 1).trim();
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      if (typeof process.env[key] === 'undefined') {
-        process.env[key] = value;
-      }
+    const roots = [process.cwd(), path.join(__dirname, '..')];
+    roots.forEach((rootDir) => {
+      const envPath = path.join(rootDir, file);
+      if (!fs.existsSync(envPath)) return;
+      const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+      lines.forEach((line) => {
+        let trimmed = (line || '').trim();
+        if (!trimmed || trimmed.startsWith('#')) return;
+        if (trimmed.startsWith('export ')) trimmed = trimmed.slice(7).trim();
+        const idx = trimmed.indexOf('=');
+        if (idx < 0) return;
+        const key = trimmed.slice(0, idx).trim();
+        if (!key) return;
+        let value = trimmed.slice(idx + 1).trim();
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        if (typeof process.env[key] === 'undefined') {
+          process.env[key] = value;
+        }
+      });
     });
   } catch {}
 }
