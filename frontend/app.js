@@ -9878,6 +9878,11 @@ async function runBakeoffModelTest(){
           bodyEl.innerHTML = `${metrics}${formatAiAnswer(out.answer)}`;
         }
         const qualityScore = scoreBakeoffAnswerQuality(out.answer);
+        const requestedProvider = entry.provider;
+        const usedProvider = String(out.provider || '').trim().toLowerCase();
+        const requestedModel = String(entry.model || '').trim().toLowerCase();
+        const usedModel = String(out.modelUsed || out.modelRequested || '').trim().toLowerCase();
+        const trueFallback = !!(out.fallbackReason || (requestedProvider && usedProvider && requestedProvider !== usedProvider) || (requestedModel && usedModel && requestedModel !== usedModel));
         liveEntries.push({
           model: entry.model,
           runs: 1,
@@ -9885,8 +9890,8 @@ async function runBakeoffModelTest(){
           qualityAvg: qualityScore,
           latencyP50Ms: latencyMs,
           latencyP95Ms: latencyMs,
-          fallbackRate: out.mode === 'fallback' ? 1 : 0,
-          composite: out.mode === 'fallback' ? 40 : 70,
+          fallbackRate: trueFallback ? 1 : 0,
+          composite: trueFallback ? 40 : 70,
           contextTokens: questionTokens || null,
           contextSize: questionTokens || null,
           context: questionTokens ? `${questionTokens} tok` : null
