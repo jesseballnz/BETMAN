@@ -10097,8 +10097,79 @@ function confidenceForDraggedSelection(x){
   return Number.isFinite(rp) ? rp : null;
 }
 
+function enrichDraggedSelection(item){
+  const mtg = String(item?.meeting || '').trim().toLowerCase();
+  const rc = String(item?.race || '').trim().replace(/^R/i,'');
+  const sel = normalizeRunnerName(item?.selection || item?.runner || '');
+
+  const suggestedHit = (latestSuggestedBets || []).find(s => {
+    const sm = String(s.meeting || '').trim().toLowerCase();
+    const sr = String(s.race || '').trim().replace(/^R/i,'');
+    const ss = normalizeRunnerName(s.selection || s.runner || '');
+    return sm === mtg && sr === rc && (ss === sel || ss.includes(sel) || sel.includes(ss));
+  });
+
+  const interestingHit = (latestInterestingRows || []).find(r => {
+    const rm = String(r.meeting || '').trim().toLowerCase();
+    const rr = String(r.race || '').trim().replace(/^R/i,'');
+    const rs = normalizeRunnerName(r.runner || r.selection || '');
+    return rm === mtg && rr === rc && (rs === sel || rs.includes(sel) || sel.includes(rs));
+  });
+
+  const race = (racesCache || []).find(r => String(r.meeting || '').trim().toLowerCase() === mtg && String(r.race_number || r.race || '').trim() === rc);
+  const runner = Array.isArray(race?.runners)
+    ? race.runners.find(r => {
+        const rn = normalizeRunnerName(r.name || r.runner_name || '');
+        return rn === sel || rn.includes(sel) || sel.includes(rn);
+      })
+    : null;
+
+  const tags = [];
+  if (suggestedHit?.type) tags.push(String(suggestedHit.type));
+  if (interestingHit) tags.push('Interesting');
+  if (runnerHasStrongTrials(runner)) tags.push('Trial Form');
+  const moveTags = buildMoveTags(interestingHit || suggestedHit || runner || {}).map(t => String(t).replace(/<[^>]+>/g,'').trim()).filter(Boolean);
+  tags.push(...moveTags);
+
+  const odds = Number(suggestedHit?.odds ?? runner?.odds ?? runner?.fixed_win ?? runner?.tote_win);
+  const aiWinProb = Number(suggestedHit?.aiWinProb);
+  const impliedPct = Number.isFinite(odds) && odds > 0 ? (100 / odds) : null;
+  const edgePct = Number.isFinite(aiWinProb) && Number.isFinite(impliedPct) ? (aiWinProb - impliedPct) : null;
+
+  return {
+    ...item,
+    selection: item?.selection || item?.runner || '',
+    tags: [...new Set(tags.filter(Boolean))],
+    odds: Number.isFinite(odds) ? odds : null,
+    aiWinProb: Number.isFinite(aiWinProb) ? aiWinProb : null,
+    impliedPct: Number.isFinite(impliedPct) ? impliedPct : null,
+    edgePct: Number.isFinite(edgePct) ? edgePct : null,
+    jockey: runner?.jockey || item?.jockey || null,
+    trainer: runner?.trainer || item?.trainer || null,
+    barrier: runner?.barrier || null,
+    form: runner?.form || interestingHit?.form || null,
+    confidence: confidenceForDraggedSelection(item)
+  };
+}
+
 function buildDraggedContextLines(){
-  return draggedSelections.map(x => `- ${x.meeting} R${x.race} ${x.selection}${x.reason ? ` (${x.reason})` : ''}`.trim());
+  return draggedSelections.map(raw => {
+    const x = enrichDraggedSelection(raw);
+    const bits = [
+      `- ${x.meeting} R${x.race} ${x.selection}`,
+      x.tags?.length ? `tags: ${x.tags.join(', ')}` : '',
+      Number.isFinite(x.odds) ? `odds ${x.odds.toFixed(2)}` : '',
+      Number.isFinite(x.aiWinProb) ? `model ${x.aiWinProb.toFixed(1)}%` : '',
+      Number.isFinite(x.impliedPct) ? `implied ${x.impliedPct.toFixed(1)}%` : '',
+      Number.isFinite(x.edgePct) ? `edge ${x.edgePct >= 0 ? '+' : ''}${x.edgePct.toFixed(1)} pts` : '',
+      x.barrier ? `barrier ${x.barrier}` : '',
+      x.jockey ? `jockey ${x.jockey}` : '',
+      x.trainer ? `trainer ${x.trainer}` : '',
+      x.form ? `form ${x.form}` : '',
+      x.reason ? `note: ${x.reason}` : ''
+    ].filter(Boolean);
+    return bits.join(' | ');
+  });
 }
 
 function likelyDraggedFormat(){
@@ -10115,11 +10186,19 @@ function renderAiSelectionBasket(){
     return;
   }
 
-  const rows = draggedSelections.map((x, idx) => {
+  const rows = draggedSelections.map((raw, idx) => {
+    const x = enrichDraggedSelection(raw);
     const label = `${x.meeting} R${x.race} ${x.selection}`.replace(/\s+/g,' ').trim();
-    const pct = confidenceForDraggedSelection(x);
-    const meter = Number.isFinite(pct) ? `<span class='ai-chip-meter'>${Number(pct).toFixed(1)}%</span>` : `<span class='ai-chip-meter'>n/a</span>`;
-    return `<span class='ai-chip'>${escapeHtml(label)} ${meter} <button data-ai-remove='${idx}' title='Remove'>×</button></span>`;
+    const pct = Number(x.confidence);
+    const meter = Number.isFinite(pct) ? `<span class='ai-chip-meter'>${pct.toFixed(1)}%</span>` : `<span class='ai-chip-meter'>n/a</span>`;
+    const meta = [
+      x.tags?.length ? x.tags.join(', ') : '',
+      Number.isFinite(x.odds) ? `Odds ${x.odds.toFixed(2)}` : '',
+      Number.isFinite(x.edgePct) ? `Edge ${x.edgePct >= 0 ? '+' : ''}${x.edgePct.toFixed(1)} pts` : '',
+      x.jockey ? `J ${x.jockey}` : '',
+      x.trainer ? `T ${x.trainer}` : ''
+    ].filter(Boolean).join(' · ');
+    return `<span class='ai-chip'>${escapeHtml(label)} ${meter}${meta ? ` <span class='sub'>${escapeHtml(meta)}</span>` : ''} <button data-ai-remove='${idx}' title='Remove'>×</button></span>`;
   }).join('');
 
   wrap.classList.remove('hidden');
@@ -10165,12 +10244,13 @@ function makeSelectionsDraggable(){
     el.dataset.dndBound = '1';
     el.setAttribute('draggable', 'true');
     el.addEventListener('dragstart', (e) => {
-      const payload = {
+      const payload = enrichDraggedSelection({
         meeting: el.dataset.meeting || selectedRace?.meeting || selectedMeeting || '',
         race: el.dataset.race || el.dataset.raceNumber || selectedRace?.race_number || '',
         selection,
-        reason: el.dataset.reason || ''
-      };
+        reason: el.dataset.reason || '',
+        jockey: el.dataset.jockey || ''
+      });
       e.dataTransfer.setData('application/json', JSON.stringify(payload));
       e.dataTransfer.setData('text/plain', `${payload.meeting} R${payload.race} ${payload.selection}`.trim());
     });

@@ -2652,7 +2652,17 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         meeting: String(s.meeting || '').trim(),
         race: String(s.race || '').trim(),
         selection: String(s.selection || s.runner || '').trim(),
-        reason: String(s.reason || '').trim()
+        reason: String(s.reason || '').trim(),
+        tags: Array.isArray(s.tags) ? s.tags.slice(0, 12) : [],
+        odds: Number.isFinite(Number(s.odds)) ? Number(s.odds) : null,
+        aiWinProb: Number.isFinite(Number(s.aiWinProb)) ? Number(s.aiWinProb) : null,
+        impliedPct: Number.isFinite(Number(s.impliedPct)) ? Number(s.impliedPct) : null,
+        edgePct: Number.isFinite(Number(s.edgePct)) ? Number(s.edgePct) : null,
+        jockey: String(s.jockey || '').trim() || null,
+        trainer: String(s.trainer || '').trim() || null,
+        barrier: String(s.barrier || '').trim() || null,
+        form: String(s.form || '').trim() || null,
+        confidence: Number.isFinite(Number(s.confidence)) ? Number(s.confidence) : null
       }))
     : [];
   const isGeneralChat = !isRaceAnalysis && !isStrategy;
@@ -2800,7 +2810,21 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     }
   ];
   if (hasDraggedSelections) {
-    const draggedScope = selections.map((s, i) => `${i + 1}. ${String(s.meeting || '').trim()} R${String(s.race || '').trim()} ${String(s.selection || s.runner || '').trim()}`).join('\n');
+    const draggedScope = scopedSelections.map((s, i) => {
+      const extra = [
+        Array.isArray(s.tags) && s.tags.length ? `tags ${s.tags.join(', ')}` : '',
+        Number.isFinite(s.odds) ? `odds ${s.odds.toFixed(2)}` : '',
+        Number.isFinite(s.aiWinProb) ? `model ${s.aiWinProb.toFixed(1)}%` : '',
+        Number.isFinite(s.impliedPct) ? `implied ${s.impliedPct.toFixed(1)}%` : '',
+        Number.isFinite(s.edgePct) ? `edge ${s.edgePct >= 0 ? '+' : ''}${s.edgePct.toFixed(1)} pts` : '',
+        s.barrier ? `barrier ${s.barrier}` : '',
+        s.jockey ? `jockey ${s.jockey}` : '',
+        s.trainer ? `trainer ${s.trainer}` : '',
+        s.form ? `form ${s.form}` : '',
+        Number.isFinite(s.confidence) ? `confidence ${s.confidence.toFixed(1)}%` : ''
+      ].filter(Boolean).join(' | ');
+      return `${i + 1}. ${s.meeting} R${s.race} ${s.selection}${extra ? ` | ${extra}` : ''}`;
+    }).join('\n');
     messages.push({
       role: 'system',
       content: `Selection lock: answer ONLY using the explicitly dragged selections below unless the user clearly asks to broaden scope. Do not switch to other meetings, races, or generic NZ angles.\n${draggedScope}`
