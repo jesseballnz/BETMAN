@@ -2551,8 +2551,10 @@ function buildAiContextSummary({
   if (webContext?.query) lines.push(`Search query: ${trimText(webContext.query, 120)}`);
 
   const summary = lines.filter(Boolean).join('\n');
-  if (summary.length <= maxLength) return summary;
-  return `${summary.slice(0, maxLength - 1)}…`;
+  const truncated = summary.length > maxLength;
+  const out = truncated ? `${summary.slice(0, maxLength - 1)}…` : summary;
+  out._meta = { length: summary.length, maxLength, truncated };
+  return out;
 }
 
 const BETMAN_ANALYST_SYSTEM_PROMPT = `You are BETMAN's senior racing analyst. Be direct, structured, and evidence-first.
@@ -2610,7 +2612,7 @@ const aiHealth = {
   lastError: null
 };
 
-function recordAiOutcome({ question, payload, mode, provider, error, modelRequested, modelUsed, modelAdjusted }){
+function recordAiOutcome({ question, payload, mode, provider, error, modelRequested, modelUsed, modelAdjusted, contextLen, contextMax, contextTruncated, historyTurnsUsed, historyCharsUsed, edgeSignalsCount }){
   const ts = new Date().toISOString();
   if (mode === 'ai' || mode === 'cache') {
     aiHealth.lastSuccess = ts;
@@ -2628,6 +2630,12 @@ function recordAiOutcome({ question, payload, mode, provider, error, modelReques
     modelRequested: modelRequested || String(payload?.model || '').trim() || null,
     modelUsed: modelUsed || null,
     modelAdjusted: !!modelAdjusted,
+    contextLen: Number.isFinite(contextLen) ? contextLen : null,
+    contextMax: Number.isFinite(contextMax) ? contextMax : null,
+    contextTruncated: contextTruncated === true,
+    historyTurnsUsed: Number.isFinite(historyTurnsUsed) ? historyTurnsUsed : null,
+    historyCharsUsed: Number.isFinite(historyCharsUsed) ? historyCharsUsed : null,
+    edgeSignalsCount: Number.isFinite(edgeSignalsCount) ? edgeSignalsCount : null,
     selectionCount: Number(payload?.selectionCount || 0),
     races: Array.isArray(payload?.selections) ? payload.selections.map(s => `${s.meeting || ''} R${s.race || ''}`) : [],
     question: String(question || '').slice(0, 400)
@@ -2829,7 +2837,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     };
   })();
 
-  const contextSummary = buildAiContextSummary({
+  const contextSummaryRaw = buildAiContextSummary({
     status: { updatedAt: status.updatedAt, apiStatus: status.apiStatusPublic || status.apiStatus },
     stakeProfile,
     suggested: hasDraggedSelections ? scopedSuggested.filter(x => scopedSelections.some(s => String(x.meeting||'').trim() === s.meeting && String(x.race||'').trim() === s.race && String(x.selection||'').trim() === s.selection)) : scopedSuggested,
@@ -2844,6 +2852,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : (racesData.races || []),
     maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral
   });
+  const contextMeta = contextSummaryRaw && contextSummaryRaw._meta ? contextSummaryRaw._meta : { length: String(contextSummaryRaw || '').length, maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral, truncated: false };
+  const contextSummary = typeof contextSummaryRaw === 'string' ? contextSummaryRaw : String(contextSummaryRaw || '');
 
   const customInstructions = loadText(AI_INSTRUCTIONS_FILE, '').trim();
   const systemPrompt = (isRaceAnalysis || isStrategy) ? BETMAN_ANALYST_SYSTEM_PROMPT : BETMAN_CHAT_SYSTEM_PROMPT;
@@ -4288,7 +4298,13 @@ if (url.pathname === '/api/ask-selection') {
       error: mode === 'fallback' ? fallbackReason : null,
       modelRequested: String(payload?.model || '').trim() || null,
       modelUsed: aiMeta?.modelUsed || null,
-      modelAdjusted: !!aiMeta?.modelAdjusted
+      modelAdjusted: !!aiMeta?.modelAdjusted,
+      contextLen: contextMeta?.length,
+      contextMax: contextMeta?.maxLength,
+      contextTruncated: contextMeta?.truncated,
+      historyTurnsUsed: aiMeta?.historyTurnsUsed,
+      historyCharsUsed: aiMeta?.historyCharsUsed,
+      edgeSignalsCount: Array.isArray(payload?.edgeSignals) ? payload.edgeSignals.length : 0
     });
 
     const resolvedModelForMeta = String(aiMeta?.modelUsed || payload?.model || process.env.BETMAN_CHAT_MODEL || '').toLowerCase();
