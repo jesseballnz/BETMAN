@@ -16,6 +16,21 @@ const AUTH = Buffer.from(defaultAuth).toString('base64');
 
 function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
 
+async function waitForServer(timeoutMs = 10000){
+  const started = Date.now();
+  while ((Date.now() - started) < timeoutMs) {
+    try {
+      const res = await fetch(`${BASE}/api/ai-models`, {
+        method: 'GET',
+        headers: { 'Authorization': `Basic ${AUTH}` }
+      });
+      if (res.ok || res.status === 401 || res.status === 403) return;
+    } catch {}
+    await sleep(250);
+  }
+  throw new Error(`server did not become ready on ${BASE} within ${timeoutMs}ms`);
+}
+
 async function postAsk(payload){
   const res = await fetch(`${BASE}/api/ask-selection`, {
     method: 'POST',
@@ -52,7 +67,7 @@ async function postAsk(payload){
   const server = spawn('node', ['scripts/frontend_server.js'], { env, stdio: 'ignore' });
 
   try {
-    await sleep(1800);
+    await waitForServer();
 
     const CASES = [
       {
