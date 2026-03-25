@@ -33,6 +33,12 @@
       <div class="landing-card" style="margin-top:12px">
         <h3>Pricing</h3>
         <div class="pricing-grid">
+          <a id="singleDayPaymentLink" class="pricing-card pricing-card-day" href="#" target="_blank" rel="noopener">
+            <div class="pricing-card-photo"><img src="assets/race-hero-04.jpg" alt="Race day access at speed" loading="lazy" /></div>
+            <div class="plan-label">BETMAN Single DAY</div>
+            <div class="plan-price">1 Day<span class="plan-cycle"> / 24h access</span></div>
+            <div class="plan-note">Best for QR codes, race-day trials, and fast conversion to subscription.</div>
+          </a>
           <a id="singlePaymentLink" class="pricing-card pricing-card-single" href="#" target="_blank" rel="noopener">
             <div class="pricing-card-photo"><img src="assets/race-hero-01.jpg" alt="Racegoers celebrating a win" loading="lazy" /></div>
             <div class="plan-label">Single User</div>
@@ -57,7 +63,7 @@
       <div style="display:grid;grid-template-columns:1fr;gap:16px;margin-top:14px">
         <div class="landing-card">
           <h3>Log in</h3>
-          <div class="sub" style="margin-bottom:8px">New users: subscribe on Stripe first (pick Single User, Commercial, or Tester above). After checkout the account exists with a blank password — click <em>Set / Reset Password</em> to create one, then log in with that email + password.</div>
+          <div class="sub" style="margin-bottom:8px">New users: subscribe on Stripe first (pick BETMAN Single DAY, Single User, Commercial, or Tester above). After checkout the account exists with a blank password — click <em>Set / Reset Password</em> to create one, then log in with that email + password.</div>
           <form id="loginForm" autocomplete="on">
             <div class="input-row" style="margin-bottom:8px"><input id="loginUsername" name="username" type="text" placeholder="Email or username" autocomplete="username" /></div>
             <div class="input-row" style="margin-bottom:8px"><input id="loginPassword" name="password" type="password" placeholder="Password" autocomplete="current-password" /></div>
@@ -96,9 +102,14 @@
       try {
         const r = await fetch(new URL('/api/pricing', cleanBase).toString(), { credentials: 'same-origin' });
         const p = await r.json().catch(()=>({}));
+        const d = document.getElementById('singleDayPaymentLink');
         const s = document.getElementById('singlePaymentLink');
         const c = document.getElementById('commercialPaymentLink');
         const t = document.getElementById('testerPaymentLink');
+        if (d) {
+          if (p?.single_day?.paymentLink) d.href = p.single_day.paymentLink;
+          else d.style.display = 'none';
+        }
         if (s) {
           if (p?.single?.paymentLink) s.href = p.single.paymentLink;
           else s.style.display = 'none';
