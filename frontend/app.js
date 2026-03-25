@@ -10464,6 +10464,29 @@ function applyPerformanceVisibility(){
   if (hint) hint.style.display = show ? 'none' : '';
 }
 
+async function loadOfferStrip(){
+  const el = $('offerStrip');
+  if (!el) return;
+  try {
+    const out = await fetchLocal('./api/pricing', { cache: 'no-store' }).then(r=>r.json());
+    const cards = [
+      { key: 'single_day', title: 'BETMAN Single DAY', note: '24-hour racing access. Perfect for QR-code offers and trial conversion.', cls: 'pricing-card-tester' },
+      { key: 'single', title: 'Single User', note: 'Weekly access for individual punters.', cls: 'pricing-card-single' },
+      { key: 'commercial', title: 'Commercial', note: 'Multi-user / business access.', cls: 'pricing-card-commercial' }
+    ].filter(x => out?.[x.key]?.paymentLink);
+    el.innerHTML = cards.map(card => {
+      const item = out[card.key] || {};
+      return `<a class='pricing-card ${card.cls}' href='${escapeAttr(item.paymentLink || '#')}' target='_blank' rel='noreferrer'>
+        <div class='plan-label'>${escapeHtml(card.title)}</div>
+        <div class='plan-price'>${escapeHtml(item.price || '—')}</div>
+        <div class='plan-note'>${escapeHtml(card.note)}</div>
+      </a>`;
+    }).join('');
+  } catch {
+    el.innerHTML = `<div class='sub'>Pricing unavailable right now.</div>`;
+  }
+}
+
 async function loadAuthenticatedUser(){
   const el = $('authUserPill');
   if (!el) return;

@@ -3195,7 +3195,11 @@ const server = http.createServer(async (req, res)=>{
                   ok: false,
                   error: 'subscription_required',
                   paymentLink: paymentLinkForPlan(planType) || null,
-                  planType
+                  planType,
+                  reason: sub.reason || null,
+                  message: sub.reason === 'single_day_expired'
+                    ? 'Your BETMAN Single DAY pass has expired. Buy another day pass or upgrade to a subscription.'
+                    : 'An active BETMAN subscription is required.'
                 }, 402);
               }
               if (sub.customerId && userRow && !userRow.stripeCustomerId) {
