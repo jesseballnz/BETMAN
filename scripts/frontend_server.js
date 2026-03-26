@@ -4863,5 +4863,6 @@ module.exports = {
   enforceRaceAnalysisAnswerFormat,
   aiAnswerRespectsSelections,
   normalizeRunnerName,
-  buildAiContextSummary
+  buildAiContextSummary,
+  isSmallModel
 };
