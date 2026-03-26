@@ -351,11 +351,14 @@ function formatMeetingProfile(prof){
   if (bar.low) barrierParts.push(`low(1-4) ${bar.low}/${total}`);
   if (bar.mid) barrierParts.push(`mid(5-9) ${bar.mid}/${total}`);
   if (bar.high) barrierParts.push(`high(10+) ${bar.high}/${total}`);
-  return {
+  const result = {
     racesScored: total,
     paceWins: paceWinsSummary,
     barrierWins: barrierParts.length ? barrierParts.join(', ') : 'n/a'
   };
+  if (prof.track_condition) result.trackCondition = prof.track_condition;
+  if (prof.rail_position) result.railPosition = prof.rail_position;
+  return result;
 }
 
 function loadText(filePath, fallback = ''){
@@ -2587,6 +2590,17 @@ function buildAiContextSummary({
   }
   if (webContext?.query) lines.push(`Search query: ${trimText(webContext.query, 120)}`);
 
+  const userNotes = Array.isArray(clientContext?.userNotes) ? clientContext.userNotes.slice(0, 5) : [];
+  if (userNotes.length) {
+    const noteParts = userNotes
+      .map(n => trimText(String(n?.text || ''), 120))
+      .filter(Boolean);
+    if (noteParts.length) {
+      const meetingTag = userNotes[0]?.meeting ? ` (${userNotes[0].meeting})` : '';
+      lines.push(`User meeting notes${meetingTag}: ${noteParts.join(' | ')}`);
+    }
+  }
+
   const summary = lines.filter(Boolean).join('\n');
   if (summary.length <= maxLength) return summary;
   return `${summary.slice(0, maxLength - 1)}…`;
@@ -2609,6 +2623,8 @@ Hard rules:
 10) The JSON blocks labeled MANDATORY_RACE_VALUES and SELECTION_DATA are ground truth. Copy their values exactly when filling headers, tables, and horse profiles.
 11) If RACE_FIELD_DATA is provided, use it to populate full-field horse profiles (barrier/jockey/trainer/weight/form/odds/pedigree/speedmap) before writing any narrative.
 12) Never output placeholder tokens (e.g., [Jockey Name], [Trainer Name], [Weight]); if unknown, write "n/a".
+13) If meetingProfile data is present in MANDATORY_RACE_VALUES, use it to weight your analysis: pace-bias stats (e.g., "Midfield 4/8") indicate which running styles are winning at the venue today; barrier-bias stats indicate which barrier ranges are favoured. Factor these into your race map, runner assessments, and final tips.
+14) If "User meeting notes" are provided in context, treat them as first-hand observations from the punter. Incorporate them into your analysis and reference specific notes where relevant.
 
 Response format:
 - Verdict (1-2 lines)
@@ -2635,6 +2651,8 @@ Rules:
 6) Avoid boilerplate and avoid repeating fixed section headings unless the user asks for a formal report.
 7) For follow-ups, carry forward relevant prior context and assumptions so the answer feels continuous.
 8) For broad "ask me anything racing" questions, provide depth: map/tempo, form cycle, trainer/jockey patterns, market/price dynamics, and risk management implications.
+9) If meeting profile data is available (pace/barrier bias from completed races), factor it into your assessment of which running styles and barrier positions suit the venue.
+10) If the user has added meeting notes (labelled "User meeting notes" in context), incorporate those observations into your answer.
 
 Style: expert punter, plain English, no fluff.`;
 

@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node frontend/scripts/consistency-harness.js && node tests/status_writer.test.js && node tests/status_snapshot_merge.test.js && node tests/mvp11_audit.test.js && node tests/ai_chat_scenarios.test.js && node tests/select_filters.test.js && node tests/model_profile_context.test.js && node tests/ai_model_authority.test.js && node tests/ai_analyse.test.js && node tests/ai_analyse_fixes.test.js && node tests/ai_live_chat_smoke.test.js && node tests/bakeoff_ui.test.js && node tests/meeting_search.test.js && node tests/perf-utils.test.js && node tests/data_presence.test.js && node tests/pedigree_advantage.test.js",
+    "test": "node frontend/scripts/consistency-harness.js && node tests/status_writer.test.js && node tests/status_snapshot_merge.test.js && node tests/mvp11_audit.test.js && node tests/ai_chat_scenarios.test.js && node tests/select_filters.test.js && node tests/model_profile_context.test.js && node tests/ai_model_authority.test.js && node tests/ai_analyse.test.js && node tests/ai_analyse_fixes.test.js && node tests/ai_live_chat_smoke.test.js && node tests/bakeoff_ui.test.js && node tests/meeting_search.test.js && node tests/perf-utils.test.js && node tests/data_presence.test.js && node tests/pedigree_advantage.test.js && node tests/ai_meeting_notes.test.js",
     "consistency:check": "node frontend/scripts/consistency-harness.js",
     "bakeoff": "node scripts/model_bakeoff.js",
     "bakeoff:quick": "BAKEOFF_MODE=quick node scripts/model_bakeoff.js",

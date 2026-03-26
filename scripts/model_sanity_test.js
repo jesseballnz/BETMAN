@@ -15,8 +15,8 @@ function inferProvider(model) {
 
 async function main() {
   const baseUrl = arg('url', process.env.BAKEOFF_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
-  const user = arg('user', process.env.BAKEOFF_USER || process.env.BETMAN_USER || '');
-  const pass = arg('pass', process.env.BAKEOFF_PASS || process.env.BETMAN_PASS || '');
+  const user = arg('user', process.env.BAKEOFF_USER || process.env.BETMAN_USERNAME || process.env.BETMAN_USER || '');
+  const pass = arg('pass', process.env.BAKEOFF_PASS || process.env.BETMAN_PASSWORD || process.env.BETMAN_PASS || '');
   const question = arg('question', 'Sanity check: confirm this model can answer a simple BETMAN prompt.');
   const models = (arg('models', process.env.BAKEOFF_MODELS || 'deepseek-r1:8b,llama3.1:8b,gpt-4o-mini,gpt-5.2') || '')
     .split(',').map(s => s.trim()).filter(Boolean);
@@ -36,11 +36,15 @@ async function main() {
     let ok = false;
     let error = null;
     try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 120000);
       const r = await fetch(`${baseUrl}/api/ask-selection`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ question, model, provider })
+        body: JSON.stringify({ question, model, provider }),
+        signal: ctrl.signal
       });
+      clearTimeout(t);
       const body = await r.json().catch(() => ({}));
       ok = !!(r.ok && body && body.ok);
       res = body;
