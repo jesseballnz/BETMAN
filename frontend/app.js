@@ -11139,7 +11139,7 @@ async function loadOfferStrip(){
     const cards = [
       { key: 'single_day', title: 'BETMAN Single DAY', note: '24-hour racing access. Perfect for QR-code offers and trial conversion.', cls: 'pricing-card-tester' },
       { key: 'single', title: 'Weekly Subscription', note: 'Weekly access for individual punters.', cls: 'pricing-card-single' },
-      { key: 'commercial', title: 'Commercial', note: 'Multi-user / business access.', cls: 'pricing-card-commercial' }
+      { key: 'commercial', title: 'BETMAN API', note: 'Multi-user / business access.', cls: 'pricing-card-commercial' }
     ].filter(x => out?.[x.key]?.paymentLink);
     el.innerHTML = cards.map(card => {
       const item = out[card.key] || {};
@@ -11267,7 +11267,7 @@ async function createAuthUser(){
   const hasCompany = !!companyName;
   if (((planType === 'single' || planType === 'single_day') && !hasPersonName) || (planType === 'commercial' && !hasCompany) || !email || !password) {
     return alert(planType === 'commercial'
-      ? 'Commercial plan requires Company name, email, and password.'
+      ? 'BETMAN API plan requires Company name, email, and password.'
       : 'Single User / Single DAY plan requires First + Last name, email, and password.');
   }
 
