@@ -4078,7 +4078,10 @@ function renderAutobetFeed(rows){
   let feedNote = '';
   if (!filtered.length) {
     const plannedWindow = Number(earlyWindowMin || 1800);
-    const planned = baseSuggestedRows(latestSuggestedBets || [])
+    const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
+    const planned = (latestSuggestedBets || [])
+      .filter(selectionIsUpcoming)
+      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase()))
       .filter(r => jumpsInToMinutes(r.jumpsIn) <= plannedWindow)
       .map(r => ({
         meeting: r.meeting,
