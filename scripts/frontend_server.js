@@ -147,22 +147,14 @@ function getOllamaBaseList(){
     .split(',')
     .map(normalizeBaseUrl)
     .filter(Boolean);
-  const allowDefaultSetting = process.env.BETMAN_OLLAMA_ALLOW_DEFAULT;
-  const allowDefault = allowDefaultSetting === undefined
-    ? true
-    : String(allowDefaultSetting).toLowerCase() === 'true';
-  const bases = [
-    normalizeBaseUrl(process.env.OLLAMA_BASE_URL),
+  const explicitBases = [
     normalizeBaseUrl(process.env.BETMAN_OLLAMA_BASE_URL),
+    normalizeBaseUrl(process.env.OLLAMA_BASE_URL),
     normalizeBaseUrl(process.env.BETMAN_CHAT_BASE_URL),
-    ...fallbackList,
-    ...(allowDefault ? [
-      normalizeBaseUrl(BETMAN_OLLAMA_DEFAULT_BASE),
-      normalizeBaseUrl('http://127.0.0.1:11434'),
-      normalizeBaseUrl('http://localhost:11434')
-    ] : [])
+    ...fallbackList
   ].filter(Boolean);
-  return Array.from(new Set(bases));
+  if (explicitBases.length) return Array.from(new Set(explicitBases));
+  return [normalizeBaseUrl(BETMAN_OLLAMA_DEFAULT_BASE)].filter(Boolean);
 }
 
 
@@ -2791,7 +2783,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   let effectiveModel = requestedModel || defaultModel;
   if (requestedModel && provider === 'openai' && !OPENAI_MODELS.has(requestedModel)) {
-    effectiveModel = defaultModel;
+    throw new Error('openai_model_not_allowed');
   }
 
   const modelProfile = (() => {
@@ -2968,18 +2960,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       }
 
       if (!response.ok && response.status === 404) {
-        try {
-          const { models: installedList = [] } = await fetchOllamaModelsForBase(base);
-          const fallbackPool = [...installedList.filter(name => name && name !== modelForBase), ...DEFAULT_OLLAMA_FALLBACK_MODELS.filter(name => name !== modelForBase)];
-          const fallback = fallbackPool.find(Boolean) || '';
-          if (fallback && fallback !== modelForBase) {
-            console.warn('ollama_missing_model', modelForBase, 'fallback', fallback, 'base', base);
-            modelForBase = fallback;
-            response = await runOllamaWithRetry(base, modelForBase);
-          }
-        } catch (err) {
-          console.warn('ollama_missing_model_fallback_error', err?.message || err);
-        }
+        console.warn('ollama_model_missing', modelForBase, 'base', base);
       }
 
       if (!response.ok) {
@@ -4215,6 +4196,18 @@ if (url.pathname === '/api/ask-selection') {
           provider: aiProvider,
           modelRequested: String(payload?.model || '').trim() || null,
           modelUsed: String(payload?.model || '').trim() || null,
+          modelAdjusted: false,
+          fallbackReason
+        });
+      }
+      if (fallbackReason === 'openai_model_not_allowed') {
+        return okJson(res, {
+          ok: true,
+          mode: 'model_error',
+          answer: 'The selected OpenAI model is not allowed by BETMAN. Choose an allowed model from the selector.',
+          provider: aiProvider,
+          modelRequested: String(payload?.model || '').trim() || null,
+          modelUsed: null,
           modelAdjusted: false,
           fallbackReason
         });
