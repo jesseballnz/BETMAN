@@ -6402,6 +6402,8 @@ function formatAiAnswer(raw){
 
 function buildOddsSummaryTable(race){
   if (!race || !Array.isArray(race.runners)) return '';
+  const edgeRows = Array.isArray(latestAnalysisSignals?.edgeRows) ? latestAnalysisSignals.edgeRows : [];
+  const edgeMap = new Map(edgeRows.map(r => [normalizeRunnerName(r?.name || ''), r]));
   const rows = race.runners.map(r => {
     const name = cleanRunnerText(r.name || r.runner_name || '');
     if (!name) return null;
@@ -6409,8 +6411,13 @@ function buildOddsSummaryTable(race){
     if (!Number.isFinite(odds) || odds <= 0) return null;
     const implied = 100 / odds;
     const rawModel = Number(r?.win_p ?? r?.modelProb ?? r?.model_win_pct ?? r?.modelProb);
-    const model = Number.isFinite(rawModel) ? (rawModel <= 1 ? rawModel * 100 : rawModel) : NaN;
-    const edge = (Number.isFinite(model) && Number.isFinite(implied)) ? (model - implied) : NaN;
+    let model = Number.isFinite(rawModel) ? (rawModel <= 1 ? rawModel * 100 : rawModel) : NaN;
+    let edge = (Number.isFinite(model) && Number.isFinite(implied)) ? (model - implied) : NaN;
+    const edgeRow = edgeMap.get(normalizeRunnerName(name));
+    if (edgeRow) {
+      if (!Number.isFinite(model) && Number.isFinite(edgeRow.modeledPct)) model = edgeRow.modeledPct;
+      if (Number.isFinite(edgeRow.edgePct)) edge = edgeRow.edgePct;
+    }
     const numberRaw = r.number ?? r.runner_number ?? r.saddle_number ?? r.horse_number ?? r.program_number ?? r.tab_no ?? null;
     const label = (numberRaw === 0 || numberRaw) ? `${name} (#${String(numberRaw).trim()})` : name;
     return { label, odds, implied, model, edge };
