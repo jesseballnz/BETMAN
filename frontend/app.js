@@ -387,9 +387,10 @@ function startAnalysisProgressMeter(){
   analysisProgressPct = 0;
   setAnalysisProgress(0);
   const startedAt = Date.now();
-  const expectedMs = 12000;
+  const expectedMs = 12000; // typical AI response time
   analysisProgressInterval = setInterval(() => {
     const elapsed = Date.now() - startedAt;
+    // Ease to ~90% over expectedMs, then slow to cap at 92% until real completion
     const raw = (elapsed / expectedMs) * 90;
     const eased = raw < 60 ? raw : 60 + (raw - 60) * 0.3;
     setAnalysisProgress(Math.min(92, eased));
