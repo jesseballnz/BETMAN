@@ -1,0 +1,231 @@
+{
+  "_comment": "BETMAN pedigree bloodline library v1. Keys are normalised sire/dam-sire names (lowercase, no special chars).",
+  "bloodlines": {
+    "snitzel": {
+      "traits": {
+        "juvenile": 8,
+        "sprint": 7,
+        "staying": 0,
+        "slipper": 9,
+        "wet": 2,
+        "elite": 8,
+        "precocity": 8
+      },
+      "priors": {
+        "AUS:2YO_SPRINT_G1": 1.2,
+        "AUS:2YO_SPRINT": 1.1,
+        "AUS:OPEN_SPRINT": 0.9,
+        "NZ:WET_STAYING": 0.4
+      }
+    },
+    "fastnet rock": {
+      "traits": {
+        "juvenile": 6,
+        "sprint": 6,
+        "staying": 0,
+        "slipper": 7,
+        "wet": 2,
+        "elite": 6,
+        "precocity": 7
+      },
+      "priors": {
+        "AUS:2YO_SPRINT_G1": 1.1,
+        "AUS:2YO_SPRINT": 1.05,
+        "AUS:OPEN_SPRINT": 0.95,
+        "NZ:WET_STAYING": 0.5
+      }
+    },
+    "i am invincible": {
+      "traits": {
+        "juvenile": 4,
+        "sprint": 7,
+        "staying": 0,
+        "slipper": 3,
+        "wet": 2,
+        "elite": 5,
+        "precocity": 4
+      },
+      "priors": {
+        "AUS:2YO_SPRINT_G1": 0.9,
+        "AUS:2YO_SPRINT": 1.0,
+        "AUS:OPEN_SPRINT": 1.0,
+        "NZ:WET_STAYING": 0.7
+      }
+    },
+    "written tycoon": {
+      "traits": {
+        "juvenile": 3,
+        "sprint": 5,
+        "staying": 0,
+        "slipper": 2,
+        "wet": 1,
+        "elite": 4,
+        "precocity": 3
+      },
+      "priors": {
+        "AUS:2YO_SPRINT_G1": 0.9,
+        "AUS:2YO_SPRINT": 0.95,
+        "AUS:OPEN_SPRINT": 1.0
+      }
+    },
+    "zoustar": {
+      "traits": {
+        "juvenile": 4,
+        "sprint": 5,
+        "staying": 0,
+        "slipper": 2,
+        "wet": 2,
+        "elite": 3,
+        "precocity": 4
+      },
+      "priors": {
+        "AUS:2YO_SPRINT_G1": 0.95,
+        "AUS:2YO_SPRINT": 1.0,
+        "AUS:OPEN_SPRINT": 1.0
+      }
+    },
+    "savabeel": {
+      "traits": {
+        "juvenile": 0,
+        "sprint": 1,
+        "staying": 9,
+        "slipper": 0,
+        "wet": 8,
+        "elite": 5,
+        "precocity": 1
+      },
+      "priors": {
+        "NZ:WET_STAYING": 1.25,
+        "NZ:OPEN_STAYING": 1.1,
+        "NZ:WET_MIDDLE_DISTANCE": 1.05,
+        "AUS:2YO_SPRINT_G1": 0.3
+      }
+    },
+    "ocean park": {
+      "traits": {
+        "juvenile": 0,
+        "sprint": 1,
+        "staying": 8,
+        "slipper": 0,
+        "wet": 7,
+        "elite": 4,
+        "precocity": 0
+      },
+      "priors": {
+        "NZ:WET_STAYING": 1.2,
+        "NZ:OPEN_STAYING": 1.05,
+        "NZ:WET_MIDDLE_DISTANCE": 1.1
+      }
+    },
+    "so you think": {
+      "traits": {
+        "juvenile": 1,
+        "sprint": 2,
+        "staying": 8,
+        "slipper": 0,
+        "wet": 5,
+        "elite": 7,
+        "precocity": 1
+      },
+      "priors": {
+        "NZ:WET_STAYING": 1.1,
+        "NZ:OPEN_STAYING": 1.15,
+        "AUS:OPEN_STAYING": 1.05
+      }
+    },
+    "pierro": {
+      "traits": {
+        "juvenile": 5,
+        "sprint": 5,
+        "staying": 2,
+        "slipper": 5,
+        "wet": 3,
+        "elite": 7,
+        "precocity": 6
+      },
+      "priors": {
+        "AUS:2YO_SPRINT_G1": 1.05,
+        "AUS:2YO_SPRINT": 1.0
+      }
+    },
+    "merchant navy": {
+      "traits": {
+        "juvenile": 4,
+        "sprint": 6,
+        "staying": 0,
+        "slipper": 2,
+        "wet": 2,
+        "elite": 4,
+        "precocity": 4
+      },
+      "priors": {
+        "AUS:2YO_SPRINT_G1": 0.95,
+        "AUS:2YO_SPRINT": 1.0,
+        "AUS:OPEN_SPRINT": 1.0
+      }
+    },
+    "deep impact": {
+      "traits": {
+        "juvenile": 3,
+        "sprint": 3,
+        "staying": 7,
+        "slipper": 0,
+        "wet": 4,
+        "elite": 9,
+        "precocity": 3
+      },
+      "priors": {
+        "AUS:OPEN_STAYING": 1.1,
+        "NZ:OPEN_STAYING": 1.05
+      }
+    },
+    "frankel": {
+      "traits": {
+        "juvenile": 3,
+        "sprint": 4,
+        "staying": 5,
+        "slipper": 0,
+        "wet": 3,
+        "elite": 9,
+        "precocity": 3
+      },
+      "priors": {
+        "AUS:OPEN_MILE": 1.1,
+        "AUS:OPEN_STAYING": 1.05
+      }
+    }
+  },
+  "femaleFamilies": {
+    "fastnet lass": {
+      "traits": { "juvenile": 3, "sprint": 3, "elite": 3 }
+    },
+    "market girl": {
+      "traits": { "staying": 2, "wet": 2 }
+    },
+    "sharp madam": {
+      "traits": { "sprint": 2 }
+    }
+  },
+  "crosses": {
+    "snitzel|fastnet rock": {
+      "boost": 1.3,
+      "contexts": ["AUS:2YO_SPRINT_G1", "AUS:2YO_SPRINT"]
+    },
+    "i am invincible|fastnet rock": {
+      "boost": 1.1,
+      "contexts": ["AUS:2YO_SPRINT", "AUS:OPEN_SPRINT"]
+    },
+    "savabeel|ocean park": {
+      "boost": 1.2,
+      "contexts": ["NZ:WET_STAYING", "NZ:OPEN_STAYING"]
+    },
+    "so you think|savabeel": {
+      "boost": 1.15,
+      "contexts": ["NZ:WET_STAYING", "NZ:OPEN_STAYING"]
+    },
+    "pierro|fastnet rock": {
+      "boost": 1.1,
+      "contexts": ["AUS:2YO_SPRINT_G1", "AUS:2YO_SPRINT"]
+    }
+  }
+}

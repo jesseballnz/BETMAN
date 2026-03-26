@@ -7956,9 +7956,7 @@ function buildAiAnalysisPrompt(race){
   const loveracingMeta = lrMetaParts.length ? lrMetaParts.join(' · ') : '';
   const loveracingCommentaryRaw = (loveracing.race_commentary || loveracing.comment || '').trim();
   const loveracingCommentary = loveracingCommentaryRaw.length > 250 ? `${loveracingCommentaryRaw.slice(0, 250)}…` : loveracingCommentaryRaw;
-  const instructionsBlock = instructionsTemplate
-    ? `BETMAN instructions (from instructions.md):\n${instructionsTemplate}`
-    : 'Run instructions.md template for this race only. Use provided race/runner context as primary source. If any data is missing, output n/a (do not invent).';
+  // Note: instructions are sent by the backend as a system message — do not duplicate here.
   const loveracingLines = [];
   if (loveracingMeta) loveracingLines.push(loveracingMeta);
   if (loveracingCommentary) loveracingLines.push(`Loveracing track intel: ${loveracingCommentary}`);
@@ -8129,15 +8127,16 @@ function buildAiAnalysisPrompt(race){
     }
     return `- ${headerBits.join(' ')} | ${info.join(' | ')}`;
   }).join('\n');
+  // Cap runner lines at 8000 chars to prevent oversized prompts on large fields.
+  // Runners are already sorted by market so the most relevant ones are first.
+  const runnerLinesCapped = runnerLines.length > 8000 ? runnerLines.slice(0, 8000) + '\n… (field truncated to fit context)' : runnerLines;
   const sections = 'Deliver: verdict, ranked runners, overlays/underlays, pace map, runner callouts, value board, 999,999-run sim math, punter panel, staking plan, confidence %, invalidations.';
-  return `${instructionsBlock}
-
-${header}
+  return `${header}
 ${meta}
 ${loveracingBlock}${raceLine}
 
 Runner intel (full field, sorted by market):
-${runnerLines}
+${runnerLinesCapped}
 
 ${sections}`;
 }

@@ -2621,6 +2621,7 @@ function recordAiOutcome({ question, payload, mode, provider, error, modelReques
     question: String(question || '').slice(0, 400)
   };
   try {
+    fs.mkdirSync(path.dirname(AI_RESPONSE_LOG), { recursive: true });
     fs.appendFile(AI_RESPONSE_LOG, JSON.stringify(row) + '\n', err => {
       if (err) console.error('ai_response_log_failed', err.message);
     });
@@ -2802,7 +2803,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS_SMALL', 1100, 500, 2200),
         maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS_SMALL', 900, 300, 3000),
         temperatureRace: 0.15,
-        temperatureGeneral: 0.28
+        temperatureGeneral: 0.28,
+        numCtxFloor: envNumber('BETMAN_OLLAMA_NUM_CTX_SMALL', 8192, 4096, 32768)
       };
     }
     return {
@@ -2813,7 +2815,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS', 1400, 600, 3000),
       maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS', 1100, 400, 4000),
       temperatureRace: 0.2,
-      temperatureGeneral: 0.35
+      temperatureGeneral: 0.35,
+      numCtxFloor: envNumber('BETMAN_OLLAMA_NUM_CTX', 16384, 4096, 65536)
     };
   })();
 
@@ -2903,27 +2906,36 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   let answer = '';
   if (provider === 'ollama') {
-    const prompt = messages.map(m => `${String(m.role || 'user').toUpperCase()}:\n${String(m.content || '')}`).join('\n\n');
     const ollamaBases = getOllamaBaseList();
     if (!ollamaBases.length) throw new Error('ollama_base_missing');
     const maxAttempts = envNumber('BETMAN_OLLAMA_MAX_ATTEMPTS', 1, 1, 5);
+
+    // Calculate num_ctx dynamically: estimated input tokens + output tokens + safety buffer.
+    // Conservative estimate of 3.5 chars per token; floor at model-profile minimum.
+    const totalInputChars = messages.reduce((sum, m) => sum + String(m.content || '').length, 0);
+    const estimatedInputTokens = Math.ceil(totalInputChars / 3.5);
+    const numCtx = Math.max(
+      estimatedInputTokens + maxTokens + 512,
+      modelProfile.numCtxFloor
+    );
 
     async function runOllamaOnce(baseUrl, modelName){
       const timeoutMs = envNumber('BETMAN_OLLAMA_TIMEOUT_MS', 180000, 5000, 300000);
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
-        return await fetch(`${baseUrl}/api/generate`, {
+        return await fetch(`${baseUrl}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: ctrl.signal,
           body: JSON.stringify({
             model: modelName,
-            prompt,
+            messages,
             stream: false,
             options: {
               temperature,
-              num_predict: maxTokens
+              num_predict: maxTokens,
+              num_ctx: numCtx
             }
           })
         });
@@ -2975,7 +2987,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
       try {
         const out = await response.json();
-        const txt = out?.response;
+        const txt = out?.message?.content;
         if (!txt) {
           console.warn('ollama_no_text', JSON.stringify(out || {}));
           lastError = new Error('ollama_no_text');
