@@ -7750,7 +7750,8 @@ function bindAiAnalyseButton(){
       if (responseMs === null) responseMs = performance.now() - requestStarted;
       const responseLabel = formatResponseTime(responseMs) || 'n/a';
       const requestedModel = autoTuneSelection.model || selectedAiModel.model || '—';
-      setAiAnswerPanel(`<div class='ai-answer-block error'>AI analysis failed — showing base panel.</div><div class='analysis-meta'>Fallback ${new Date().toLocaleTimeString()} · Response ${responseLabel} · ${requestedModel}</div>`);
+      const providerLabel = autoTuneSelection.provider || selectedAiModel.provider || 'unknown';
+      setAiAnswerPanel(`<div class='ai-answer-block error'>AI analysis failed for the selected model.</div><div class='analysis-meta'>Error ${new Date().toLocaleTimeString()} · Response ${responseLabel} · ${requestedModel} (${providerLabel})</div>`);
       hideAnalysisProcessingHint();
     } finally {
       attachAnalysisSelectionHandlers(selectedRace);
