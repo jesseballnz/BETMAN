@@ -4071,13 +4071,42 @@ function renderAutobetFeed(rows){
   const filtered = autobetFilterType === 'ALL'
     ? queued
     : queued.filter(r => autobetStrategyKey(r.type) === autobetFilterType);
+  let sourceRows = filtered;
+  let feedNote = '';
   if (!filtered.length) {
+    const planned = baseSuggestedRows(latestSuggestedBets || [])
+      .filter(r => jumpsInToMinutes(r.jumpsIn) <= Number(aiWindowMin || 10))
+      .map(r => ({
+        meeting: r.meeting,
+        race: r.race,
+        selection: r.selection,
+        type: r.type,
+        stake: r.stake,
+        odds: r.odds || parseReasonOdds(r.reason),
+        eta: r.jumpsIn,
+        aiWinProb: r.aiWinProb,
+        reason: r.reason
+      }));
+    const plannedFiltered = autobetFilterType === 'ALL'
+      ? planned
+      : planned.filter(r => autobetStrategyKey(r.type) === autobetFilterType);
+    sourceRows = plannedFiltered;
+    feedNote = sourceRows.length
+      ? `No queued bets yet — showing bets inside the ${Number(aiWindowMin || 10)}m placement window.`
+      : (autobetFilterType === 'ALL' ? 'No queued bets right now.' : `No queued bets for ${autobetFilterType}.`);
+  }
+  if (!sourceRows.length) {
     const empty = document.createElement('div');
     empty.className = 'row';
-    const label = autobetFilterType === 'ALL' ? 'No queued bets right now.' : `No queued bets for ${autobetFilterType}.`;
-    empty.innerHTML = `<div style='grid-column:1/-1'>${label}</div>`;
+    empty.innerHTML = `<div style='grid-column:1/-1'>${feedNote}</div>`;
     table.appendChild(empty);
     return;
+  }
+  if (feedNote) {
+    const note = document.createElement('div');
+    note.className = 'row';
+    note.innerHTML = `<div style='grid-column:1/-1' class='sub'>${feedNote}</div>`;
+    table.appendChild(note);
   }
   const header = document.createElement('div');
   header.className = 'row header';
@@ -4090,13 +4119,14 @@ function renderAutobetFeed(rows){
     const prob = Number.isFinite(wp) ? wp : parseReasonWinProb(x.reason);
     if (Number.isFinite(prob)) probMap.set(key, prob);
   });
-  filtered.forEach(r => {
+  sourceRows.forEach(r => {
     const row = document.createElement('div');
     row.className = 'row';
     const typeLabel = String(r.type || '').replace(/\(queued\)/i, '').trim();
     const tagClass = autobetTagClass(typeLabel);
     const key = `${String(r.meeting || '').trim().toLowerCase()}|${String(r.race || '').trim()}|${normalizeRunnerName(String(r.selection || '').trim())}`;
-    const aiProb = probMap.get(key);
+    const directProb = Number(r.aiWinProb);
+    const aiProb = Number.isFinite(directProb) ? directProb : probMap.get(key);
     row.innerHTML = `
       <div><span class="badge">${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || '—'))}</div>
       <div>${escapeHtml(String(r.selection || '—'))}</div>
