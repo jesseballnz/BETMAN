@@ -2594,7 +2594,7 @@ function renderSuggested(rows){
       <div><button class='bet-btn suggested-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-selection='${escapeAttr(cleanRunnerText(r.selection))}' data-reason='${escapeAttr(r.reason||'')}'><span class='bet-icon'>💡</span>${escapeHtml(cleanRunnerText(r.selection))}${tag}</button></div>
       <div>${r.type}</div>
       <div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div><div class='sub'>${marketEdgeText(r)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
-      <div class='right'>${signalMeterFromScore(suggestedSignal)}<div class='sub' style='margin-top:6px'>${reasonToEnglish(r.reason)}</div></div>
+      <div class='right'>${signalMeterFromScore(suggestedSignal)}<div class='sub suggested-note' style='margin-top:6px'>${reasonToEnglish(r.reason)}</div></div>
     `;
     table.appendChild(row);
   });
@@ -2748,7 +2748,7 @@ function renderMultis(rows){
       <div><button class='bet-btn multi-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-selection='${escapeAttr(cleanRunnerText(r.selection))}' data-reason='${(r.reason||'').replace(/"/g,'&quot;')}'><span class='bet-icon'>🧩</span>${cleanRunnerText(r.selection)}</button></div>
       <div>${r.type}</div>
       <div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div><div class='sub'>${marketEdgeText(r)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
-      <div class='right'>${signalMeterFromScore(exScore)}<div class='sub' style='margin-top:6px'>${r.reason || ''}</div></div>
+      <div class='right'>${signalMeterFromScore(exScore)}<div class='sub suggested-note' style='margin-top:6px'>${r.reason || ''}</div></div>
     `;
     frag.appendChild(row);
   });
