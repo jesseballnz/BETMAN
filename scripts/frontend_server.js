@@ -325,7 +325,11 @@ function loadMeetingProfiles(date){
     for (const f of fs.readdirSync(dir)){
       if (!f.endsWith('.json')) continue;
       const p = loadJson(path.join(dir, f), null);
-      if (p && p.meeting) out[safeSlug(p.meeting)] = p;
+      if (p && p.meeting) {
+        const slug = safeSlug(p.meeting);
+        if (out[slug]) console.warn(`[meeting-profiles] slug collision: "${p.meeting}" → "${slug}"`);
+        out[slug] = p;
+      }
     }
   } catch (e) {
     if (e.code !== 'ENOENT') console.error('[meeting-profiles] load error:', e.message);
