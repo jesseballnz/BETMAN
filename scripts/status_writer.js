@@ -345,7 +345,29 @@ let suggested = [...(state.early_plans || []), ...(state.bet_plans || [])].map(b
 
 // fallback suggested bets from top market runners if no plans in window
 if (!suggested.length) {
-  suggested = Object.values(state.races || []).slice(0, 10).flatMap(r => {
+  const modelSignals = state.model_signals || {};
+  suggested = Object.entries(state.races || {}).slice(0, 10).flatMap(([raceKey, r]) => {
+    const signal = modelSignals[raceKey];
+    if (signal && signal.selection) {
+      const odds = Number(signal.odds);
+      const betType = String(signal.bet_type || 'Win');
+      const winProb = Number(signal.win_prob);
+      return [{
+        meeting: signal.meeting || r.meeting,
+        race: signal.race || r.race_number,
+        country: r.country || null,
+        selection: signal.selection,
+        type: betType,
+        stake: capStakeForType(betType, stakeData.stakePerRace || 10, signal),
+        odds: Number.isFinite(odds) ? odds : null,
+        place_odds: null,
+        signal_score: Number(signal.signal_score) || computeFallbackSignalScore(Number.isFinite(odds) ? odds : 0),
+        aiWinProb: Number.isFinite(winProb) ? winProb : null,
+        jumpsIn: etaFromRace(r),
+        tags: Array.isArray(signal.tags) ? signal.tags : [],
+        reason: signal.reason || `model ${Number.isFinite(winProb) ? winProb.toFixed(1) : '—'}% @ $${Number.isFinite(odds) ? odds.toFixed(2) : '—'}`
+      }];
+    }
     const top = (r.runners || [])
       .filter(x => x.fixed_win)
       .sort((a,b)=>a.fixed_win-b.fixed_win)

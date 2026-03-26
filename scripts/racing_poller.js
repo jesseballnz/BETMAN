@@ -377,7 +377,7 @@ async function main() {
   const prev = loadJson(statePath, { ts: null, races: {} });
   const profilesDir = path.join(process.cwd(), 'data', 'meeting_profiles', date);
 
-  const summary = { ts: new Date().toISOString(), date, races: {}, bet_plans: [], early_plans: [], candidates: [], exotic_plans: [] };
+  const summary = { ts: new Date().toISOString(), date, races: {}, bet_plans: [], early_plans: [], candidates: [], exotic_plans: [], model_signals: {} };
   const moves = [];
   const candidates = [];
   const betPlans = [];
@@ -588,16 +588,29 @@ async function main() {
               const odds = bestWinOdds(top1.r);
               const implied = Number.isFinite(odds) && odds > 0 ? (1 / odds) : NaN;
               const edge = Number.isFinite(implied) ? (top1.p - implied) : -1;
+              const place = bestPlaceOdds(top1.r);
+              const useEW = odds && odds >= ewWinMin && (!Number.isFinite(place) || place >= ewPlaceMin);
+              const pedigree = pedigreeMap.get(String(top1.r.runner_name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()) || runnerPedigreeSignal(top1.r, summary.races[raceKey]);
+              const tags = [];
+              if (pedigree?.qualifies) tags.push('Pedigree Advantage');
+              const confidence = Number.isFinite(pedigree?.confidence) ? (pedigree.confidence * 100) : 60;
+              const formStatus = recentFormOK(top1.r.last_twenty_starts, recentWindow, recentTop3) ? 'SOLID' : 'MIXED';
+              const blockedReason = blockedSignalBucket({ prob: top1.p, edge, odds, confidence, formStatus, trackLabel: 'NEUTRAL' });
+              summary.model_signals[raceKey] = {
+                meeting: summary.races[raceKey]?.meeting,
+                race: summary.races[raceKey]?.race_number,
+                selection: top1.r.runner_name,
+                bet_type: useEW ? 'EW' : 'Win',
+                win_prob: Math.round(top1.p * 1000) / 10,
+                odds,
+                edge_pct: Number.isFinite(edge) ? Math.round(edge * 1000) / 10 : null,
+                tags,
+                standout: !!standout,
+                blocked_reason: blockedReason,
+                mins_to_start: Math.round(minsToStart * 10) / 10
+              };
               if (edge >= minEdge) {
-                const place = bestPlaceOdds(top1.r);
-                const useEW = odds && odds >= ewWinMin && (!Number.isFinite(place) || place >= ewPlaceMin);
                 const standoutStake = standout ? Math.round(stakePerRace * betHarderMultiplier * 100) / 100 : stakePerRace;
-                const pedigree = pedigreeMap.get(String(top1.r.runner_name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()) || runnerPedigreeSignal(top1.r, summary.races[raceKey]);
-                const tags = [];
-                if (pedigree?.qualifies) tags.push('Pedigree Advantage');
-                const confidence = Number.isFinite(pedigree?.confidence) ? (pedigree.confidence * 100) : 60;
-                const formStatus = recentFormOK(top1.r.last_twenty_starts, recentWindow, recentTop3) ? 'SOLID' : 'MIXED';
-                const blockedReason = blockedSignalBucket({ prob: top1.p, edge, odds, confidence, formStatus, trackLabel: 'NEUTRAL' });
                 if (blockedReason || confidence < minConfidence || edge < (standout ? strongEdge : minEdge)) {
                   if (blockedReason) candidates.push({ race: raceKey, runner: top1.r.runner_name, odds, last: top1.r.last_twenty_starts, barrier: top1.r.barrier, jockey: top1.r.jockey, trainer: top1.r.trainer, mins_to_start: Math.round(minsToStart*10)/10, blocked_reason: blockedReason });
                 } else targetArr.push({
@@ -632,13 +645,26 @@ async function main() {
               const useEW2 = odds2 && odds2 >= ewWinMin && (!Number.isFinite(place2) || place2 >= ewPlaceMin);
               const edge1 = Number.isFinite(implied1) ? (top1.p - implied1) : -1;
               const edge2 = Number.isFinite(implied2) ? (top2.p - implied2) : -1;
+              const pedigree = pedigreeMap.get(String(top1.r.runner_name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()) || runnerPedigreeSignal(top1.r, summary.races[raceKey]);
+              const tags = [];
+              if (pedigree?.qualifies) tags.push('Pedigree Advantage');
+              const confidence1 = Number.isFinite(pedigree?.confidence) ? (pedigree.confidence * 100) : 60;
+              const formStatus1 = recentFormOK(top1.r.last_twenty_starts, recentWindow, recentTop3) ? 'SOLID' : 'MIXED';
+              const blockedReason1 = blockedSignalBucket({ prob: top1.p, edge: edge1, odds: odds1, confidence: confidence1, formStatus: formStatus1, trackLabel: 'NEUTRAL' });
+              summary.model_signals[raceKey] = {
+                meeting: summary.races[raceKey]?.meeting,
+                race: summary.races[raceKey]?.race_number,
+                selection: top1.r.runner_name,
+                bet_type: useEW1 ? 'EW' : 'Win',
+                win_prob: Math.round(top1.p * 1000) / 10,
+                odds: odds1,
+                edge_pct: Number.isFinite(edge1) ? Math.round(edge1 * 1000) / 10 : null,
+                tags,
+                standout: false,
+                blocked_reason: blockedReason1,
+                mins_to_start: Math.round(minsToStart * 10) / 10
+              };
               if (edge1 >= minEdge) {
-                const pedigree = pedigreeMap.get(String(top1.r.runner_name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()) || runnerPedigreeSignal(top1.r, summary.races[raceKey]);
-                const tags = [];
-                if (pedigree?.qualifies) tags.push('Pedigree Advantage');
-                const confidence1 = Number.isFinite(pedigree?.confidence) ? (pedigree.confidence * 100) : 60;
-                const formStatus1 = recentFormOK(top1.r.last_twenty_starts, recentWindow, recentTop3) ? 'SOLID' : 'MIXED';
-                const blockedReason1 = blockedSignalBucket({ prob: top1.p, edge: edge1, odds: odds1, confidence: confidence1, formStatus: formStatus1, trackLabel: 'NEUTRAL' });
                 if (blockedReason1 || confidence1 < minConfidence || edge1 < strongEdge) {
                   if (blockedReason1) candidates.push({ race: raceKey, runner: top1.r.runner_name, odds: odds1, last: top1.r.last_twenty_starts, barrier: top1.r.barrier, jockey: top1.r.jockey, trainer: top1.r.trainer, mins_to_start: Math.round(minsToStart*10)/10, blocked_reason: blockedReason1 });
                 } else targetArr.push({
