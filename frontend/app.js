@@ -11138,7 +11138,7 @@ async function loadOfferStrip(){
     const out = await fetchLocal('./api/pricing', { cache: 'no-store' }).then(r=>r.json());
     const cards = [
       { key: 'single_day', title: 'BETMAN Single DAY', note: '24-hour racing access. Perfect for QR-code offers and trial conversion.', cls: 'pricing-card-tester' },
-      { key: 'single', title: 'Single User', note: 'Weekly access for individual punters.', cls: 'pricing-card-single' },
+      { key: 'single', title: 'Weekly Subscription', note: 'Weekly access for individual punters.', cls: 'pricing-card-single' },
       { key: 'commercial', title: 'Commercial', note: 'Multi-user / business access.', cls: 'pricing-card-commercial' }
     ].filter(x => out?.[x.key]?.paymentLink);
     el.innerHTML = cards.map(card => {
