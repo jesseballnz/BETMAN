@@ -4066,6 +4066,26 @@ function autobetTagClass(type){
   return 'tag';
 }
 
+function autobetStakeProfile(row){
+  const type = String(row?.type || '').toLowerCase();
+  const fallbackStake = Number(row?.stake);
+  const basePref = Number(confidenceBaseStakeUnit);
+  const boostPref = Number(confidenceBoostStakeUnit);
+  const stakeCap = Number(stakePerRace);
+  const signal = confidenceSignalPct(row);
+  const isExotic = ['top2','top3','top4','trifecta','multi'].includes(type);
+  const qualifies = !isExotic && Number.isFinite(signal) && signal >= confidenceSignalThreshold;
+  let target = Number.isFinite(basePref) && basePref > 0 ? basePref : (Number.isFinite(fallbackStake) ? fallbackStake : null);
+  const boostValue = Number.isFinite(boostPref) && boostPref > 0 ? boostPref : target;
+  if (qualifies && Number.isFinite(boostValue)) target = boostValue;
+  if (!Number.isFinite(target) || target <= 0) target = Number.isFinite(fallbackStake) ? fallbackStake : null;
+  if (Number.isFinite(stakeCap) && stakeCap > 0 && Number.isFinite(target)) target = Math.min(target, stakeCap);
+  if (!Number.isFinite(target) || target <= 0) {
+    return { stake: null, tier: qualifies ? 'boosted' : 'base', qualifies, signal };
+  }
+  return { stake: Math.round(target * 100) / 100, tier: qualifies ? 'boosted' : 'base', qualifies, signal };
+}
+
 function renderAutobetFeed(rows){
   const table = $('autobetFeed');
   if (!table) return;
@@ -4143,12 +4163,15 @@ function renderAutobetFeed(rows){
     const key = `${String(r.meeting || '').trim().toLowerCase()}|${String(r.race || '').trim()}|${normalizeRunnerName(String(r.selection || '').trim())}`;
     const directProb = Number(r.aiWinProb);
     const aiProb = Number.isFinite(directProb) ? directProb : probMap.get(key);
+    const stakeProfile = autobetStakeProfile(r);
+    const stakeValue = Number.isFinite(stakeProfile.stake) ? `$${stakeProfile.stake.toFixed(2)}` : (Number.isFinite(Number(r.stake)) ? `$${Number(r.stake).toFixed(2)}` : '—');
+    const stakeTier = Number.isFinite(stakeProfile.stake) ? `<div class='sub autobet-stake-note ${stakeProfile.tier}'>${stakeProfile.tier === 'boosted' ? 'Boosted' : 'Base'}</div>` : '';
     row.innerHTML = `
       <div><span class="badge">${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || '—'))}</div>
       <div>${escapeHtml(String(r.selection || '—'))}</div>
       <div><span class='${tagClass}'>${escapeHtml(typeLabel || '—')}</span></div>
       <div>${Number.isFinite(aiProb) ? `${aiProb.toFixed(1)}%` : '—'}</div>
-      <div>${Number.isFinite(Number(r.stake)) ? `$${Number(r.stake).toFixed(2)}` : '—'}</div>
+      <div>${stakeValue}${stakeTier}</div>
       <div>${r.odds || '—'}</div>
       <div class='right'>${escapeHtml(String(r.eta || r.sortTime || 'upcoming'))}</div>
     `;

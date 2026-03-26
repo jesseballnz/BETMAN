@@ -788,3 +788,6 @@ body:not(.landing-page){
 .autobet-tile:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.35)}
 .autobet-tile.active{border-color:var(--accent);box-shadow:0 0 0 1px rgba(197,255,0,.45) inset}
 #autobetWindowTabs .btn.active{border-color:var(--accent);color:var(--accent)}
+.autobet-stake-note{font-size:10px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.08em;line-height:1.2}
+.autobet-stake-note.boosted{color:#9ee37d}
+.autobet-stake-note.base{color:var(--text-soft)}
