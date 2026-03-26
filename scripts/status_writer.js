@@ -275,6 +275,44 @@ function capStakeForType(type, stake, entry){
   return Math.max(0, Math.min(n, cap));
 }
 
+function clamp(n, lo, hi){
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function computeWinSignalScore(winProbPct, odds){
+  const p = Number(winProbPct);
+  const o = Number(odds);
+  if (Number.isFinite(p) && Number.isFinite(o) && o > 0) {
+    const implied = 100 / o;
+    return clamp(Math.round(50 + ((p - implied) * 2.2)), 5, 95);
+  }
+  if (Number.isFinite(p)) return clamp(Math.round(p * 2.4), 5, 95);
+  return null;
+}
+
+function computeFallbackSignalScore(odds){
+  const o = Number(odds);
+  if (!Number.isFinite(o) || o <= 0) return null;
+  const implied = 100 / o;
+  return clamp(Math.round(25 + (implied * 1.1)), 25, 80);
+}
+
+function computeExoticSignalScore(plan){
+  const selections = Array.isArray(plan?.selections) ? plan.selections : [];
+  const probs = selections
+    .map(s => Number(s?.win_prob))
+    .filter(v => Number.isFinite(v) && v > 0)
+    .slice(0, 2);
+  if (probs.length) {
+    const avgTopTwo = probs.reduce((a, b) => a + b, 0) / probs.length;
+    return clamp(Math.round(avgTopTwo * 2.2), 10, 90);
+  }
+  const market = String(plan?.market || '').toLowerCase();
+  if (market === 'trifecta') return 48;
+  if (['top2','top3','top4','multi'].includes(market)) return 42;
+  return null;
+}
+
 function minsToEnglish(v){
   const n = Number(v);
   if (!Number.isFinite(n)) return 'upcoming';
@@ -290,11 +328,19 @@ let suggested = [...(state.early_plans || []), ...(state.bet_plans || [])].map(b
   selection: b.selection,
   type: b.bet_type,
   aiWinProb: Number.isFinite(Number(b.win_prob)) ? Number(b.win_prob) : null,
+  confidenceSignalPct: Number.isFinite(Number(b.win_prob)) ? Number(b.win_prob) : null,
+  signal_score: computeWinSignalScore(Number(b.win_prob), Number(b.odds)),
   stake: capStakeForType(b.bet_type, b.stake, b),
   odds: b.odds ?? null,
   place_odds: b.place_odds ?? null,
   jumpsIn: minsToEnglish(b.mins_to_start),
-  reason: `p=${b.win_prob || ''}% @ ${b.odds}`
+  reason: `p=${b.win_prob || ''}% @ ${b.odds}`,
+  tags: Array.isArray(b.tags) ? b.tags : [],
+  pedigreeTag: b.pedigreeTag || null,
+  pedigreeScore: b.pedigreeScore ?? null,
+  pedigreeConfidence: b.pedigreeConfidence ?? null,
+  pedigreeRelativeEdge: b.pedigreeRelativeEdge ?? null,
+  pedigreeArchetype: b.pedigreeArchetype || null
 }));
 
 // fallback suggested bets from top market runners if no plans in window
@@ -316,6 +362,7 @@ if (!suggested.length) {
         stake: stakeData.stakePerRace || 10,
         odds,
         place_odds: null,
+        signal_score: computeFallbackSignalScore(odds),
         jumpsIn: etaFromRace(r),
         reason: `fallback ${confidence} profile · market leader @ $${odds.toFixed(2)}`
       };
@@ -337,6 +384,7 @@ const exoticSuggested = (state.exotic_plans || []).map(x => {
     selection,
     type: x.market,
     stake: capStakeForType(x.market, x.stake, x),
+    signal_score: computeExoticSignalScore(x),
     jumpsIn: minsToEnglish(x.mins_to_start),
     reason: `${x.note || 'exotic profile'} · ${minsToEnglish(x.mins_to_start)}`
   };
@@ -702,7 +750,13 @@ appendJsonl(betPlanAuditPath, {
     place_odds: x.place_odds ?? null,
     jumpsIn: x.jumpsIn,
     interesting: !!x.interesting,
-    reason: x.reason
+    reason: x.reason,
+    tags: Array.isArray(x.tags) ? x.tags : [],
+    pedigreeTag: x.pedigreeTag || null,
+    pedigreeScore: x.pedigreeScore ?? null,
+    pedigreeConfidence: x.pedigreeConfidence ?? null,
+    pedigreeRelativeEdge: x.pedigreeRelativeEdge ?? null,
+    pedigreeArchetype: x.pedigreeArchetype || null
   })),
   suggestedAll: (status.suggestedBets || []).map(x => ({
     meeting: x.meeting,
@@ -713,7 +767,13 @@ appendJsonl(betPlanAuditPath, {
     place_odds: x.place_odds ?? null,
     jumpsIn: x.jumpsIn,
     interesting: !!x.interesting,
-    reason: x.reason
+    reason: x.reason,
+    tags: Array.isArray(x.tags) ? x.tags : [],
+    pedigreeTag: x.pedigreeTag || null,
+    pedigreeScore: x.pedigreeScore ?? null,
+    pedigreeConfidence: x.pedigreeConfidence ?? null,
+    pedigreeRelativeEdge: x.pedigreeRelativeEdge ?? null,
+    pedigreeArchetype: x.pedigreeArchetype || null
   })),
   interestingTop: (status.interestingRunners || []).slice(0, 12),
   moversTop: (status.marketMovers || []).slice(0, 12),

@@ -26,6 +26,18 @@ function scoreAnswer(answer, prompt) {
   return Math.max(0, Math.round(keywordScore - lengthPenalty));
 }
 
+function isTrueFallback(row) {
+  const providerRequested = String(row?.providerRequested || '').trim().toLowerCase();
+  const providerUsed = String(row?.providerUsed || '').trim().toLowerCase();
+  const modelRequested = String(row?.modelRequested || '').trim().toLowerCase();
+  const modelUsed = String(row?.modelUsed || '').trim().toLowerCase();
+  const fallbackReason = String(row?.fallbackReason || '').trim();
+  if (fallbackReason) return true;
+  if (providerRequested && providerUsed && providerRequested !== providerUsed) return true;
+  if (modelRequested && modelUsed && modelRequested !== modelUsed) return true;
+  return false;
+}
+
 async function run() {
   const baseUrl = arg('url', process.env.BAKEOFF_URL || 'http://127.0.0.1:8080');
   let user = arg('user', process.env.BAKEOFF_USER || process.env.BETMAN_USERNAME || '');
@@ -140,7 +152,11 @@ async function run() {
   const byModel = new Map();
   for (const r of rawRows) {
     const a = byModel.get(r.model) || { n: 0, ok: 0, q: 0, lat: [], fallback: 0 };
-    a.n++; if (r.ok) a.ok++; a.q += Number(r.scoreQuality || 0); a.lat.push(Number(r.latencyMs || 0)); if (r.mode === 'fallback') a.fallback++;
+    a.n++;
+    if (r.ok) a.ok++;
+    a.q += Number(r.scoreQuality || 0);
+    a.lat.push(Number(r.latencyMs || 0));
+    if (isTrueFallback(r)) a.fallback++;
     byModel.set(r.model, a);
   }
 

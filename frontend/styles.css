@@ -301,17 +301,22 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .perf-visuals .perf-section{min-height:220px}
 .perf-logo-line{display:flex;justify-content:center;margin-bottom:6px}
 .perf-logo-line img{height:192px;opacity:.92}
-.return-meter{display:flex;flex-direction:column;gap:12px;align-items:stretch}
+.return-meter{display:flex;flex-direction:column;gap:10px;align-items:center}
 .return-bar{width:100%;height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden}
 .return-bar span{display:block;height:100%;width:0;background:var(--accent);transition:width .3s ease}
 .return-bar span.neg{background:#ff6b6b}
-.return-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;width:100%}
-.return-card{border:1px solid var(--border-soft);background:rgba(255,255,255,.03);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;min-height:96px}
-.return-card-label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
-.return-card-value{font-size:24px;font-weight:800;color:var(--accent);line-height:1.1}
-.return-card-value.neg{color:#ff6b6b}
-.return-card-sub{font-size:12px;color:var(--muted)}
-@media (max-width: 900px){.return-cards{grid-template-columns:1fr}}
+.return-value{font-size:24px;font-weight:800;color:var(--accent)}
+.return-value.neg{color:#ff6b6b}
+.return-sub{font-size:12px;color:var(--muted)}
+.return-kpis{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.return-kpi{background:rgba(255,255,255,.02);border:1px solid var(--border-soft);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;min-height:64px}
+.return-kpi .label{font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-soft)}
+.return-kpi .value{font-size:16px;font-weight:800;color:var(--text)}
+.return-kpi .value.neg{color:#ff6b6b}
+.return-visuals{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.return-graph{background:rgba(255,255,255,.02);border:1px solid var(--border-soft);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;min-height:120px}
+.return-graph-label{font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-soft)}
+.return-graph canvas{width:100% !important;height:90px !important}
 .hero-tiles{display:grid;gap:12px}
 .hero-group{background:var(--card2);border:1px solid var(--border-soft);border-radius:12px;padding:12px}
 .hero-title{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
@@ -319,7 +324,7 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .betplan-cell{display:flex;flex-direction:column;gap:2px;font-size:12px}
 .betplan-win,.betplan-roi{font-weight:600}
 .betplan-bets{color:var(--muted);font-size:11px}
-.perf-feel{display:flex;flex-direction:column}
+.perf-feel{display:flex;flex-direction:column;align-items:center}
 .perf-kpi-block{display:flex;flex-direction:column;gap:12px}
 .perf-block-title{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .perf-hint{font-size:11px;color:var(--text-soft);line-height:1.4;margin-top:-4px;margin-bottom:6px}
@@ -338,7 +343,8 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .perf-section .table{overflow-x:hidden}
 .perf-chart{min-height:200px}
 .perf-chart canvas{width:100% !important;height:180px !important}
-.feel-meter{position:relative;display:flex;align-items:center;justify-content:center;min-height:180px}
+.feel-meter{position:relative;display:flex;align-items:center;justify-content:center;min-height:180px;width:100%;max-width:220px}
+.feel-meter canvas{width:180px !important;height:180px !important}
 .feel-meter-value{position:absolute;top:48%;left:50%;transform:translate(-50%,-50%);font-size:28px;font-weight:800;color:var(--text)}
 .feel-meter-sub{position:absolute;top:68%;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-soft)}
 .perf-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
@@ -594,6 +600,27 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
+}
+
+.interesting-meta {
+  margin-bottom: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.interesting-note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #c8d4e3;
+}
+
+.interesting-profile {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #8ea0b5;
 }
 
 .strategy-fallback-row {

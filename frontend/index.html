@@ -30,6 +30,10 @@
               <option>Loading…</option>
             </select>
             <div id="aiModelWarning" class="ai-model-note" style="display:none"></div>
+            <div id="aiModelManualLockNote" class="ai-model-note" style="display:none">
+              Manual routing locked to your selection.
+              <button id="aiModelAutoResetBtn" class="btn btn-ghost compact-btn" type="button">Return to Auto</button>
+            </div>
           </div>
           <button id="authManageToggle" class="btn btn-ghost compact-btn">Auth</button>
           <button id="logoutBtn" class="btn btn-ghost compact-btn">Logout</button>
@@ -228,6 +232,10 @@
         </div>
       </div>
       <div id="roiAdminHint" class="perf-hint" style="display:none">ROI figures are visible to admin only.</div>
+      <div class="perf-section perf-wide">
+        <h4>Runtime Health</h4>
+        <div id="runtimeHealthPanel" class="perf-kpis perf-kpis-secondary"><div class="sub">Loading runtime health…</div></div>
+      </div>
 
       <div class="perf-section perf-wide bet-plan-section">
         <div class="bet-plan-head">
@@ -268,32 +276,6 @@
         <div class="perf-section perf-chart">
           <h4>30D Win Rate</h4>
           <canvas id="winRateTrendChart"></canvas>
-        </div>
-        <div class="perf-section perf-return">
-          <div class="perf-logo-line">
-            <img src="assets/logo.png" alt="BETMAN" />
-          </div>
-          <h4>BETMAN RETURN</h4>
-          <div class="return-meter">
-            <div class="return-bar"><span id="betmanReturnBar"></span></div>
-            <div class="return-cards">
-              <div class="return-card return-card-combined">
-                <div class="return-card-label">Combined P/L</div>
-                <div class="return-card-value" id="betmanReturnValue">—</div>
-                <div class="return-card-sub" id="betmanReturnSub">ROI — · Stake —</div>
-              </div>
-              <div class="return-card return-card-base">
-                <div class="return-card-label">Base Strategies P/L</div>
-                <div class="return-card-value" id="betmanBaseReturnValue">—</div>
-                <div class="return-card-sub" id="betmanBaseReturnSub">ROI — · Stake —</div>
-              </div>
-              <div class="return-card return-card-exotic">
-                <div class="return-card-label">Exotics P/L</div>
-                <div class="return-card-value" id="betmanExoticReturnValue">—</div>
-                <div class="return-card-sub" id="betmanExoticReturnSub">ROI — · Stake —</div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
       <div class="perf-dashboard">
@@ -393,6 +375,56 @@
           </div>
         </div>
       </div>
+      <div class="perf-section perf-return">
+        <div class="perf-logo-line">
+          <img src="assets/logo.png" alt="BETMAN" />
+        </div>
+        <h4>BETMAN RETURN</h4>
+        <div class="return-meter">
+          <div class="return-bar"><span id="betmanReturnBar"></span></div>
+          <div class="return-kpis">
+            <div class="return-kpi">
+              <div class="label">ROI</div>
+              <div class="value" id="betmanReturnRoi">—</div>
+            </div>
+            <div class="return-kpi">
+              <div class="label">Units</div>
+              <div class="value" id="betmanReturnUnits">—</div>
+            </div>
+            <div class="return-kpi">
+              <div class="label">Stake</div>
+              <div class="value" id="betmanReturnStake">—</div>
+            </div>
+          </div>
+          <div class="return-visuals">
+            <div class="return-graph">
+              <div class="return-graph-label">30D Units (Net)</div>
+              <canvas id="returnUnitsChart"></canvas>
+            </div>
+            <div class="return-graph">
+              <div class="return-graph-label">30D ROI (Net)</div>
+              <canvas id="returnRoiChart"></canvas>
+            </div>
+          </div>
+          <div class="return-cards">
+            <div class="return-card return-card-combined">
+              <div class="return-card-label">Combined P/L</div>
+              <div class="return-card-value" id="betmanReturnValue">—</div>
+              <div class="return-card-sub" id="betmanReturnSub">ROI — · Stake —</div>
+            </div>
+            <div class="return-card return-card-base">
+              <div class="return-card-label">Base Strategies P/L</div>
+              <div class="return-card-value" id="betmanBaseReturnValue">—</div>
+              <div class="return-card-sub" id="betmanBaseReturnSub">ROI — · Stake —</div>
+            </div>
+            <div class="return-card return-card-exotic">
+              <div class="return-card-label">Exotics P/L</div>
+              <div class="return-card-value" id="betmanExoticReturnValue">—</div>
+              <div class="return-card-sub" id="betmanExoticReturnSub">ROI — · Stake —</div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="perf-grid">
         <div class="perf-section perf-wide" data-roi-only>
           <h4>Bet Plans ROI (AI choices)</h4>
@@ -478,63 +510,83 @@
     <section class="section page-section" data-page="help" style="display:none">
       <h3>BETMAN Help</h3>
       <div class="analysis-body">
-        <p><b>What BETMAN is:</b> a signal and analysis platform. It gives structured opinions, not guaranteed outcomes.</p>
+        <p><b>What BETMAN is:</b> an evidence-first racing signal and execution platform. It ranks, filters, and passes. It does <b>not</b> promise winners.</p>
 
         <h4>1) Quick Start</h4>
         <ol>
           <li>Select <b>Country</b> and <b>Day</b>, then choose a <b>Meeting</b> in Meeting Workspace.</li>
-          <li>Click a race card to load race analysis.</li>
-          <li>Use tabs for Suggested, Multis, Market Movers, Interesting Runners, and Bet Plans.</li>
-          <li>Open AI Chat (floating button) and drag runners in for bespoke analysis.</li>
+          <li>Click a race card to load race analysis, runner profiles, and Odds vs Model.</li>
+          <li>Use tabs for <b>Suggested Bets</b>, <b>Multis</b>, <b>Market Movers</b>, <b>Interesting Runners</b>, <b>Bet Plans</b>, and <b>Performance</b>.</li>
+          <li>Open AI Chat for bespoke race or multi analysis.</li>
         </ol>
 
-        <h4>2) Tab Guide</h4>
+        <h4>2) Core Tags</h4>
         <ul>
-          <li><b>Meeting Workspace:</b> race selection, race analysis, and multi previews.</li>
-          <li><b>Suggested Bets:</b> model-led selections with Signal score and edge context.</li>
-          <li><b>Multis:</b> exotic/cross-race multi structures with signal strength.</li>
-          <li><b>Market Movers:</b> runners firming/drifting across 1m/5m/30m/1h/5h horizons.</li>
-          <li><b>Interesting Runners:</b> notable profiles and planned/value flags.</li>
-          <li><b>Bet Plans:</b> next queue of suggested opportunities in current window.</li>
+          <li><b>Recommended Bet:</b> best qualified actionable bet after edge, confidence, and contradiction filters.</li>
+          <li><b>Odds Runner:</b> biggest live overlay that still passes quality controls.</li>
+          <li><b>EW:</b> each-way profile where place shape is stronger than a straight win-only read.</li>
+          <li><b>LONG:</b> long-priced runner with real upside. This is now much stricter than before.</li>
+          <li><b>AI Winner:</b> current top model/AI win probability runner.</li>
+          <li><b>#1 Model:</b> raw top model runner in the field.</li>
+          <li><b>Pedigree Advantage</b> <span style="display:inline-block;padding:1px 6px;border-radius:999px;background:linear-gradient(135deg,#ffd54a,#c89b1d);color:#1c1606">GOLD</span>: only shown when a runner has a <b>clear field-relative bloodline edge</b>. No tag is required in every race.</li>
         </ul>
 
-        <h4>3) AI Chat Modes</h4>
+        <h4>3) Form + Track Tags</h4>
+        <ul>
+          <li><b>HOT FORM:</b> last start must be top 3. If latest run misses that gate, the horse cannot be HOT.</li>
+          <li><b>SOLID FORM:</b> credible recent profile, but not strong enough for HOT.</li>
+          <li><b>MIXED FORM:</b> conflicting profile or unreliable recent body of work.</li>
+          <li><b>COLD FORM:</b> repeated weak recent profile. COLD runners are blocked from standard win recommendations.</li>
+          <li><b>Track labels:</b> <b>Loves This Ground</b>, <b>Suited</b>, <b>Neutral</b>, <b>Query</b>, <b>Dislikes This Ground</b>.</li>
+        </ul>
+
+        <h4>4) Runner Profile updates</h4>
+        <ul>
+          <li><b>Sire</b>, <b>Dam</b>, and <b>Dam Sire</b> are now clickable in Runner Profile.</li>
+          <li>Clicking a bloodline opens the <b>Bloodline Library</b> commentary popup with summary, style, strengths, cautions, and trait profile.</li>
+          <li>Pedigree Advantage uses sire, dam, dam sire, female-family scaffold, cross-patterns, and race-archetype priors.</li>
+        </ul>
+
+        <h4>5) Signal, Edge, and Threshold Policy</h4>
+        <ul>
+          <li><b>Implied %:</b> market probability from odds (<code>100 / odds</code>).</li>
+          <li><b>Model %:</b> BETMAN's probability after model + confidence blending.</li>
+          <li><b>Edge:</b> <code>Model % - Implied %</code>. Positive edge is necessary, but not sufficient.</li>
+          <li><b>Ped Fit / Ped Conf / Ped Edge:</b> pedigree fit score, pedigree confidence, and field-relative pedigree edge.</li>
+        </ul>
+        <p class="sub"><b>Active threshold policy:</b> Main bet = edge ≥ <b>6 pts</b> and confidence ≥ <b>65</b>. Secondary bet = edge ≥ <b>4 pts</b> and confidence ≥ <b>58</b>. BETMAN now blocks toxic signal buckets like <b>0–2 pt edge</b>, <b>2–4 pt edge in 5–8 odds</b>, and the unstable <b>20–25% model band</b> unless exceptional support exists.</p>
+
+        <h4>6) PERFORMANCE page</h4>
+        <ul>
+          <li><b>BETMAN RETURN:</b> broken out into win-bets and exotics so performance is visible, not blended into one vague number.</li>
+          <li><b>Pedigree Advantage Performance:</b> tracks pedigree-tagged bets, win rate, ROI, average score, confidence, and edge.</li>
+          <li><b>Signal Threshold Audit v2:</b> shows good buckets, bad buckets, blocked buckets, and the current threshold policy.</li>
+        </ul>
+
+        <h4>7) AI Chat Modes</h4>
         <ul>
           <li><b>Race Context:</b> single-race ranked view + risks.</li>
           <li><b>2/3/4-Race Multi:</b> cross-race structures with combined logic.</li>
           <li><b>Same-Race Multi:</b> same-race structure analysis.</li>
           <li><b>H2H:</b> head-to-head matchup analysis.</li>
         </ul>
-        <p><b>Important:</b> Same-Race/H2H outputs include joint likelihood blocks when data is available.</p>
 
-        <h4>4) Signal + Risk Reading</h4>
-        <ul>
-          <li><b>Signal:</b> higher = stronger model confidence profile.</li>
-          <li><b>Implied %:</b> what the market is pricing from odds (<code>100 / odds</code>).</li>
-          <li><b>Model %:</b> BETMAN's simulated probability estimate from race inputs.</li>
-          <li><b>Edge:</b> <code>Model % - Implied %</code>. Positive edge = potential value, negative edge = potentially overbet.</li>
-          <li><b>Risk labels:</b> low / medium / high.</li>
-          <li><b>Invalidation points:</b> when conditions no longer support the play.</li>
-        </ul>
-        <p class="sub">Hover the <b>?</b> hints and table headers in Meeting Workspace for plain-language explanations. Focus on the <b>Edge line</b> in Edge Visualisation: it is the clearest read on where price and model diverge.</p>
-        <p class="sub">Signal status labels: <b>Qualified</b> means it passed all policy checks; <b>Forced</b> means fallback logic was used to keep an operator-facing pick on screen.</p>
-
-        <h4>5) Account & Users</h4>
+        <h4>8) Account & Users</h4>
         <ul>
           <li>Open <b>Auth</b> to manage credentials.</li>
           <li>Admins can create/delete users and reset passwords.</li>
           <li>New user onboarding requires: <b>Name + Email + Password</b> plus verification gate.</li>
         </ul>
 
-        <h4>6) Troubleshooting</h4>
+        <h4>9) Troubleshooting</h4>
         <ul>
           <li>If data looks stale, use <b>Refresh</b>.</li>
-          <li>If a tab looks empty, confirm meeting selection and country/day filters.</li>
           <li>If behavior looks old after updates, hard refresh browser cache.</li>
-          <li>If AI cannot fetch web context, retry in 30–60 seconds.</li>
+          <li>If a tag disappears after a change, check <b>PERFORMANCE</b> and the <b>Signal Threshold Audit</b> first — BETMAN may now be blocking that bucket by policy.</li>
+          <li>If a pedigree tag is missing, that can be correct: there does <b>not</b> need to be a Pedigree Advantage in every race.</li>
         </ul>
 
-        <p class="sub" style="margin-top:10px">Decision standard: Verdict → Evidence → Risk → Action/Pass. If edge is weak or invalidation triggers, pass.</p>
+        <p class="sub" style="margin-top:10px">Decision standard: <b>Verdict → Evidence → Risk → Action/Pass.</b> If edge is weak, data is noisy, or the bucket is blocked, BETMAN should pass.</p>
       </div>
     </section>
 
@@ -611,6 +663,7 @@
             <div class="ai-chat-input-row" style="margin-bottom:8px">
               <select id="createUserPlanType" style="width:100%">
                 <option value="single">Single User</option>
+                <option value="single_day">BETMAN Single DAY</option>
                 <option value="commercial">Commercial</option>
               </select>
             </div>

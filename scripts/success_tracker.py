@@ -120,6 +120,11 @@ def load_bets_by_tenant():
                             'type': bet_type,
                             'odds': odds,
                             'place_odds': place_odds,
+                            'pedigreeTag': item.get('pedigreeTag'),
+                            'pedigreeScore': item.get('pedigreeScore'),
+                            'pedigreeConfidence': item.get('pedigreeConfidence'),
+                            'pedigreeRelativeEdge': item.get('pedigreeRelativeEdge'),
+                            'pedigreeArchetype': item.get('pedigreeArchetype'),
                             'ts': ts_val
                         }
                 for item in row.get('interestingTop', []) or []:
@@ -243,7 +248,12 @@ def evaluate_bets(bets):
                     'top4': { 'bets': 0, 'hits': 0, 'roi_profit': 0.0, 'roi_stake': 0.0 },
                     'trifecta': { 'bets': 0, 'hits': 0, 'roi_profit': 0.0, 'roi_stake': 0.0 }
                 },
-                'long_breakdown': { 'bets': 0, 'stake_units': 0, 'roi_stake_units': 0, 'wins': 0, 'roi_rec_profit': 0.0, 'roi_sp_profit': 0.0, 'roi_tote_profit': 0.0, 'roi_ew_profit': 0.0 }
+                'long_breakdown': { 'bets': 0, 'stake_units': 0, 'roi_stake_units': 0, 'wins': 0, 'roi_rec_profit': 0.0, 'roi_sp_profit': 0.0, 'roi_tote_profit': 0.0, 'roi_ew_profit': 0.0 },
+                'pedigree_breakdown': {
+                    'bets': 0, 'stake_units': 0, 'roi_stake_units': 0, 'wins': 0, 'roi_rec_profit': 0.0,
+                    'score_sum': 0.0, 'score_count': 0, 'confidence_sum': 0.0, 'confidence_count': 0,
+                    'edge_sum': 0.0, 'edge_count': 0, 'archetypes': {}
+                }
             }
         return daily[date]
 
@@ -324,6 +334,39 @@ def evaluate_bets(bets):
                     profit = (odds - 1.0) if hit else -1.0
             if profit is not None:
                 add_profit(pick, profit, stake_units)
+                if bet.get('pedigreeTag') == 'Pedigree Advantage':
+                    ped = day['pedigree_breakdown']
+                    ped['bets'] += 1
+                    ped['stake_units'] += stake_units
+                    ped['roi_stake_units'] += stake_units
+                    if hit:
+                        ped['wins'] += 1
+                    ped['roi_rec_profit'] += profit
+                    try:
+                        score = float(bet.get('pedigreeScore'))
+                        ped['score_sum'] += score
+                        ped['score_count'] += 1
+                    except Exception:
+                        pass
+                    try:
+                        conf = float(bet.get('pedigreeConfidence'))
+                        ped['confidence_sum'] += conf
+                        ped['confidence_count'] += 1
+                    except Exception:
+                        pass
+                    try:
+                        edge = float(bet.get('pedigreeRelativeEdge'))
+                        ped['edge_sum'] += edge
+                        ped['edge_count'] += 1
+                    except Exception:
+                        pass
+                    arch = bet.get('pedigreeArchetype')
+                    if arch:
+                        bucket = ped['archetypes'].setdefault(arch, { 'bets': 0, 'wins': 0, 'profit': 0.0 })
+                        bucket['bets'] += 1
+                        if hit:
+                            bucket['wins'] += 1
+                        bucket['profit'] += profit
                 if odds is not None and odds >= 12:
                     long_pick = day['long_breakdown']
                     long_pick['bets'] += 1
@@ -465,6 +508,23 @@ def evaluate_bets(bets):
             'roi_ew': None
         }
 
+        pedigree_pick = d.get('pedigree_breakdown') or {}
+        pedigree_bets = pedigree_pick.get('bets', 0)
+        pedigree_wins = pedigree_pick.get('wins', 0)
+        pedigree_stake = pedigree_pick.get('stake_units', pedigree_bets)
+        pedigree_roi_stake = pedigree_pick.get('roi_stake_units', pedigree_stake)
+        pedigree_breakdown = {
+            'bets': pedigree_bets,
+            'stake_units': pedigree_stake,
+            'roi_stake_units': pedigree_roi_stake,
+            'win_rate': (pedigree_wins / pedigree_bets) if pedigree_bets else None,
+            'roi_rec': (pedigree_pick.get('roi_rec_profit', 0) / pedigree_roi_stake) if pedigree_roi_stake else None,
+            'avg_score': (pedigree_pick.get('score_sum', 0) / pedigree_pick.get('score_count', 1)) if pedigree_pick.get('score_count', 0) else None,
+            'avg_confidence': (pedigree_pick.get('confidence_sum', 0) / pedigree_pick.get('confidence_count', 1)) if pedigree_pick.get('confidence_count', 0) else None,
+            'avg_edge': (pedigree_pick.get('edge_sum', 0) / pedigree_pick.get('edge_count', 1)) if pedigree_pick.get('edge_count', 0) else None,
+            'archetypes': pedigree_pick.get('archetypes', {})
+        }
+
         out[date] = {
             'total_bets': total,
             'total_stake': total_stake,
@@ -486,7 +546,8 @@ def evaluate_bets(bets):
             'exotic_roi_stake': d.get('exotic_roi_stake', 0),
             'pick_breakdown': pick_breakdown,
             'exotic_breakdown': exotic_breakdown,
-            'long_breakdown': long_breakdown
+            'long_breakdown': long_breakdown,
+            'pedigree_breakdown': pedigree_breakdown
         }
 
     filtered = {}

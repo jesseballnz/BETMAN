@@ -35,6 +35,8 @@ const ODDS_SIGNAL_TTL_MS = 45000;
 let feelGoodChart = null;
 let roiTrendChart = null;
 let winRateTrendChart = null;
+let returnUnitsChart = null;
+let returnRoiChart = null;
 let analysisEdgeChart = null;
 let analysisMonteChart = null;
 let currentUserDisplayName = 'User';
@@ -218,10 +220,46 @@ function loadSavedAiModel(){
     const saved = JSON.parse(localStorage.getItem('betmanAiModel') || '{}');
     if (saved && saved.model) selectedAiModel = { provider: saved.provider || inferProviderFromModel(saved.model), model: saved.model };
   } catch {}
+  try {
+    const stored = localStorage.getItem('betmanAiModelManualLock');
+    if (stored === null) {
+      aiModelManualLock = true;
+    } else {
+      aiModelManualLock = stored === '1';
+    }
+  } catch {
+    aiModelManualLock = true;
+  }
 }
 
 function persistAiModel(){
-  try { localStorage.setItem('betmanAiModel', JSON.stringify(selectedAiModel)); } catch {}
+  try {
+    localStorage.setItem('betmanAiModel', JSON.stringify(selectedAiModel));
+    localStorage.setItem('betmanAiModelManualLock', aiModelManualLock ? '1' : '0');
+  } catch {}
+}
+
+function setAiModelManualLock(state){
+  aiModelManualLock = !!state;
+  persistAiModel();
+  updateAiModelLockUi();
+}
+
+function updateAiModelLockUi(){
+  const note = $('aiModelManualLockNote');
+  const resetBtn = $('aiModelAutoResetBtn');
+  if (note) {
+    note.style.display = aiModelManualLock ? 'block' : 'none';
+  }
+  if (resetBtn) {
+    resetBtn.disabled = !aiModelManualLock;
+    resetBtn.onclick = () => {
+      if (!aiModelManualLock) return;
+      setAiModelManualLock(false);
+      refreshAiAnalyseButtonState();
+      updateAnalysisAiModelNote();
+    };
+  }
 }
 
 function renderAiModelSelect(){
@@ -270,12 +308,15 @@ function renderAiModelSelect(){
     const [provider, model] = String(e.target.value || '').split('::');
     if (!model) return;
     selectedAiModel = { provider: provider || inferProviderFromModel(model), model };
+    aiModelManualLock = true;
     persistAiModel();
+    updateAiModelLockUi();
     refreshAiAnalyseButtonState();
     updateAnalysisAiModelNote();
   };
   refreshAiAnalyseButtonState();
   updateAnalysisAiModelNote();
+  updateAiModelLockUi();
 }
 
 async function loadAiModels(){
@@ -562,6 +603,7 @@ let aiModelCatalog = {
   openaiBlockedReason: ''
 };
 let selectedAiModel = { provider: 'ollama', model: 'deepseek-r1:8b' };
+let aiModelManualLock = false;
 let analysisViewMode = 'engine';
 let latestAnalysisSignals = null;
 let performanceCooldownUntil = 0;
@@ -643,7 +685,14 @@ function setActivePage(page){
   });
   refreshTabAccess();
   renderMeetingIntelPanel();
-  if (page === 'performance') loadPerformance();
+  if (page === 'performance') {
+    loadPerformance();
+    loadRuntimeHealth();
+  }
+  if (page === 'bakeoff') {
+    loadBakeoffLeaderboard();
+    restoreBakeoffRunFeedback();
+  }
 }
 
 function openSummaryPopup(title, html){
@@ -1024,7 +1073,33 @@ function persistAiAnalysisCache(){
   }
 }
 
+function persistAiCooldown(){
+  try {
+    const rows = Array.from(aiAnalysisCooldown.entries()).map(([key, until]) => ({ key, until }));
+    localStorage.setItem('betmanAiCooldown', JSON.stringify(rows));
+  } catch (err) {
+    console.warn('ai_cooldown_save_failed', err?.message || err);
+  }
+}
+
+function hydrateAiCooldownFromStorage(){
+  try {
+    const rows = JSON.parse(localStorage.getItem('betmanAiCooldown') || '[]');
+    if (!Array.isArray(rows)) return;
+    const now = Date.now();
+    rows.forEach(row => {
+      const key = String(row?.key || '').trim();
+      const until = Number(row?.until || 0);
+      if (!key || !Number.isFinite(until) || until <= now) return;
+      aiAnalysisCooldown.set(key, until);
+    });
+  } catch (err) {
+    console.warn('ai_cooldown_hydrate_failed', err?.message || err);
+  }
+}
+
 hydrateAiAnalysisCacheFromStorage();
+hydrateAiCooldownFromStorage();
 (function restoreMeetingLock(){
   try {
     const saved = JSON.parse(localStorage.getItem(MEETING_LOCK_KEY) || '{}');
@@ -1630,11 +1705,20 @@ function renderMarketMovers(rows){
     })
     .slice()
     .sort((a,b) => {
-      const aRace = normalizeRaceNumber(a.race);
-      const bRace = normalizeRaceNumber(b.race);
-      const aSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(a.meeting) === selectedMeetingKey && aRace === selectedRaceNum;
-      const bSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(b.meeting) === selectedMeetingKey && bRace === selectedRaceNum;
+      const aRace = Number(normalizeRaceNumber(a.race));
+      const bRace = Number(normalizeRaceNumber(b.race));
+      const selectedRaceNo = Number(selectedRaceNum || NaN);
+      const aBucket = Number.isFinite(selectedRaceNo) && Number.isFinite(aRace)
+        ? (aRace === selectedRaceNo ? 0 : (aRace > selectedRaceNo ? 1 : 2))
+        : 3;
+      const bBucket = Number.isFinite(selectedRaceNo) && Number.isFinite(bRace)
+        ? (bRace === selectedRaceNo ? 0 : (bRace > selectedRaceNo ? 1 : 2))
+        : 3;
+      const aSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(a.meeting) === selectedMeetingKey && String(normalizeRaceNumber(a.race)) === selectedRaceNum;
+      const bSelected = selectedMeetingKey && selectedRaceNum && normalizeMeetingKey(b.meeting) === selectedMeetingKey && String(normalizeRaceNumber(b.race)) === selectedRaceNum;
       if (aSelected !== bSelected) return aSelected ? -1 : 1;
+      if (aBucket !== bBucket) return aBucket - bBucket;
+      if (Number.isFinite(aRace) && Number.isFinite(bRace) && aRace !== bRace) return aRace - bRace;
       const ma = Number(a.minsToJump);
       const mb = Number(b.minsToJump);
       const hasA = Number.isFinite(ma);
@@ -1917,21 +2001,7 @@ function renderInteresting(rows){
     return;
   }
 
-  const selectedRaceNo = (selectedRace && meetingMatches(selectedRace.meeting))
-    ? Number(String(selectedRace.race_number || selectedRace.race || '').replace(/^R/i,''))
-    : NaN;
-  const ordered = scoped
-    .slice()
-    .sort((a,b) => {
-      if (Number.isFinite(selectedRaceNo)) {
-        const aRace = Number(String(a.race || a.race_number || '').replace(/^R/i,''));
-        const bRace = Number(String(b.race || b.race_number || '').replace(/^R/i,''));
-        const aBefore = Number.isFinite(aRace) && aRace < selectedRaceNo ? 1 : 0;
-        const bBefore = Number.isFinite(bRace) && bRace < selectedRaceNo ? 1 : 0;
-        if (aBefore !== bBefore) return aBefore - bBefore;
-      }
-      return jumpsInToMinutes(a.eta) - jumpsInToMinutes(b.eta);
-    });
+  const ordered = orderRowsAroundSelectedRace(scoped.map(r => ({ ...r, jumpsIn: r.jumpsIn || r.eta })));
 
   ordered.forEach(r=>{
     const row = document.createElement('div');
@@ -1949,11 +2019,11 @@ function renderInteresting(rows){
     if (runner?.last_twenty_starts) formBits.push(`Form ${runner.last_twenty_starts}`);
     if (formSignal?.summary) formBits.push(formSignal.summary);
     if (runner?.speedmap) formBits.push(`Speed ${runner.speedmap}`);
-    const profileLine = formBits.length ? `<div class='sub'>${formBits.join(' · ')}</div>` : '';
+    const profileLine = formBits.length ? `<div class='interesting-profile'>${formBits.join(' · ')}</div>` : '';
     row.innerHTML = `
       <div><button class='bet-btn race-cell-btn interesting-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
       <div><button class='bet-btn interesting-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-runner='${escapeAttr(cleanRunnerText(r.runner))}'><span class='bet-icon'>🧠</span>${escapeHtml(cleanRunnerText(r.runner))}</button></div>
-      <div><div style='margin-bottom:6px'>${signalHint(reasonWithOdds, 'win', r.runner || r.selection || '', fallbackSignal)} ${tags.join(' ')}</div>${aiNote}${profileLine}</div>
+      <div><div class='interesting-meta'>${signalHint(reasonWithOdds, 'win', r.runner || r.selection || '', fallbackSignal)} ${tags.join(' ')}</div><div class='interesting-note'>${aiNote}</div>${profileLine}</div>
       <div>${r.odds || '—'}</div>
       <div class='right'>${buildJumpCell(r.meeting, r.race, r.eta || '—')}</div>
     `;
@@ -2359,25 +2429,46 @@ function baseSuggestedRows(rows){
     });
 }
 
+function orderRowsAroundSelectedRace(rows){
+  const list = Array.isArray(rows) ? rows.slice() : [];
+  const selectedRaceNo = (selectedRace && meetingMatches(selectedRace.meeting))
+    ? Number(String(selectedRace.race_number || selectedRace.race || '').replace(/^R/i,''))
+    : NaN;
+  return list.sort((a,b) => {
+    const aj = jumpsInToMinutes(a.jumpsIn || a.eta);
+    const bj = jumpsInToMinutes(b.jumpsIn || b.eta);
+    if (Number.isFinite(selectedRaceNo)) {
+      const aRace = Number(String(a.race || a.race_number || '').replace(/^R/i,''));
+      const bRace = Number(String(b.race || b.race_number || '').replace(/^R/i,''));
+      const aBucket = Number.isFinite(aRace)
+        ? (aRace === selectedRaceNo ? 0 : (aRace > selectedRaceNo ? 1 : 2))
+        : 3;
+      const bBucket = Number.isFinite(bRace)
+        ? (bRace === selectedRaceNo ? 0 : (bRace > selectedRaceNo ? 1 : 2))
+        : 3;
+      if (aBucket !== bBucket) return aBucket - bBucket;
+      if (aBucket === 2 && Number.isFinite(aRace) && Number.isFinite(bRace) && aRace !== bRace) return aRace - bRace;
+      if ((aBucket === 0 || aBucket === 1) && Number.isFinite(aRace) && Number.isFinite(bRace) && aRace !== bRace) return aRace - bRace;
+    }
+    return aj - bj;
+  });
+}
+
 function renderSuggested(rows){
   const table = $('suggestedTable');
   table.innerHTML = '';
   const suggestedSource = (rows && rows.length) ? rows : (latestSuggestedBets || []);
-  let mainRows = baseSuggestedRows(suggestedSource);
+  let mainRows = orderRowsAroundSelectedRace(baseSuggestedRows(suggestedSource));
   if (!mainRows.length && selectedMeeting && selectedMeeting !== 'ALL') {
     const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
-    mainRows = (latestSuggestedBets || suggestedSource)
+    mainRows = orderRowsAroundSelectedRace((latestSuggestedBets || suggestedSource)
       .filter(r => meetingMatches(r.meeting))
-      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase()))
-      .slice()
-      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
+      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase())));
   }
   if (!mainRows.length) {
     const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
-    mainRows = (latestSuggestedBets || suggestedSource)
-      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase()))
-      .slice()
-      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
+    mainRows = orderRowsAroundSelectedRace((latestSuggestedBets || suggestedSource)
+      .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase())));
   }
 
   if (!mainRows.length) {
@@ -2425,12 +2516,16 @@ function renderSuggested(rows){
     const tag = tags.length ? ` ${tags.join(' ')}` : '';
 
     const odds = parseReasonOdds(r.reason);
+    const suggestedSignalRaw = Number(r.signal_score);
+    const suggestedSignal = Number.isFinite(suggestedSignalRaw)
+      ? suggestedSignalRaw
+      : (isMultiType(r.type) ? exoticSignalScore(r) : signalScore(r.reason, r.type, r.selection));
     row.innerHTML = `
       <div><button class='bet-btn race-cell-btn suggested-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
       <div><button class='bet-btn suggested-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-selection='${escapeAttr(cleanRunnerText(r.selection))}' data-reason='${escapeAttr(r.reason||'')}'><span class='bet-icon'>💡</span>${escapeHtml(cleanRunnerText(r.selection))}${tag}</button></div>
       <div>${r.type}</div>
       <div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div><div class='sub'>${marketEdgeText(r.reason)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
-      <div class='right'>${signalMeter(r.reason, r.type, r.selection)}<div class='sub' style='margin-top:6px'>${reasonToEnglish(r.reason)}</div></div>
+      <div class='right'>${signalMeterFromScore(suggestedSignal)}<div class='sub' style='margin-top:6px'>${reasonToEnglish(r.reason)}</div></div>
     `;
     table.appendChild(row);
   });
@@ -2882,9 +2977,12 @@ function buildStrategyPlanCandidates(type){
 }
 
 function strategyEdgePts(row){
-  const winProb = parseReasonWinProb(row?.reason);
-  const odds = parseReasonOdds(row?.reason) || Number(row?.odds || 0);
-  const implied = Number.isFinite(odds) && odds > 0 ? (100 / odds) : NaN;
+  const rowWinProb = Number(row?.aiWinProb ?? row?.win_p);
+  const winProb = Number.isFinite(rowWinProb) ? rowWinProb : parseReasonWinProb(row?.reason);
+  const odds = Number(row?.odds);
+  const parsedOdds = parseReasonOdds(row?.reason);
+  const useOdds = Number.isFinite(odds) ? odds : parsedOdds;
+  const implied = Number.isFinite(useOdds) && useOdds > 0 ? (100 / useOdds) : NaN;
   return Number.isFinite(winProb) && Number.isFinite(implied) ? (winProb - implied) : NaN;
 }
 
@@ -2893,9 +2991,12 @@ function scoreStrategyCandidate(row){
   if (Number.isFinite(directSignal)) return directSignal;
   const derivedSignal = signalScore(row?.reason || '', row?.type || 'win', row?.selection || row?.runner || '');
   if (Number.isFinite(derivedSignal)) return derivedSignal;
-  const winProb = parseReasonWinProb(row.reason);
-  const odds = parseReasonOdds(row.reason) || Number(row.odds || 0);
-  const implied = Number.isFinite(odds) && odds > 0 ? (100 / odds) : null;
+  const rowWinProb = Number(row?.aiWinProb ?? row?.win_p);
+  const winProb = Number.isFinite(rowWinProb) ? rowWinProb : parseReasonWinProb(row.reason);
+  const odds = Number(row?.odds);
+  const parsedOdds = parseReasonOdds(row.reason);
+  const useOdds = Number.isFinite(odds) ? odds : parsedOdds;
+  const implied = Number.isFinite(useOdds) && useOdds > 0 ? (100 / useOdds) : null;
   if (Number.isFinite(winProb)) return winProb;
   if (Number.isFinite(implied)) return implied;
   return 0;
@@ -4543,6 +4644,109 @@ function renderPerformanceCharts(daily){
       }
     });
   }
+
+  const netUnitsSeries = lastKeys.map(k => {
+    const r = daily[k] || {};
+    const roiStake = Number.isFinite(r.roi_stake)
+      ? r.roi_stake
+      : (Number.isFinite(r.total_stake) ? r.total_stake : (Number.isFinite(r.win_bets) ? r.win_bets : 0));
+    const baseProfit = Number.isFinite(r.roi_rec) ? r.roi_rec * roiStake : 0;
+    const exoticStake = Number.isFinite(r.exotic_roi_stake) ? r.exotic_roi_stake : 0;
+    const exoticProfit = (Number.isFinite(r.exotic_roi_tote) && exoticStake)
+      ? r.exotic_roi_tote * exoticStake
+      : 0;
+    const netProfit = baseProfit + exoticProfit;
+    return Number.isFinite(netProfit) ? netProfit : null;
+  });
+  const cumulativeUnits = [];
+  netUnitsSeries.forEach((v, idx) => {
+    const prev = idx ? (cumulativeUnits[idx - 1] || 0) : 0;
+    cumulativeUnits.push(prev + (Number.isFinite(v) ? v : 0));
+  });
+  const netRoiSeries = lastKeys.map(k => {
+    const r = daily[k] || {};
+    const roiStake = Number.isFinite(r.roi_stake)
+      ? r.roi_stake
+      : (Number.isFinite(r.total_stake) ? r.total_stake : (Number.isFinite(r.win_bets) ? r.win_bets : 0));
+    const exoticStake = Number.isFinite(r.exotic_roi_stake) ? r.exotic_roi_stake : 0;
+    const stake = (roiStake || 0) + (exoticStake || 0);
+    const baseProfit = Number.isFinite(r.roi_rec) ? r.roi_rec * roiStake : 0;
+    const exoticProfit = (Number.isFinite(r.exotic_roi_tote) && exoticStake)
+      ? r.exotic_roi_tote * exoticStake
+      : 0;
+    const netProfit = baseProfit + exoticProfit;
+    return stake ? (netProfit / stake) * 100 : null;
+  });
+
+  const returnUnitsCanvas = $('returnUnitsChart');
+  if (returnUnitsCanvas) {
+    if (returnUnitsChart) returnUnitsChart.destroy();
+    returnUnitsChart = new Chart(returnUnitsCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Units',
+            data: cumulativeUnits,
+            borderColor: '#c5ff00',
+            backgroundColor: 'rgba(197,255,0,.12)',
+            borderWidth: 2,
+            tension: 0.35,
+            fill: true,
+            pointRadius: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `Units: ${fmtUnits(ctx.raw)}` } }
+        },
+        scales: {
+          x: { ticks: { display: false }, grid: { display: false } },
+          y: { ticks: { color: '#8ea0b5', callback: v => fmtUnits(v) }, grid: { color: 'rgba(255,255,255,.06)' } }
+        }
+      }
+    });
+  }
+
+  const returnRoiCanvas = $('returnRoiChart');
+  if (returnRoiCanvas) {
+    if (returnRoiChart) returnRoiChart.destroy();
+    returnRoiChart = new Chart(returnRoiCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'ROI',
+            data: netRoiSeries,
+            borderColor: '#7aa3c7',
+            backgroundColor: 'rgba(122,163,199,.12)',
+            borderWidth: 2,
+            tension: 0.35,
+            fill: true,
+            pointRadius: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `ROI: ${Number.isFinite(ctx.raw) ? ctx.raw.toFixed(1) : '—'}%` } }
+        },
+        scales: {
+          x: { ticks: { display: false }, grid: { display: false } },
+          y: { ticks: { color: '#8ea0b5', callback: v => `${v}%` }, grid: { color: 'rgba(255,255,255,.06)' } }
+        }
+      }
+    });
+  }
 }
 
 function renderExoticsTable(targetId, data){
@@ -4723,6 +4927,41 @@ function betPlanLabel(window){
   return 'Latest Day';
 }
 
+function aggregatePedigreePerformance(daily, window){
+  if (!daily || typeof daily !== 'object') return null;
+  const keys = Object.keys(daily).sort().reverse();
+  const days = Math.max(1, betPlanWindowDays(window));
+  const selected = keys.slice(0, days);
+  if (!selected.length) return null;
+  const agg = { bets: 0, wins: 0, stake: 0, profit: 0, scoreSum: 0, scoreCount: 0, confSum: 0, confCount: 0, edgeSum: 0, edgeCount: 0, archetypes: {} };
+  selected.forEach(key => {
+    const ped = daily[key]?.pedigree_breakdown || {};
+    agg.bets += Number(ped.bets || 0);
+    agg.wins += Number((ped.win_rate != null && ped.bets != null) ? Math.round(ped.win_rate * ped.bets) : 0);
+    agg.stake += Number(ped.roi_stake_units || ped.stake_units || 0);
+    agg.profit += Number.isFinite(ped.roi_rec) && Number.isFinite(ped.roi_stake_units || ped.stake_units) ? Number(ped.roi_rec) * Number(ped.roi_stake_units || ped.stake_units || 0) : 0;
+    if (Number.isFinite(ped.avg_score)) { agg.scoreSum += Number(ped.avg_score) * Number(ped.bets || 0); agg.scoreCount += Number(ped.bets || 0); }
+    if (Number.isFinite(ped.avg_confidence)) { agg.confSum += Number(ped.avg_confidence) * Number(ped.bets || 0); agg.confCount += Number(ped.bets || 0); }
+    if (Number.isFinite(ped.avg_edge)) { agg.edgeSum += Number(ped.avg_edge) * Number(ped.bets || 0); agg.edgeCount += Number(ped.bets || 0); }
+    const archetypes = ped.archetypes || {};
+    Object.entries(archetypes).forEach(([arch, vals]) => {
+      if (!agg.archetypes[arch]) agg.archetypes[arch] = { bets: 0, wins: 0, profit: 0 };
+      agg.archetypes[arch].bets += Number(vals?.bets || 0);
+      agg.archetypes[arch].wins += Number(vals?.wins || 0);
+      agg.archetypes[arch].profit += Number(vals?.profit || 0);
+    });
+  });
+  return {
+    bets: agg.bets,
+    winRate: agg.bets ? agg.wins / agg.bets : null,
+    roiRec: agg.stake ? agg.profit / agg.stake : null,
+    avgScore: agg.scoreCount ? agg.scoreSum / agg.scoreCount : null,
+    avgConfidence: agg.confCount ? agg.confSum / agg.confCount : null,
+    avgEdge: agg.edgeCount ? agg.edgeSum / agg.edgeCount : null,
+    archetypes: agg.archetypes
+  };
+}
+
 function computeBetPlanStats(daily, window){
   if (!daily || typeof daily !== 'object') return null;
   const agg = aggregateLastNDays(daily, betPlanWindowDays(window));
@@ -4766,9 +5005,50 @@ function computeBetPlanStats(daily, window){
       win: summarizePick(agg.pick?.win),
       odds: summarizePick(agg.pick?.odds_runner),
       ew: summarizePick(agg.pick?.ew),
-      long: summarizePick(agg.long)
+      long: summarizePick(agg.long),
+      pedigree: {
+        ...summarizePick(agg.pedigree),
+        avgScore: agg.pedigree?.score_count ? (agg.pedigree.score_sum / agg.pedigree.score_count) : null,
+        avgConfidence: agg.pedigree?.confidence_count ? (agg.pedigree.confidence_sum / agg.pedigree.confidence_count) : null,
+        avgEdge: agg.pedigree?.edge_count ? (agg.pedigree.edge_sum / agg.pedigree.edge_count) : null,
+        archetypes: agg.pedigree?.archetypes || {}
+      }
     }
   };
+}
+
+let signalThresholdAuditCache = null;
+
+function renderSignalThresholdAuditPanel(audit){
+  const wrap = $('betPlanPerformanceBreakdown');
+  if (!wrap || !audit) return '';
+  const renderBucketList = (obj, mode) => Object.entries(obj || {}).slice(0, 6).map(([k,v]) => `<div>${escapeHtml(k)} — Bets ${v?.bets || 0} · Win ${fmtPct(v?.winRate)}${mode ? ` · ROI ${fmtRoi(v?.roi)}` : ''}</div>`).join('') || '<div>No data</div>';
+  const goodBuckets = Object.fromEntries(Object.entries(audit.byEdgeBand || {}).filter(([,v]) => Number(v?.roi) > 0).sort((a,b)=>Number(b[1].roi)-Number(a[1].roi)).slice(0,5));
+  const badBuckets = Object.fromEntries(Object.entries(audit.byEdgeBand || {}).filter(([,v]) => Number(v?.roi) < 0).sort((a,b)=>Number(a[1].roi)-Number(b[1].roi)).slice(0,5));
+  const blockedBuckets = {
+    '0-2 edge': audit.byEdgeBand?.['0-2'] || null,
+    '2-4 edge @ 5-8 odds': audit.topIntersections?.['20-25 | 2-4 | 5-8'] || audit.topIntersections?.['15-20 | 2-4 | 5-8'] || null,
+    '20-25 model band': audit.byProbabilityBand?.['20-25'] || null
+  };
+  const policy = [
+    'Main bet: edge ≥ 6 pts, confidence ≥ 65',
+    'Secondary bet: edge ≥ 4 pts, confidence ≥ 58',
+    'Block 0–2 pt edge',
+    'Block 2–4 pt edge in 5–8 odds range',
+    'Block toxic 20–25% model band unless exceptional support',
+    'Block COLD form and track-dislike runners'
+  ];
+  return `<div class='bet-plan-breakdown-card' style='grid-column:1 / -1'>
+    <div class='label'>Signal Threshold Audit v2</div>
+    <div style='margin:6px 0 10px'>Current active threshold policy</div>
+    <ul>${policy.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>
+    <div style='margin-top:10px'><b>Good buckets</b></div>
+    ${renderBucketList(goodBuckets, true)}
+    <div style='margin-top:10px'><b>Bad buckets</b></div>
+    ${renderBucketList(badBuckets, true)}
+    <div style='margin-top:10px'><b>Blocked buckets</b></div>
+    ${renderBucketList(blockedBuckets, true)}
+  </div>`;
 }
 
 function renderBetPlanPerformance(daily){
@@ -4817,6 +5097,7 @@ function renderBetPlanPerformance(daily){
     </div>`;
   };
   const ewBets = stats.strategyBreakdown?.ew?.bets ?? 0;
+  const pedigreeStats = aggregatePedigreePerformance(cache, betPlanPerfWindow);
   const cards = `
     <div class='perf-kpis'>
       <div class='perf-card'><div class='label'>Window</div><div class='value'>${betPlanLabel(betPlanPerfWindow)}</div></div>
@@ -4829,17 +5110,34 @@ function renderBetPlanPerformance(daily){
       <div class='perf-card' data-roi-only><div class='label'>Exotic ROI</div><div class='value'>${fmtRoi(stats.exoticRoi)}</div></div>
       <div class='perf-card'><div class='label'>Settled Races</div><div class='value'>${stats.racesRun ?? '—'}</div></div>
       <div class='perf-card'><div class='label'>Settled Won</div><div class='value'>${stats.racesWon ?? '—'}</div></div>
+    </div>
+    <div class='perf-kpis perf-kpis-secondary' style='margin-top:10px'>
+      <div class='perf-card'><div class='label'>Pedigree Adv Bets</div><div class='value'>${pedigreeStats?.bets ?? 0}</div></div>
+      <div class='perf-card'><div class='label'>Pedigree Win Rate</div><div class='value win-metric'>${fmtPct(pedigreeStats?.winRate)}</div></div>
+      <div class='perf-card' data-roi-only><div class='label'>Pedigree ROI</div><div class='value'>${fmtRoi(pedigreeStats?.roiRec)}</div></div>
+      <div class='perf-card'><div class='label'>Avg Ped Score</div><div class='value'>${Number.isFinite(pedigreeStats?.avgScore) ? pedigreeStats.avgScore.toFixed(1) : '—'}</div></div>
+      <div class='perf-card'><div class='label'>Avg Ped Conf</div><div class='value'>${Number.isFinite(pedigreeStats?.avgConfidence) ? pedigreeStats.avgConfidence.toFixed(1)+'%' : '—'}</div></div>
+      <div class='perf-card'><div class='label'>Avg Ped Edge</div><div class='value'>${Number.isFinite(pedigreeStats?.avgEdge) ? (pedigreeStats.avgEdge >= 0 ? '+' : '') + pedigreeStats.avgEdge.toFixed(1) : '—'}</div></div>
     </div>`;
   metricsWrap.innerHTML = cards;
 
   if (breakdownWrap) {
     const detail = stats.strategyBreakdown || {};
-    breakdownWrap.innerHTML = [
+    const pedigreeArchetypeLines = pedigreeStats?.archetypes ? Object.entries(pedigreeStats.archetypes)
+      .sort((a,b) => (b[1]?.bets || 0) - (a[1]?.bets || 0))
+      .slice(0, 6)
+      .map(([arch, vals]) => `<div>${escapeHtml(arch)} — Bets ${vals?.bets || 0} · Win ${fmtPct((vals?.bets || 0) ? ((vals?.wins || 0) / (vals?.bets || 0)) : null)} · ${showRoi ? `ROI ${fmtRoi((vals?.bets || 0) ? ((vals?.profit || 0) / (vals?.bets || 0)) : null)}` : ''}</div>`)
+      .join('') : '';
+    const cardsHtml = [
       ['Win', detail.win],
       ['Odds Runner', detail.odds],
       ['EW', detail.ew],
-      ['Long', detail.long]
+      ['Long', detail.long],
+      ['Pedigree Advantage', detail.pedigree]
     ].map(([label, data]) => buildBreakdownCard(label, data)).join('');
+    const pedigreeExtra = pedigreeArchetypeLines ? `<div class='bet-plan-breakdown-card' style='grid-column:1 / -1'><div class='label'>Pedigree by Archetype</div>${pedigreeArchetypeLines}</div>` : '';
+    const thresholdAuditPanel = renderSignalThresholdAuditPanel(signalThresholdAuditCache);
+    breakdownWrap.innerHTML = `${cardsHtml}${pedigreeExtra}${thresholdAuditPanel}`;
   }
 
   const windows = ['day','week','month'];
@@ -4896,10 +5194,12 @@ function updateBetmanReturn(stats){
     const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
     const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
     const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
-    const baseText = Number.isFinite(baseReturn) ? `Base: ${fmtUnits(baseReturn)}${baseRoi != null ? ` (${fmtPct(baseRoi)})` : ''}` : 'Base: —';
-    const exoticText = Number.isFinite(exoticReturn) ? `Exotics: ${fmtUnits(exoticReturn)}${exoticRoi != null ? ` (${fmtPct(exoticRoi)})` : ''}` : 'Exotics: —';
-    const roiText = roi != null ? `ROI: ${fmtPct(roi)}` : 'ROI: —';
-    returnSubEl.textContent = `${baseText} · ${exoticText} · ${roiText}`;
+    const winBets = stats?.winRate != null ? `Win Bets: ${fmtPct(stats.winRate)}` : 'Win Bets: —';
+    const winBreakdown = Number.isFinite(baseReturn) ? `Win P/L ${fmtUnits(baseReturn)}${baseRoi != null ? ` (${fmtPct(baseRoi)})` : ''}` : 'Win P/L: —';
+    const exoticBreakdown = Number.isFinite(exoticReturn) ? `Exotics P/L ${fmtUnits(exoticReturn)}${exoticRoi != null ? ` (${fmtPct(exoticRoi)})` : ''}` : 'Exotics P/L: —';
+    const exoticHit = stats?.exoticHit != null ? `Exotic Hit: ${fmtPct(stats.exoticHit)}` : 'Exotic Hit: —';
+    const roiText = roi != null ? `Total ROI: ${fmtPct(roi)}` : 'Total ROI: —';
+    returnSubEl.textContent = `${winBets} · ${winBreakdown} · ${exoticHit} · ${exoticBreakdown} · ${roiText}`;
   }
   if (returnBarEl) {
     const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
@@ -5243,6 +5543,26 @@ function updatePerformanceRefreshState(){
   btn.textContent = 'Refresh';
 }
 
+async function loadRuntimeHealth(){
+  const el = $('runtimeHealthPanel');
+  if (!el || !isAdminUser) return;
+  try {
+    const out = await fetchLocal('./api/runtime-health', { cache: 'no-store' }).then(r=>r.json());
+    if (!out?.ok) throw new Error(out?.error || 'runtime_health_failed');
+    el.innerHTML = `
+      <div class='perf-card'><div class='label'>PID</div><div class='value'>${out.pid ?? '—'}</div></div>
+      <div class='perf-card'><div class='label'>Uptime</div><div class='value'>${out.uptimeSec ?? '—'}s</div></div>
+      <div class='perf-card'><div class='label'>RSS</div><div class='value'>${out.rssMb ?? '—'} MB</div></div>
+      <div class='perf-card'><div class='label'>Heap Used</div><div class='value'>${out.heapUsedMb ?? '—'} MB</div></div>
+      <div class='perf-card'><div class='label'>OpenAI</div><div class='value'>${out.openAiConfigured ? 'Configured' : 'Missing'}</div></div>
+      <div class='perf-card'><div class='label'>Bakeoff</div><div class='value'>${out.bakeoffRunning ? 'Running' : (out.bakeoffExitCode === 0 ? 'Last OK' : (out.bakeoffExitCode == null ? 'Idle' : 'Last Failed'))}</div></div>
+      <div class='perf-card'><div class='label'>AI Model Cache</div><div class='value'>${out.aiModelsCacheAgeSec == null ? 'cold' : `${out.aiModelsCacheAgeSec}s`}</div></div>
+    `;
+  } catch (err) {
+    el.innerHTML = `<div class='sub'>Runtime health unavailable: ${escapeHtml(err?.message || 'unknown')}</div>`;
+  }
+}
+
 async function triggerPerformancePoll(manual = false){
   if (!isAdminUser) return;
   try {
@@ -5255,6 +5575,7 @@ async function triggerPerformancePoll(manual = false){
     }
     updatePerformanceRefreshState();
   } catch {}
+  await loadRuntimeHealth();
   if (manual) await loadPerformance();
 }
 
@@ -5372,6 +5693,12 @@ async function loadPerformance(){
   const daily = await fetchLocal('./data/success_daily.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const weekly = await fetchLocal('./data/success_weekly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const monthly = await fetchLocal('./data/success_monthly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
+  signalThresholdAuditCache = await fetchLocal('./data/signal_threshold_audit_v2.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
+
+  const summaryEl = $('perfSummary');
+  if (!daily || !weekly || !monthly) {
+    if (summaryEl) summaryEl.innerHTML = '<div class="sub">Performance data is incomplete or still generating. Refresh again shortly.</div>';
+  }
 
   renderBetPlanPerformance(daily);
 
@@ -5438,6 +5765,9 @@ async function loadPerformance(){
   const returnExoticValueEl = $('betmanExoticReturnValue');
   const returnExoticEl = $('betmanExoticReturnSub');
   const returnBarEl = $('betmanReturnBar');
+  const returnRoiEl = $('betmanReturnRoi');
+  const returnUnitsEl = $('betmanReturnUnits');
+  const returnStakeEl = $('betmanReturnStake');
   const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
   const baseRoi = (Number.isFinite(baseReturn) && Number.isFinite(baseInvested) && baseInvested) ? (baseReturn / baseInvested) : null;
   const exoticRoi = (Number.isFinite(exoticReturn) && Number.isFinite(exoticInvested) && exoticInvested) ? (exoticReturn / exoticInvested) : null;
@@ -5464,6 +5794,18 @@ async function loadPerformance(){
   }
   if (returnExoticEl) {
     returnExoticEl.textContent = `ROI ${exoticRoi != null ? fmtPct(exoticRoi) : '—'} · Stake ${fmtUnits(exoticInvested)}`;
+  }
+  if (returnRoiEl) {
+    returnRoiEl.textContent = roi != null ? fmtPct(roi) : '—';
+    returnRoiEl.classList.toggle('neg', roi != null && roi < 0);
+  }
+  if (returnUnitsEl) {
+    const isNeg = Number.isFinite(netReturn) && netReturn < 0;
+    returnUnitsEl.textContent = Number.isFinite(netReturn) ? fmtUnits(netReturn) : '—';
+    returnUnitsEl.classList.toggle('neg', !!isNeg);
+  }
+  if (returnStakeEl) {
+    returnStakeEl.textContent = Number.isFinite(invested) ? fmtUnits(invested) : '—';
   }
   if (returnBarEl) {
     const roi = (Number.isFinite(netReturn) && Number.isFinite(invested) && invested) ? (netReturn / invested) : null;
@@ -5658,6 +6000,13 @@ $('strategyPrintDownloadBtn')?.addEventListener('click', async ()=> {
 document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') { closeSummaryPopup(); toggleStrategyPrintModal(false); } });
 
 document.addEventListener('click', (e) => {
+  const bloodlineBtn = e.target?.closest?.('.bloodline-profile-btn');
+  if (bloodlineBtn) {
+    const bloodline = bloodlineBtn.getAttribute('data-bloodline') || '';
+    const relation = bloodlineBtn.getAttribute('data-relation') || 'Bloodline';
+    openBloodlineProfile(bloodline, relation);
+    return;
+  }
   const btn = e.target?.closest?.('.jockey-profile-btn');
   if (!btn) return;
   const jockey = btn.getAttribute('data-jockey') || '';
@@ -6302,52 +6651,357 @@ function runnerThreeStartAvg(runner){
 const formSignalCache = new WeakMap();
 
 function runnerFormSignal(runner){
-  if (!runner) return { status: 'UNKNOWN', legacy: 'UNKNOWN', summary: 'Form data unavailable', sample: '', recentLength: 0 };
+  if (!runner) return { status: 'UNKNOWN', legacy: 'UNKNOWN', summary: 'Form data unavailable', sample: '', recentLength: 0, formScore: 0, lastStart: null };
   if (formSignalCache.has(runner)) return formSignalCache.get(runner);
   const placements = runnerFormPlacings(runner);
   if (!placements.length) {
-    const empty = { status: 'UNKNOWN', legacy: 'UNKNOWN', summary: 'Form data unavailable', sample: '', recentLength: 0 };
+    const empty = { status: 'UNKNOWN', legacy: 'UNKNOWN', summary: 'Form data unavailable', sample: '', recentLength: 0, formScore: 0, lastStart: null };
     formSignalCache.set(runner, empty);
     return empty;
   }
   const recent = placements.slice(0, 6);
+  const recent4 = placements.slice(0, 4);
+  const recent3 = placements.slice(0, 3);
   const wins = recent.filter(v => v === 1).length;
   const podiums = recent.filter(v => v >= 1 && v <= 3).length;
+  const top4 = recent.filter(v => v >= 1 && v <= 4).length;
   const top5 = recent.filter(v => v >= 1 && v <= 5).length;
   const avgFinish = recent.reduce((sum, val) => sum + val, 0) / recent.length;
-  const winsLast4 = placements.slice(0, 4).filter(v => v === 1).length;
+  const winsLast4 = recent4.filter(v => v === 1).length;
+  const recent3Podiums = recent3.filter(v => v <= 3).length;
+  const recent5Top4 = placements.slice(0, 5).filter(v => v <= 4).length;
+  const lastStart = Number.isFinite(recent[0]) ? recent[0] : null;
   let streakTop3 = 0;
   for (let i = 0; i < recent.length; i++) {
     if (recent[i] <= 3) streakTop3++;
     else break;
   }
+  const finishPoints = (finish, idx) => {
+    if (!Number.isFinite(finish) || finish <= 0) return 0;
+    const base = finish === 1 ? 12
+      : finish === 2 ? 9
+      : finish === 3 ? 7
+      : finish === 4 ? 4
+      : finish === 5 ? 2
+      : finish <= 7 ? 0
+      : finish <= 10 ? -4
+      : -7;
+    const weights = [0.45, 0.25, 0.18, 0.12];
+    return base * (weights[idx] || 0.08);
+  };
+  let formScore = placements.slice(0, 4).reduce((sum, finish, idx) => sum + finishPoints(finish, idx), 0);
+  if (lastStart !== null && lastStart <= 3) formScore += 4;
+  if (lastStart === 1) formScore += 3;
+  if (lastStart !== null && lastStart >= 8) formScore -= 6;
+  if (placements[0] >= 6 && placements[1] >= 6) formScore -= 4;
+  if (placements[2] && placements[1] && placements[0] < placements[1] && placements[1] < placements[2]) formScore += 2;
+
   let status = 'COLD';
-  if (winsLast4 >= 2) {
+  const lastStartHotEligible = lastStart !== null && lastStart <= 3;
+  const twoWinsIntoToday = recent.length >= 2 && recent[0] === 1 && recent[1] === 1;
+  const twoStartSample = recent.length === 2;
+
+  if (twoWinsIntoToday || (twoStartSample && wins >= 1)) {
     status = 'HOT';
-  } else if ((podiums >= 2 && podiums <= 3) || (winsLast4 === 1 && podiums >= 3)) {
+  } else if (lastStartHotEligible && (winsLast4 >= 2 || recent3Podiums >= 2 || recent5Top4 >= 3) && formScore >= 12) {
+    status = 'HOT';
+  } else if ((lastStart !== null && lastStart <= 5 && (recent3Podiums >= 1 || top4 >= 2)) || formScore >= 5) {
     status = 'SOLID';
-  } else if (podiums >= 1 || top5 >= 2 || avgFinish <= 6 || streakTop3 >= 2) {
+  } else if (podiums >= 1 || top5 >= 2 || avgFinish <= 6 || streakTop3 >= 2 || formScore >= -2) {
     status = 'MIXED';
   }
-  const recent4 = placements.slice(0, 4);
+  if (lastStart !== null && lastStart > 3 && status === 'HOT' && !twoWinsIntoToday && !twoStartSample) status = 'SOLID';
   const recent4Podiums = recent4.filter(v => v <= 3).length;
-  if (recent4Podiums === 0 && status !== 'COLD') {
-    status = 'MIXED';
-  }
+  if (recent4Podiums === 0 && status === 'SOLID') status = 'MIXED';
   if (recent.length < 3) {
-    if (status === 'HOT') status = 'SOLID';
-    // Small-sample protection: do not label a lone win as MIXED.
     if (recent.length === 1 && wins === 1) status = 'SOLID';
-    if (recent.length === 2 && wins >= 1 && podiums >= 1) status = 'SOLID';
+    if (recent.length === 2 && wins === 0 && podiums >= 1 && status === 'HOT') status = 'SOLID';
   }
+  if (lastStart !== null && lastStart >= 8 && formScore < 5 && status !== 'COLD') status = 'MIXED';
+  if (lastStart !== null && lastStart >= 9 && formScore < 0) status = 'COLD';
   const legacy = (status === 'HOT' || status === 'SOLID') ? 'GOOD'
     : (status === 'MIXED' ? 'MIXED' : (status === 'COLD' ? 'POOR' : 'UNKNOWN'));
   const sampleNote = recent.length < 3 ? ' · limited sample' : '';
-  const summary = `${wins} win${wins === 1 ? '' : 's'}, ${podiums} podium${podiums === 1 ? '' : 's'} last ${recent.length} · avg finish ${avgFinish.toFixed(1)}${sampleNote}`;
+  const hotGateNote = lastStart !== null && lastStart > 3 && !twoWinsIntoToday && !twoStartSample ? ' · last start missed HOT gate' : '';
+  const summary = `${wins} win${wins === 1 ? '' : 's'}, ${podiums} podium${podiums === 1 ? '' : 's'} last ${recent.length} · avg finish ${avgFinish.toFixed(1)} · form ${formScore.toFixed(1)}${sampleNote}${hotGateNote}`;
   const sample = recent.map(v => (v >= 10 ? '0' : v)).join('');
-  const details = { status, legacy, summary, wins, podiums, top5, avgFinish, streakTop3, sample, recentLength: recent.length, raw: placements };
+  const details = { status, legacy, summary, wins, podiums, top5, avgFinish, streakTop3, sample, recentLength: recent.length, raw: placements, formScore, lastStart };
   formSignalCache.set(runner, details);
   return details;
+}
+
+function normalizeTrackBucket(track){
+  const raw = String(track || '').toLowerCase().trim();
+  if (!raw) return 'UNKNOWN';
+  if (raw.includes('heavy')) return 'HEAVY';
+  if (raw.includes('soft') || raw.includes('slow')) return 'SOFT';
+  if (raw.includes('firm')) return 'FIRM';
+  if (raw.includes('good')) return 'GOOD';
+  return 'UNKNOWN';
+}
+
+function normalizeBloodlineName(value){
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\b(aus|nz|ire|gb|usa|fr|jpn|ger|ity)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function recordWinPlaceScore(stats){
+  if (!stats) return { score: 0, starts: 0, wins: 0, places: 0 };
+  const starts = Number(stats.number_of_starts ?? stats.starts ?? 0);
+  const wins = Number(stats.wins ?? 0);
+  const places = Number(stats.places ?? stats.placings ?? 0);
+  if (!Number.isFinite(starts) || starts <= 0) return { score: 0, starts: 0, wins: 0, places: 0 };
+  const winRate = wins / starts;
+  const placeRate = (wins + places) / starts;
+  const avgFinish = Number(stats.average_finish ?? stats.avg_finish ?? NaN);
+  let score = (winRate * 16) + (placeRate * 8);
+  if (Number.isFinite(avgFinish)) score += Math.max(-4, Math.min(4, 6 - avgFinish));
+  const shrink = starts / (starts + 3);
+  return { score: score * shrink, starts, wins, places };
+}
+
+function runnerTrackPreferenceSignal(runner, race){
+  const trackBucket = normalizeTrackBucket(race?.track_condition || race?.loveracing?.track_condition || '');
+  const stats = runner?.stats || {};
+  let statKey = 'overall';
+  if (trackBucket === 'HEAVY') statKey = 'heavy';
+  else if (trackBucket === 'SOFT') statKey = 'soft';
+  else if (trackBucket === 'GOOD' || trackBucket === 'FIRM') statKey = 'good';
+  const direct = recordWinPlaceScore(stats[statKey]);
+  const fallback = direct.starts ? { score: 0, starts: 0 } : recordWinPlaceScore(stats.overall);
+  const baseScore = direct.starts ? direct.score : (fallback.score * 0.35);
+  const reliability = Math.max(0.2, Math.min(1, ((direct.starts || 0) + ((fallback.starts || 0) * 0.35)) / 6));
+  const formSignal = runnerFormSignal(runner);
+  let score = baseScore;
+  if (trackBucket === 'HEAVY' && formSignal.lastStart !== null && formSignal.lastStart >= 8) score -= 1.5;
+  if (trackBucket !== 'UNKNOWN' && formSignal.status === 'HOT') score += 1.5;
+  if (trackBucket !== 'UNKNOWN' && formSignal.status === 'COLD') score -= 1.5;
+  let label = 'NEUTRAL';
+  if (score >= 8) label = 'LOVES THIS GROUND';
+  else if (score >= 3) label = 'SUITED';
+  else if (score <= -8) label = 'DISLIKES THIS GROUND';
+  else if (score <= -3) label = 'QUERY';
+  return { bucket: trackBucket, statKey, score, reliability, label, starts: direct.starts || fallback.starts || 0 };
+}
+
+function clampProbability(p){
+  if (!Number.isFinite(p)) return NaN;
+  return Math.max(0.02, Math.min(0.42, p));
+}
+
+const PEDIGREE_BLOODLINE_LIBRARY = {
+  snitzel: { juvenile: 16, sprint: 14, wet: 5, slipper: 22, elite: 8 },
+  'i am invincible': { juvenile: 14, sprint: 16, wet: 2, slipper: 8, elite: 8 },
+  'written tycoon': { juvenile: 12, sprint: 12, wet: 2, slipper: 9, elite: 6 },
+  'exceed and excel': { juvenile: 13, sprint: 11, wet: 2, slipper: 8, elite: 6 },
+  zoustar: { juvenile: 12, sprint: 12, wet: 3, slipper: 8, elite: 7 },
+  'fastnet rock': { juvenile: 9, sprint: 11, wet: 4, slipper: 7, elite: 8 },
+  savvybeel: { juvenile: 5, sprint: 3, wet: 8, staying: 10, elite: 9 },
+  savabeel: { juvenile: 5, sprint: 3, wet: 8, staying: 10, elite: 9 },
+  'per incanto': { juvenile: 6, sprint: 9, wet: 6, elite: 5 },
+  proisir: { juvenile: 5, sprint: 5, wet: 9, staying: 8, elite: 6 },
+  tivaci: { juvenile: 5, sprint: 6, wet: 5, elite: 5 },
+  ardrossan: { juvenile: 6, sprint: 8, wet: 4, elite: 5 },
+  preferment: { juvenile: 2, sprint: 1, wet: 5, staying: 12, elite: 5 },
+  belardo: { juvenile: 8, sprint: 8, wet: 4, elite: 5 },
+  toronado: { juvenile: 6, sprint: 5, wet: 5, staying: 7, elite: 5 },
+  'so you think': { juvenile: 3, sprint: 2, wet: 5, staying: 11, elite: 8 },
+  'ocean park': { juvenile: 2, sprint: 1, wet: 8, staying: 12, elite: 6 }
+};
+
+const BLOODLINE_COMMENTARY_LIBRARY = {
+  snitzel: {
+    summary: 'Premium Australian speed/juvenile sire line. Strong precocity and high-pressure 2YO sprint profile.',
+    strengths: ['2YO sprint precocity', 'Golden Slipper-style pressure races', 'sharp early speed'],
+    cautions: ['not an automatic wet-track edge', 'must still fit map and setup'],
+    style: 'Fast, professional, early-season quality.'
+  },
+  'i am invincible': {
+    summary: 'Elite sprint sire line with strong commercial speed and broad open-sprint relevance.',
+    strengths: ['open sprint quality', 'speed influence', 'commercial class'],
+    cautions: ['not always the top Slipper-specific profile', 'wet profile can vary by cross'],
+    style: 'Explosive speed, broad sprinting class.'
+  },
+  'written tycoon': {
+    summary: 'Strong Australian speed/juvenile influence with genuine precocity and commercial sharpness.',
+    strengths: ['juvenile sprinting', 'early speed', 'AUS speed races'],
+    cautions: ['needs setup support at elite end'],
+    style: 'Sharp, quick, precocious.'
+  },
+  'fastnet rock': {
+    summary: 'Powerful Danehill-line source of class and versatility. Strong broodmare-sire relevance too.',
+    strengths: ['class', 'versatility', 'important dam-sire cross influence'],
+    cautions: ['less pure-precocity than specialist 2YO sprint sires'],
+    style: 'Class, depth, and cross value.'
+  },
+  savabeel: {
+    summary: 'Core NZ staying/wet-ground/class influence. Much stronger in NZ middle-distance and rain-affected setups than in raw juvenile speed tests.',
+    strengths: ['wet tracks', 'middle distance', 'staying quality', 'NZ class profile'],
+    cautions: ['not a natural pure-precocity sprint line'],
+    style: 'Toughness, depth, and wet-ground resilience.'
+  },
+  proisir: {
+    summary: 'NZ-oriented line with strong wet-track and middle-distance upside.',
+    strengths: ['wet ground', 'middle-distance progression'],
+    cautions: ['not a top-end Australian juvenile sprint default'],
+    style: 'Progressive, rain-affected, durable.'
+  },
+  'per incanto': {
+    summary: 'Useful NZ/AUS sprinting line with respectable wet-ground support.',
+    strengths: ['open sprint races', 'NZ speed setups'],
+    cautions: ['less dominant in elite juvenile races'],
+    style: 'Sprinting utility with enough versatility.'
+  }
+};
+
+function pedigreeBloodlineProfile(name){
+  const key = normalizeBloodlineName(name || '');
+  if (!key) return null;
+  return PEDIGREE_BLOODLINE_LIBRARY[key] || null;
+}
+
+function bloodlineCommentaryProfile(name){
+  const key = normalizeBloodlineName(name || '');
+  if (!key) return null;
+  return BLOODLINE_COMMENTARY_LIBRARY[key] || null;
+}
+
+function renderBloodlineButton(name, relation='Bloodline'){
+  const label = String(name || '').trim();
+  if (!label) return 'n/a';
+  return `<button class='bloodline-profile-btn' data-bloodline='${escapeAttr(label)}' data-relation='${escapeAttr(relation)}'>${escapeHtml(label)}</button>`;
+}
+
+function openBloodlineProfile(bloodlineName, relation='Bloodline'){
+  const label = String(bloodlineName || '').trim();
+  if (!label) {
+    openSummaryPopup('Bloodline Library', '<div>No bloodline selected.</div>');
+    return;
+  }
+  const traits = pedigreeBloodlineProfile(label) || {};
+  const notes = bloodlineCommentaryProfile(label) || {};
+  const traitRows = Object.entries(traits || {}).map(([k,v]) => `<div><b>${escapeHtml(k)}:</b> ${escapeHtml(String(v))}</div>`).join('');
+  const strengths = Array.isArray(notes.strengths) && notes.strengths.length ? `<li>${notes.strengths.map(x => escapeHtml(String(x))).join('</li><li>')}</li>` : '<li>No strength notes yet.</li>';
+  const cautions = Array.isArray(notes.cautions) && notes.cautions.length ? `<li>${notes.cautions.map(x => escapeHtml(String(x))).join('</li><li>')}</li>` : '<li>No caution notes yet.</li>';
+  const html = `<div class='bloodline-profile-modal'>
+    <div class='sub' style='margin-bottom:10px'>${escapeHtml(relation)} lookup from the BETMAN bloodline library.</div>
+    <div class='runner-grid'>
+      <div><b>Bloodline:</b> ${escapeHtml(label)}</div>
+      <div><b>Style:</b> ${escapeHtml(notes.style || 'No style note yet')}</div>
+      <div><b>Summary:</b> ${escapeHtml(notes.summary || 'No commentary yet')}</div>
+    </div>
+    <div style='margin-top:12px'><b>Trait profile</b></div>
+    <div class='runner-grid' style='margin-top:8px'>${traitRows || '<div>No trait profile in library yet.</div>'}</div>
+    <div style='margin-top:12px'><b>Strengths</b></div>
+    <ul>${strengths}</ul>
+    <div style='margin-top:12px'><b>Cautions</b></div>
+    <ul>${cautions}</ul>
+  </div>`;
+  openSummaryPopup(`${relation} — ${label}`, html);
+}
+
+function inferRacePedigreeDemand(race){
+  const distance = Number(race?.distance || 0);
+  const desc = String(race?.description || '').toLowerCase();
+  const track = normalizeTrackBucket(race?.track_condition || race?.loveracing?.track_condition || '');
+  const juvenile = /slipper|2yo|two-year|juvenile/.test(desc) ? 1.25 : (distance > 0 && distance <= 1200 ? 1.0 : 0.45);
+  const sprint = distance > 0 && distance <= 1400 ? 1.0 : 0.35;
+  const staying = distance >= 1800 ? 1.0 : 0.1;
+  const slipper = /golden slipper/.test(desc) ? 1.35 : (/slipper/.test(desc) ? 1.15 : 0);
+  const wet = track === 'HEAVY' ? 1.0 : (track === 'SOFT' ? 0.65 : 0.15);
+  const elite = /group 1|g1|group 2|g2|listed|classic|slipper/.test(desc) ? 0.8 : 0.35;
+  return { juvenile, sprint, staying, slipper, wet, elite };
+}
+
+function pedigreeComponentScore(name, demand){
+  const profile = pedigreeBloodlineProfile(name);
+  if (!profile) return { score: 0, confidence: 0, known: false };
+  const score =
+    (profile.juvenile || 0) * (demand.juvenile || 0) +
+    (profile.sprint || 0) * (demand.sprint || 0) +
+    (profile.staying || 0) * (demand.staying || 0) +
+    (profile.slipper || 0) * (demand.slipper || 0) +
+    (profile.wet || 0) * (demand.wet || 0) +
+    (profile.elite || 0) * (demand.elite || 0);
+  const confidence = 0.55 + (Object.keys(profile).length * 0.05);
+  return { score, confidence: Math.min(0.95, confidence), known: true };
+}
+
+function runnerPedigreeSignal(runner, race){
+  const demand = inferRacePedigreeDemand(race);
+  const sire = pedigreeComponentScore(runner?.sire, demand);
+  const damSire = pedigreeComponentScore(runner?.dam_sire || runner?.damSire, demand);
+  const dam = pedigreeComponentScore(runner?.dam, demand);
+  const crossBoost = sire.known && damSire.known ? Math.min(6, Math.max(0, (sire.score + damSire.score) * 0.08)) : 0;
+  const total = (sire.score * 0.45) + (dam.score * 0.18) + (damSire.score * 0.27) + crossBoost;
+  const weightedConfidence = (sire.confidence * 0.45) + (dam.confidence * 0.18) + (damSire.confidence * 0.27) + ((crossBoost ? 0.1 : 0));
+  const primaryConfidence = Math.max(
+    sire.known ? sire.confidence * 0.82 : 0,
+    damSire.known ? damSire.confidence * 0.72 : 0,
+    crossBoost ? 0.68 : 0
+  );
+  const confidence = Math.max(0.2, Math.min(0.95, Math.max(weightedConfidence, primaryConfidence)));
+  return {
+    score: total,
+    confidence,
+    sireKnown: sire.known,
+    damKnown: dam.known,
+    damSireKnown: damSire.known,
+    summary: `Pedigree ${total.toFixed(1)} · sire ${runner?.sire || 'n/a'} · dam ${runner?.dam || 'n/a'} · dam sire ${runner?.dam_sire || runner?.damSire || 'n/a'}`
+  };
+}
+
+function computeRacePedigreeAdvantageMap(race, runners){
+  const entries = (runners || []).map(r => ({
+    runner: r,
+    key: normalizeRunnerName(r?.name || r?.runner_name || ''),
+    signal: runnerPedigreeSignal(r, race)
+  })).filter(x => x.key);
+  if (!entries.length) return new Map();
+  const scores = entries.map(x => x.signal.score).filter(Number.isFinite);
+  const avg = scores.length ? scores.reduce((a,b)=>a+b,0) / scores.length : 0;
+  const top = scores.length ? Math.max(...scores) : 0;
+  const qualified = entries.filter(x => {
+    const eliteCompactField = top >= 40 && (top - x.signal.score) <= 1.5;
+    const clearFieldEdge = (x.signal.score - avg) >= 6 && (top - x.signal.score) <= 3.0;
+    return x.signal.score >= 24 && (x.signal.confidence * 100) >= 55 && (clearFieldEdge || eliteCompactField);
+  });
+  return new Map(entries.map(x => [x.key, {
+    ...x.signal,
+    relativeEdge: x.signal.score - avg,
+    qualifies: qualified.some(q => q.key === x.key),
+    topScore: top,
+    averageScore: avg
+  }]));
+}
+
+function runnerConfidenceBlend(runner, race, rawProb){
+  const marketOdds = runnerOddsValue(runner);
+  const marketProb = Number.isFinite(marketOdds) && marketOdds > 0 ? (1 / marketOdds) : rawProb;
+  const formSignal = runnerFormSignal(runner);
+  const trackSignal = runnerTrackPreferenceSignal(runner, race);
+  const hasSectionals = Array.isArray(runner?.last_starts) && runner.last_starts.some(start => start?.last_600 || start?.last600 || start?.lastSixHundred);
+  const hasMap = !!runner?.speedmap;
+  const hasStats = !!(runner?.stats?.overall || runner?.stats?.soft || runner?.stats?.heavy || runner?.stats?.good);
+  let confidence = 0.35;
+  if (hasStats) confidence += 0.15;
+  if (hasSectionals) confidence += 0.10;
+  if (hasMap) confidence += 0.10;
+  if (formSignal.recentLength >= 4) confidence += 0.10;
+  confidence += Math.min(0.15, trackSignal.reliability * 0.15);
+  confidence = Math.max(0.25, Math.min(0.8, confidence));
+  const blended = (rawProb * confidence) + (marketProb * (1 - confidence));
+  const trackAdj = Math.max(-0.025, Math.min(0.025, (trackSignal.score / 100) * (0.5 + trackSignal.reliability * 0.5)));
+  return {
+    confidence,
+    marketProb,
+    finalProb: clampProbability(blended + trackAdj),
+    trackSignal
+  };
 }
 
 function runnerFormStatus(runner){
@@ -6904,6 +7558,7 @@ function getAiAnalyseCooldownRemaining(key){
   const remaining = until - Date.now();
   if (remaining <= 0) {
     aiAnalysisCooldown.delete(key);
+    persistAiCooldown();
     return 0;
   }
   return remaining;
@@ -6939,6 +7594,7 @@ function updateAnalysisAiModelNote(){
 function startAiAnalyseCooldown(key){
   if (!key) return;
   aiAnalysisCooldown.set(key, Date.now() + AI_ANALYSE_COOLDOWN_MS);
+  persistAiCooldown();
   refreshAiAnalyseButtonState();
   ensureAiCooldownTimer();
 }
@@ -7070,7 +7726,6 @@ function bindAiAnalyseButton(){
     setAiAnswerPanel(`<div class='ai-answer-block pending'>Running AI analysis…</div>`);
     const cacheKey = buildAiAnalysisCacheKey();
     const cooldownKey = buildAiCooldownKey(selectedRace);
-    if (cooldownKey) startAiAnalyseCooldown(cooldownKey);
     await ensureInstructionsLoaded().catch(()=>{});
     await loadRunnerMetrics().catch(()=>{});
     const autoTuneSelection = resolveAutoTuneModelSelection();
@@ -7099,12 +7754,18 @@ function bindAiAnalyseButton(){
       if (raceKey) aiRaceRuns.add(raceKey);
       const answerHtml = formatAiAnswer(out.answer);
       const oddsTableHtml = buildOddsSummaryTable(selectedRace);
-      const modelName = out.modelUsed || autoTuneSelection.model;
+      const requestedModel = out.modelRequested || autoTuneSelection.model || selectedAiModel.model || '—';
+      const usedModel = out.modelUsed || requestedModel || '—';
+      const modelLabel = (requestedModel && usedModel && requestedModel !== usedModel)
+        ? `${usedModel} (req ${requestedModel})`
+        : usedModel;
       const generatedAt = Date.now();
       const responseLabel = formatResponseTime(responseMs) || 'n/a';
       const modeBadge = formatAiModeBadge(out.mode);
-      const meta = `<div class='analysis-meta'>${modeBadge} · Answer ${new Date(generatedAt).toLocaleTimeString()} · Response ${responseLabel} · ${modelName}</div>`;
+      const meta = `<div class='analysis-meta'>${modeBadge} · Answer ${new Date(generatedAt).toLocaleTimeString()} · Response ${responseLabel} · ${modelLabel}</div>`;
       setAiAnswerPanel(`<div class='ai-answer-block'>${oddsTableHtml}${answerHtml}</div>${meta}`);
+      hideAnalysisProcessingHint();
+      if (cooldownKey) startAiAnalyseCooldown(cooldownKey);
       if (cacheKey) {
         aiAnalysisCache.set(cacheKey, { answerHtml, modelName, timestamp: generatedAt, durationMs: responseMs });
         persistAiAnalysisCache();
@@ -7113,10 +7774,14 @@ function bindAiAnalyseButton(){
       console.error('ai_analyse_failed', err);
       if (cooldownKey) {
         aiAnalysisCooldown.delete(cooldownKey);
+        persistAiCooldown();
       }
       if (responseMs === null) responseMs = performance.now() - requestStarted;
       const responseLabel = formatResponseTime(responseMs) || 'n/a';
-      setAiAnswerPanel(`<div class='ai-answer-block error'>AI analysis failed — showing base panel.</div><div class='analysis-meta'>Fallback ${new Date().toLocaleTimeString()} · Response ${responseLabel} · ${autoTuneSelection.model}</div>`);
+      const requestedModel = autoTuneSelection.model || selectedAiModel.model || '—';
+      const providerLabel = autoTuneSelection.provider || selectedAiModel.provider || 'unknown';
+      setAiAnswerPanel(`<div class='ai-answer-block error'>AI analysis failed for the selected model.</div><div class='analysis-meta'>Error ${new Date().toLocaleTimeString()} · Response ${responseLabel} · ${requestedModel} (${providerLabel})</div>`);
+      hideAnalysisProcessingHint();
     } finally {
       attachAnalysisSelectionHandlers(selectedRace);
       makeSelectionsDraggable();
@@ -7265,7 +7930,7 @@ function buildAiAnalysisPrompt(race){
     loveracingLines.push(`Weather fallback: official weather feed unavailable; use track condition (${track}) as surface proxy.`);
   }
   const loveracingBlock = loveracingLines.length ? `${loveracingLines.join('\n')}\n` : '';
-  const runners = race.runners.slice().sort((a,b)=>{
+  const runners = (race.runners || []).filter(r => !r.is_scratched).slice().sort((a,b)=>{
     const oa = Number(a?.odds || a?.fixed_win || a?.tote_win || a?.price || 0);
     const ob = Number(b?.odds || b?.fixed_win || b?.tote_win || b?.price || 0);
     if (Number.isFinite(oa) && Number.isFinite(ob)) return oa - ob;
@@ -7441,11 +8106,11 @@ function renderAnalysis(race, modeOverride){
     return m > 0 ? `${m}:${sTxt}` : s.toFixed(2);
   };
 
-  const runners = (race.runners||[]).slice().sort((a,b)=> {
+  const runners = (race.runners||[]).filter(r => !r.is_scratched).slice().sort((a,b)=> {
     const oa = oddsOf(a); const ob = oddsOf(b);
     return (Number.isFinite(oa) ? oa : 999) - (Number.isFinite(ob) ? ob : 999);
   });
-  const fullRunners = Array.isArray(race.runners) ? race.runners : [];
+  const fullRunners = Array.isArray(race.runners) ? race.runners.filter(r => !r.is_scratched) : [];
 
   // simple market-implied probabilities
   const probs = runners.map(r=>({
@@ -7505,7 +8170,7 @@ function renderAnalysis(race, modeOverride){
   model.forEach(x=>x.p = x.score/sumM);
   model.sort((a,b)=>b.p-a.p);
   const modelProbMap = new Map(model.map(entry => [normalizeRunnerName(entry.name), entry.p]));
-  const enrichedRunners = (race.runners || []).map(r => {
+  const enrichedRunners = (race.runners || []).filter(r => !r.is_scratched).map(r => {
     const norm = normalizeRunnerName(r.name || r.runner_name || '');
     const prob = modelProbMap.get(norm);
     return { ...r, modelProb: Number.isFinite(prob) ? prob : null };
@@ -8113,15 +8778,21 @@ function renderAnalysis(race, modeOverride){
     .map(r => {
       const odds = oddsOf(r);
       const signal = runnerFormSignal(r);
-      const goodForm = signal && (signal.status === 'HOT' || signal.status === 'SOLID' || signal.legacy === 'GOOD');
-      const modeledPct = Number(sim[r.name] || 0) * 100;
+      const blend = runnerConfidenceBlend(r, race, Number(sim[r.name] || 0));
+      const trackSignal = blend.trackSignal;
+      const modeledPct = Number(blend.finalProb || 0) * 100;
       const implied = Number.isFinite(odds) && odds > 0 ? (100 / odds) : NaN;
       const edge = Number.isFinite(modeledPct) && Number.isFinite(implied) ? (modeledPct - implied) : NaN;
       const formAvg = runnerThreeStartAvg(r);
-      return { r, odds, goodForm, modeledPct, edge, formAvg };
+      const hardFail = (signal?.lastStart ?? 99) >= 9 && (signal?.formScore ?? -99) < 0;
+      const map = String(r?.speedmap || '').toLowerCase();
+      const mapPenalty = (!map || /back|off pace/.test(map)) ? 1 : 0;
+      const goodForm = signal && (signal.status === 'HOT' || signal.status === 'SOLID');
+      const trackOk = trackSignal.label !== 'DISLIKES THIS GROUND';
+      return { r, odds, goodForm, modeledPct, edge, formAvg, hardFail, mapPenalty, trackOk, confidence: blend.confidence, trackSignal };
     })
-    .filter(x => Number.isFinite(x.odds) && x.odds >= 8 && x.goodForm)
-    .sort((a,b) => (a.formAvg - b.formAvg) || (b.edge ?? -999) - (a.edge ?? -999) || b.modeledPct - a.modeledPct);
+    .filter(x => Number.isFinite(x.odds) && x.odds >= 8 && x.goodForm && x.trackOk && !x.hardFail && x.modeledPct >= 7.5)
+    .sort((a,b) => (b.edge ?? -999) - (a.edge ?? -999) || (b.confidence - a.confidence) || (a.formAvg - b.formAvg) || (a.mapPenalty - b.mapPenalty) || b.modeledPct - a.modeledPct);
   const longTop = longModelCandidates[0]?.r || null;
   const longRunnerKeys = new Set(longTop ? [normalizeRunnerName(longTop.name || longTop.runner_name || '')].filter(Boolean) : []);
 
@@ -8149,6 +8820,7 @@ function renderAnalysis(race, modeOverride){
   const aiWinnerRunner = storedAiWinner?.runner || (hasAiRun ? picked : null);
   const aiWinnerTagKey = aiWinnerRunner ? normalizeRunnerName(aiWinnerRunner) : '';
   const aiWinnerPctValue = Number.isFinite(storedAiWinner?.winPct) ? storedAiWinner.winPct : (hasAiRun ? aiWinnerPctRounded : null);
+  const pedigreeAdvantageMap = computeRacePedigreeAdvantageMap(race, runners);
   const buildRunnerLink = (text, runnerName) => {
     const baseText = (text === null || text === undefined) ? '—' : String(text);
     if (!runnerName) return escapeHtml(baseText);
@@ -8200,6 +8872,8 @@ function renderAnalysis(race, modeOverride){
     }
     if (ewKey && norm === ewKey) tags.push("<span class='tag ew'>EW</span>");
     if (longRunnerKeys.has(norm)) tags.push("<span class='tag long'>LONG</span>");
+    const pedigreeSignal = pedigreeAdvantageMap.get(norm);
+    if (pedigreeSignal?.qualifies) tags.push(`<span class='tag pedigree-adv' title='${escapeAttr(pedigreeSignal.summary || `Pedigree Advantage ${pedigreeSignal.score?.toFixed?.(1) || ''}`)}' style='background:linear-gradient(135deg,#ffd54a,#c89b1d);color:#1c1606;border-color:#f4cf63'>Pedigree Advantage</span>`);
     const moveTags = inheritMoveTags(race.meeting, race.race_number || race.race, runner.name || runner.runner_name || runner.selection || '');
     if (moveTags.length) tags.push(...moveTags);
     if (runnerHasStrongTrials(runner)) tags.push("<span class='tag form'>Trial Form</span>");
@@ -8210,21 +8884,27 @@ function renderAnalysis(race, modeOverride){
   const edgeVizRows = runners.map(r => {
     const odds = oddsOf(r);
     const impliedPct = Number.isFinite(odds) ? (100/odds) : NaN;
-    const modeledPct = Number(sim[r.name] || 0) * 100;
+    const rawProb = Number(sim[r.name] || 0);
+    const blend = runnerConfidenceBlend(r, race, rawProb);
+    const modeledPct = Number(blend.finalProb || 0) * 100;
     const edgePct = Number.isFinite(modeledPct) && Number.isFinite(impliedPct) ? (modeledPct - impliedPct) : NaN;
     return {
       name: cleanRunnerText(r.name || r.runner_name || ''),
       odds: Number.isFinite(odds) ? odds : null,
       impliedPct: Number.isFinite(impliedPct) ? Number(impliedPct.toFixed(1)) : null,
       modeledPct: Number.isFinite(modeledPct) ? Number(modeledPct.toFixed(1)) : null,
-      edgePct: Number.isFinite(edgePct) ? Number(edgePct.toFixed(1)) : null
+      edgePct: Number.isFinite(edgePct) ? Number(edgePct.toFixed(1)) : null,
+      confidence: Number.isFinite(blend.confidence) ? Number((blend.confidence * 100).toFixed(0)) : null,
+      trackLabel: blend.trackSignal?.label || null
     };
   }).filter(row => row.name);
 
   const oddsRows = runners.map(r => {
     const odds = oddsOf(r);
     const implied = Number.isFinite(odds) ? (100/odds) : NaN;
-    const modeled = Number(sim[r.name] || 0) * 100;
+    const rawProb = Number(sim[r.name] || 0);
+    const blend = runnerConfidenceBlend(r, race, rawProb);
+    const modeled = Number(blend.finalProb || 0) * 100;
     const edge = Number.isFinite(modeled) && Number.isFinite(implied) ? (modeled - implied) : NaN;
     const placeOdds = placeOddsOf(r);
     const placeImplied = Number.isFinite(placeOdds) ? (100/placeOdds) : NaN;
@@ -8239,17 +8919,22 @@ function renderAnalysis(race, modeOverride){
     const numberRaw = r.number ?? r.runner_number ?? r.saddle_number ?? r.horse_number ?? r.program_number ?? r.tab_no ?? null;
     const runnerNumber = (numberRaw === 0 || numberRaw) ? String(numberRaw).trim() : '';
     const formSignal = runnerFormSignal(r);
+    const pedigreeSignal = pedigreeAdvantageMap.get(normalizeRunnerName(r.name || r.runner_name || ''));
     const formPattern = r.last_twenty_starts || r.form || r.last_five_starts || r.recent_form || '—';
     const formTag = formSignal ? renderFormStatusTag(formSignal, formSignal.summary || '') : '';
     const trialTag = runnerHasStrongTrials(r) ? `<span class='tag form'>Trial Form</span>` : '';
-    const formCell = `<div class='form-pattern'>${formPattern || '—'}</div>${formTag ? `<div class='form-status-tag'>${formTag}</div>` : ''}${trialTag ? `<div class='form-status-tag'>${trialTag}</div>` : ''}`;
+    const pedigreeTag = pedigreeSignal?.qualifies ? `<span class='tag pedigree-adv' title='${escapeAttr(pedigreeSignal.summary || '')}' style='background:linear-gradient(135deg,#ffd54a,#c89b1d);color:#1c1606;border-color:#f4cf63'>Pedigree Advantage ${Number.isFinite(pedigreeSignal.score) ? pedigreeSignal.score.toFixed(1) : ''}</span>` : '';
+    const pedigreeFitTxt = Number.isFinite(pedigreeSignal?.score) ? pedigreeSignal.score.toFixed(1) : '—';
+    const pedigreeConfidenceTxt = Number.isFinite(pedigreeSignal?.confidence) ? `${(pedigreeSignal.confidence * 100).toFixed(0)}%` : '—';
+    const pedigreeEdgeTxt = Number.isFinite(pedigreeSignal?.relativeEdge) ? `${pedigreeSignal.relativeEdge >= 0 ? '+' : ''}${pedigreeSignal.relativeEdge.toFixed(1)}` : '—';
+    const formCell = `<div class='form-pattern'>${formPattern || '—'}</div>${formTag ? `<div class='form-status-tag'>${formTag}</div>` : ''}${trialTag ? `<div class='form-status-tag'>${trialTag}</div>` : ''}${pedigreeTag ? `<div class='form-status-tag'>${pedigreeTag}</div>` : ''}`;
     const jockeyCell = r.jockey
       ? `<button class='jockey-profile-btn' data-jockey='${escapeAttr(String(r.jockey))}' data-race-key='${escapeAttr(String(race.key || ''))}'>${escapeHtml(String(r.jockey))}</button>`
       : '—';
     const trainerCell = escapeHtml(r.trainer || '—');
     const jockeyEdge = jockeyEdgePct(r);
     const jockeyEdgeTxt = Number.isFinite(jockeyEdge) ? `${jockeyEdge >= 0 ? '+' : ''}${jockeyEdge.toFixed(1)} pts` : '—';
-    return `<tr><td class='runner-num-cell'>${escapeHtml(runnerNumber || '—')}</td><td>${runnerCell}</td><td>${escapeHtml(r.barrier || '—')}</td><td>${jockeyCell}</td><td>${trainerCell}</td><td>${formCell}</td><td>${jockeyEdgeTxt}</td><td class='odds-cell ${winClass}'>${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeled) ? modeled.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(implied) ? implied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(edge) ? (edge>=0?'+':'')+edge.toFixed(1)+' pts' : '—'}</td><td class='odds-cell ${placeClass}'>${Number.isFinite(placeOdds) ? placeOdds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeledPlace) ? modeledPlace.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeImplied) ? placeImplied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeEdge) ? (placeEdge>=0?'+':'')+placeEdge.toFixed(1)+' pts' : '—'}</td></tr>`;
+    return `<tr><td class='runner-num-cell'>${escapeHtml(runnerNumber || '—')}</td><td>${runnerCell}</td><td>${escapeHtml(r.barrier || '—')}</td><td>${jockeyCell}</td><td>${trainerCell}</td><td>${formCell}</td><td>${jockeyEdgeTxt}</td><td>${pedigreeFitTxt}</td><td>${pedigreeConfidenceTxt}</td><td>${pedigreeEdgeTxt}</td><td class='odds-cell ${winClass}'>${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeled) ? modeled.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(implied) ? implied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(edge) ? (edge>=0?'+':'')+edge.toFixed(1)+' pts' : '—'}</td><td class='odds-cell ${placeClass}'>${Number.isFinite(placeOdds) ? placeOdds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeledPlace) ? modeledPlace.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeImplied) ? placeImplied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeEdge) ? (placeEdge>=0?'+':'')+placeEdge.toFixed(1)+' pts' : '—'}</td></tr>`;
   }).join('');
   const topEdgeRunner = winEdgeData.slice().sort((a,b)=>b.edge-a.edge)[0]?.name || 'No clear overs';
   const punterPanel = `<ul>
@@ -8366,7 +9051,7 @@ function renderAnalysis(race, modeOverride){
           <button id='pollOddsBtn' class='btn btn-ghost compact-btn' type='button'>Poll Odds</button>
         </div>
         <div class='analysis-table-scroll'>
-          <table class='analysis-table'><tr><th title='Saddle / runner number'>#</th><th>Runner</th><th title='Barrier draw'>Gate</th><th>Jockey</th><th>Trainer</th><th title='Recent form pattern + status'>Form</th><th title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>Jockey Edge <span class='help-hint' title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>?</span></th><th title='Current market win odds'>Win Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Win Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Win Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Win Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th><th title='Current market place odds'>Place Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Place Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Place Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Place Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th></tr>${oddsRows}</table>
+          <table class='analysis-table'><tr><th title='Saddle / runner number'>#</th><th>Runner</th><th title='Barrier draw'>Gate</th><th>Jockey</th><th>Trainer</th><th title='Recent form pattern + status'>Form</th><th title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>Jockey Edge <span class='help-hint' title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>?</span></th><th title='Pedigree fit score for this race archetype'>Ped Fit</th><th title='Confidence in pedigree assessment'>Ped Conf</th><th title='Field-relative pedigree edge'>Ped Edge</th><th title='Current market win odds'>Win Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Win Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Win Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Win Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th><th title='Current market place odds'>Place Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Place Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Place Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Place Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th></tr>${oddsRows}</table>
         </div>
       </div>
       <div class='analysis-split'>
@@ -8634,9 +9319,9 @@ function buildRaceCardSection(race, runners){
     const silk = r.silk_url_64x64 || r.silk_url_128x128 || '';
     const stats = r.stats || {};
     const breedingParts = [];
-    if (r.sire) breedingParts.push(`Sire: ${escapeHtml(r.sire)}`);
-    if (r.dam) breedingParts.push(`Dam: ${escapeHtml(r.dam)}`);
-    if (r.dam_sire) breedingParts.push(`Dam Sire: ${escapeHtml(r.dam_sire)}`);
+    if (r.sire) breedingParts.push(`Sire: ${renderBloodlineButton(r.sire, 'Sire')}`);
+    if (r.dam) breedingParts.push(`Dam: ${renderBloodlineButton(r.dam, 'Dam')}`);
+    if (r.dam_sire) breedingParts.push(`Dam Sire: ${renderBloodlineButton(r.dam_sire, 'Dam Sire')}`);
     const breeding = breedingParts.length ? breedingParts.join(' · ') : 'n/a';
     const profileBits = [];
     if (r.age) profileBits.push(`${r.age}yo`);
@@ -8837,8 +9522,11 @@ $('meetingSelect')?.addEventListener('change', async (e)=>{
 
   await loadRaces();
   renderRaces(racesCache);
-  renderInteresting(latestInterestingRows);
-  renderMarketMovers(latestMarketMovers);
+  renderSuggested(latestFilteredSuggested || filterSuggestedByWhy(latestSuggestedBets || []));
+  renderMultis(latestFilteredSuggested || filterSuggestedByWhy(latestSuggestedBets || []));
+  renderNextPlanned(latestFilteredSuggested || filterSuggestedByWhy(latestSuggestedBets || []));
+  renderInteresting(latestInterestingRows || []);
+  renderMarketMovers(latestMarketMovers || []);
   refreshTabAccess();
   renderMeetingIntelPanel();
 });
@@ -8976,6 +9664,9 @@ function pickWeightedModel(weights){
 
 function resolveAutoTuneModelSelection(){
   const s = getBakeoffAutoTuneState();
+  if (aiModelManualLock) {
+    return { provider: selectedAiModel.provider || inferProviderFromModel(selectedAiModel.model), model: selectedAiModel.model, source: 'manual-lock' };
+  }
   if (!s?.enabled) return { ...selectedAiModel, source: 'manual' };
 
   if (s.useWeighted && Array.isArray(s.weights) && s.weights.length) {
@@ -9244,53 +9935,27 @@ async function loadBakeoffLeaderboard(manualData = null){
     if (coverage) coverage.innerHTML = '<div class="sub">Unable to load model coverage.</div>';
   }
 }
-async function runBakeoffFullSoak(){
-  const btn = $('runFullSoakBtn');
-  if (btn) btn.disabled = true;
-  setBakeoffRunIndicator('running', '🔥 Full Soak running (npm run bakeoff)…');
-  try {
-    const res = await fetchLocal('./api/bakeoff-run', { method: 'POST' });
-    const out = await res.json().catch(() => ({}));
-    if (!res.ok || out?.ok === false) throw new Error(out?.error || 'failed_to_start');
-    const startedAt = Date.now();
-    const poll = async () => {
-      try {
-        const sRes = await fetchLocal('./api/bakeoff-run-status');
-        const sOut = await sRes.json().catch(() => ({}));
-        if (sOut?.running) {
-          const secs = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-          setBakeoffRunIndicator('running', `🔥 Full Soak running… ${secs}s`);
-          setTimeout(poll, 2500);
-          return;
-        }
-        if (Number(sOut?.exitCode) === 0) {
-          setBakeoffRunIndicator('success', '✅ Full Soak completed');
-          await loadBakeoffLeaderboard();
-        } else {
-          setBakeoffRunIndicator('error', `⚠️ Full Soak failed (exit ${sOut?.exitCode ?? 'n/a'})`);
-        }
-        if (btn) btn.disabled = false;
-      } catch (err) {
-        setBakeoffRunIndicator('error', `⚠️ Full Soak status error: ${err?.message || 'unknown'}`);
-        if (btn) btn.disabled = false;
-      }
-    };
-    setTimeout(poll, 1500);
-  } catch (err) {
-    setBakeoffRunIndicator('error', `⚠️ Full Soak start failed: ${err?.message || 'unknown error'}`);
-    if (btn) btn.disabled = false;
-  }
-}
-
 let bakeoffFullSoakPoll = null;
 
-async function pollBakeoffFullSoakStatus(){
+function renderBakeoffRunFeedback(out, startedAt){
+  const results = $('bakeoffTestResults');
+  if (!results) return;
+  const secs = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  const tail = Array.isArray(out?.tail) ? out.tail.slice(-10) : [];
+  const logLines = tail.length
+    ? `<div class='sub' style='margin-top:8px'>Live log tail</div><pre style='margin-top:6px;max-height:220px;overflow:auto;white-space:pre-wrap;font-size:11px;line-height:1.35;background:#0b1220;border:1px solid rgba(255,255,255,0.08);padding:10px;border-radius:8px'>${escapeHtml(tail.join('\n'))}</pre>`
+    : `<div class='sub' style='margin-top:8px'>Waiting for bakeoff log output…</div>`;
+  results.innerHTML = `<div class='sub'>🔥 Full soak running for ${secs}s</div>${logLines}`;
+}
+
+async function pollBakeoffFullSoakStatus(startedAt = Date.now()){
   try {
-    const res = await fetchLocal('./api/bakeoff-run-status', { method: 'POST' });
-    const out = await res.json();
+    const res = await fetchLocal('./api/bakeoff-run-status');
+    const out = await res.json().catch(() => ({}));
     if (!res.ok || out?.ok === false) return;
     if (out.running) {
-      setBakeoffRunIndicator('running', '🔥 Full soak running (npm run bakeoff)…');
+      setBakeoffRunIndicator('running', `🔥 Full soak running… ${Math.max(0, Math.round((Date.now() - startedAt) / 1000))}s`);
+      renderBakeoffRunFeedback(out, startedAt);
       return;
     }
     if (bakeoffFullSoakPoll) {
@@ -9299,15 +9964,42 @@ async function pollBakeoffFullSoakStatus(){
     }
     const ok = out.exitCode === 0;
     setBakeoffRunIndicator(ok ? 'success' : 'error', ok ? '✅ Full soak complete.' : `⚠️ Full soak failed (exit ${out.exitCode ?? 'n/a'})`);
+    renderBakeoffRunFeedback(out, startedAt);
     const btn = $('runFullSoakBtn');
     if (btn) btn.disabled = false;
-    loadBakeoffLeaderboard();
+    if (ok) loadBakeoffLeaderboard();
+  } catch (err) {
+    setBakeoffRunIndicator('error', `⚠️ Full soak status error: ${err?.message || 'unknown'}`);
+  }
+}
+
+async function restoreBakeoffRunFeedback(){
+  try {
+    const res = await fetchLocal('./api/bakeoff-run-status');
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || out?.ok === false) return;
+    const startedAt = Number(out.startedAt || Date.now());
+    if (out.running) {
+      setBakeoffRunIndicator('running', `🔥 Full soak running… ${Math.max(0, Math.round((Date.now() - startedAt) / 1000))}s`);
+      renderBakeoffRunFeedback(out, startedAt);
+      const btn = $('runFullSoakBtn');
+      if (btn) btn.disabled = true;
+      if (bakeoffFullSoakPoll) clearInterval(bakeoffFullSoakPoll);
+      bakeoffFullSoakPoll = setInterval(() => pollBakeoffFullSoakStatus(startedAt), 3000);
+      return;
+    }
+    if (Number.isFinite(Number(out.exitCode)) || out.tail?.length) {
+      const ok = out.exitCode === 0;
+      setBakeoffRunIndicator(ok ? 'success' : 'error', ok ? '✅ Full soak complete.' : `⚠️ Full soak failed (exit ${out.exitCode ?? 'n/a'})`);
+      renderBakeoffRunFeedback(out, startedAt);
+    }
   } catch {}
 }
 
 async function runBakeoffFullSoak(){
   const btn = $('runFullSoakBtn');
   if (btn) btn.disabled = true;
+  const startedAt = Date.now();
   try {
     const res = await fetchLocal('./api/bakeoff-run', { method: 'POST' });
     const out = await res.json().catch(() => ({}));
@@ -9316,9 +10008,10 @@ async function runBakeoffFullSoak(){
       return;
     }
     setBakeoffRunIndicator('running', '🔥 Full soak running (npm run bakeoff)…');
+    renderBakeoffRunFeedback(out, startedAt);
     if (bakeoffFullSoakPoll) clearInterval(bakeoffFullSoakPoll);
-    bakeoffFullSoakPoll = setInterval(pollBakeoffFullSoakStatus, 3000);
-    setTimeout(() => { if (btn) btn.disabled = false; }, 5000);
+    bakeoffFullSoakPoll = setInterval(() => pollBakeoffFullSoakStatus(startedAt), 3000);
+    setTimeout(() => pollBakeoffFullSoakStatus(startedAt), 1000);
   } catch (err) {
     setBakeoffRunIndicator('error', `⚠️ Full soak start error: ${err?.message || 'network_error'}`);
   } finally {
@@ -9424,6 +10117,11 @@ async function runBakeoffModelTest(){
           bodyEl.innerHTML = `${metrics}${formatAiAnswer(out.answer)}`;
         }
         const qualityScore = scoreBakeoffAnswerQuality(out.answer);
+        const requestedProvider = entry.provider;
+        const usedProvider = String(out.provider || '').trim().toLowerCase();
+        const requestedModel = String(entry.model || '').trim().toLowerCase();
+        const usedModel = String(out.modelUsed || out.modelRequested || '').trim().toLowerCase();
+        const trueFallback = !!(out.fallbackReason || (requestedProvider && usedProvider && requestedProvider !== usedProvider) || (requestedModel && usedModel && requestedModel !== usedModel));
         liveEntries.push({
           model: entry.model,
           runs: 1,
@@ -9431,8 +10129,8 @@ async function runBakeoffModelTest(){
           qualityAvg: qualityScore,
           latencyP50Ms: latencyMs,
           latencyP95Ms: latencyMs,
-          fallbackRate: out.mode === 'fallback' ? 1 : 0,
-          composite: out.mode === 'fallback' ? 40 : 70,
+          fallbackRate: trueFallback ? 1 : 0,
+          composite: trueFallback ? 40 : 70,
           contextTokens: questionTokens || null,
           contextSize: questionTokens || null,
           context: questionTokens ? `${questionTokens} tok` : null
@@ -9614,8 +10312,79 @@ function confidenceForDraggedSelection(x){
   return Number.isFinite(rp) ? rp : null;
 }
 
+function enrichDraggedSelection(item){
+  const mtg = String(item?.meeting || '').trim().toLowerCase();
+  const rc = String(item?.race || '').trim().replace(/^R/i,'');
+  const sel = normalizeRunnerName(item?.selection || item?.runner || '');
+
+  const suggestedHit = (latestSuggestedBets || []).find(s => {
+    const sm = String(s.meeting || '').trim().toLowerCase();
+    const sr = String(s.race || '').trim().replace(/^R/i,'');
+    const ss = normalizeRunnerName(s.selection || s.runner || '');
+    return sm === mtg && sr === rc && (ss === sel || ss.includes(sel) || sel.includes(ss));
+  });
+
+  const interestingHit = (latestInterestingRows || []).find(r => {
+    const rm = String(r.meeting || '').trim().toLowerCase();
+    const rr = String(r.race || '').trim().replace(/^R/i,'');
+    const rs = normalizeRunnerName(r.runner || r.selection || '');
+    return rm === mtg && rr === rc && (rs === sel || rs.includes(sel) || sel.includes(rs));
+  });
+
+  const race = (racesCache || []).find(r => String(r.meeting || '').trim().toLowerCase() === mtg && String(r.race_number || r.race || '').trim() === rc);
+  const runner = Array.isArray(race?.runners)
+    ? race.runners.find(r => {
+        const rn = normalizeRunnerName(r.name || r.runner_name || '');
+        return rn === sel || rn.includes(sel) || sel.includes(rn);
+      })
+    : null;
+
+  const tags = [];
+  if (suggestedHit?.type) tags.push(String(suggestedHit.type));
+  if (interestingHit) tags.push('Interesting');
+  if (runnerHasStrongTrials(runner)) tags.push('Trial Form');
+  const moveTags = buildMoveTags(interestingHit || suggestedHit || runner || {}).map(t => String(t).replace(/<[^>]+>/g,'').trim()).filter(Boolean);
+  tags.push(...moveTags);
+
+  const odds = Number(suggestedHit?.odds ?? runner?.odds ?? runner?.fixed_win ?? runner?.tote_win);
+  const aiWinProb = Number(suggestedHit?.aiWinProb);
+  const impliedPct = Number.isFinite(odds) && odds > 0 ? (100 / odds) : null;
+  const edgePct = Number.isFinite(aiWinProb) && Number.isFinite(impliedPct) ? (aiWinProb - impliedPct) : null;
+
+  return {
+    ...item,
+    selection: item?.selection || item?.runner || '',
+    tags: [...new Set(tags.filter(Boolean))],
+    odds: Number.isFinite(odds) ? odds : null,
+    aiWinProb: Number.isFinite(aiWinProb) ? aiWinProb : null,
+    impliedPct: Number.isFinite(impliedPct) ? impliedPct : null,
+    edgePct: Number.isFinite(edgePct) ? edgePct : null,
+    jockey: runner?.jockey || item?.jockey || null,
+    trainer: runner?.trainer || item?.trainer || null,
+    barrier: runner?.barrier || null,
+    form: runner?.form || interestingHit?.form || null,
+    confidence: confidenceForDraggedSelection(item)
+  };
+}
+
 function buildDraggedContextLines(){
-  return draggedSelections.map(x => `- ${x.meeting} R${x.race} ${x.selection}${x.reason ? ` (${x.reason})` : ''}`.trim());
+  return draggedSelections.map(raw => {
+    const x = enrichDraggedSelection(raw);
+    const bits = [
+      `- ${x.meeting} R${x.race} ${x.selection}`,
+      x.tags?.length ? `tags: ${x.tags.join(', ')}` : '',
+      Number.isFinite(x.odds) ? `odds ${x.odds.toFixed(2)}` : '',
+      Number.isFinite(x.aiWinProb) ? `model ${x.aiWinProb.toFixed(1)}%` : '',
+      Number.isFinite(x.impliedPct) ? `implied ${x.impliedPct.toFixed(1)}%` : '',
+      Number.isFinite(x.edgePct) ? `edge ${x.edgePct >= 0 ? '+' : ''}${x.edgePct.toFixed(1)} pts` : '',
+      x.barrier ? `barrier ${x.barrier}` : '',
+      x.jockey ? `jockey ${x.jockey}` : '',
+      x.trainer ? `trainer ${x.trainer}` : '',
+      x.form ? `form ${x.form}` : '',
+      x.reason ? `note: ${x.reason}` : ''
+    ].filter(Boolean);
+    return bits.join(' | ');
+  });
 }
 
 function likelyDraggedFormat(){
@@ -9632,11 +10401,19 @@ function renderAiSelectionBasket(){
     return;
   }
 
-  const rows = draggedSelections.map((x, idx) => {
+  const rows = draggedSelections.map((raw, idx) => {
+    const x = enrichDraggedSelection(raw);
     const label = `${x.meeting} R${x.race} ${x.selection}`.replace(/\s+/g,' ').trim();
-    const pct = confidenceForDraggedSelection(x);
-    const meter = Number.isFinite(pct) ? `<span class='ai-chip-meter'>${Number(pct).toFixed(1)}%</span>` : `<span class='ai-chip-meter'>n/a</span>`;
-    return `<span class='ai-chip'>${escapeHtml(label)} ${meter} <button data-ai-remove='${idx}' title='Remove'>×</button></span>`;
+    const pct = Number(x.confidence);
+    const meter = Number.isFinite(pct) ? `<span class='ai-chip-meter'>${pct.toFixed(1)}%</span>` : `<span class='ai-chip-meter'>n/a</span>`;
+    const meta = [
+      x.tags?.length ? x.tags.join(', ') : '',
+      Number.isFinite(x.odds) ? `Odds ${x.odds.toFixed(2)}` : '',
+      Number.isFinite(x.edgePct) ? `Edge ${x.edgePct >= 0 ? '+' : ''}${x.edgePct.toFixed(1)} pts` : '',
+      x.jockey ? `J ${x.jockey}` : '',
+      x.trainer ? `T ${x.trainer}` : ''
+    ].filter(Boolean).join(' · ');
+    return `<span class='ai-chip'>${escapeHtml(label)} ${meter}${meta ? ` <span class='sub'>${escapeHtml(meta)}</span>` : ''} <button data-ai-remove='${idx}' title='Remove'>×</button></span>`;
   }).join('');
 
   wrap.classList.remove('hidden');
@@ -9662,17 +10439,33 @@ function renderAiSelectionBasket(){
 }
 
 function makeSelectionsDraggable(){
-  document.querySelectorAll('.suggested-btn, .next-planned-btn, .interesting-btn, .multi-btn, .analysis-drag-btn').forEach(el => {
+  const selector = [
+    '.suggested-btn',
+    '.next-planned-btn',
+    '.interesting-btn',
+    '.multi-btn',
+    '.analysis-drag-btn',
+    '.analysis-runner-btn',
+    '.analysis-odds-runner-btn',
+    '[data-runner]',
+    '[data-selection]',
+    '[data-jockey]'
+  ].join(', ');
+
+  document.querySelectorAll(selector).forEach(el => {
     if (el.dataset.dndBound === '1') return;
+    const selection = el.dataset.selection || el.dataset.runner || el.dataset.jockey || el.textContent?.trim() || '';
+    if (!String(selection || '').trim()) return;
     el.dataset.dndBound = '1';
     el.setAttribute('draggable', 'true');
     el.addEventListener('dragstart', (e) => {
-      const payload = {
-        meeting: el.dataset.meeting || '',
-        race: el.dataset.race || '',
-        selection: el.dataset.selection || el.dataset.runner || el.textContent?.trim() || '',
-        reason: el.dataset.reason || ''
-      };
+      const payload = enrichDraggedSelection({
+        meeting: el.dataset.meeting || selectedRace?.meeting || selectedMeeting || '',
+        race: el.dataset.race || el.dataset.raceNumber || selectedRace?.race_number || '',
+        selection,
+        reason: el.dataset.reason || '',
+        jockey: el.dataset.jockey || ''
+      });
       e.dataTransfer.setData('application/json', JSON.stringify(payload));
       e.dataTransfer.setData('text/plain', `${payload.meeting} R${payload.race} ${payload.selection}`.trim());
     });
@@ -9807,6 +10600,7 @@ async function sendAiChat(){
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question: q,
+        source: draggedSelections.length ? 'strategy' : 'chat',
         selectionCount,
         selections: draggedSelections,
         multiRaceContext: {
@@ -9883,6 +10677,29 @@ function applyPerformanceVisibility(){
   });
   const hint = $('roiAdminHint');
   if (hint) hint.style.display = show ? 'none' : '';
+}
+
+async function loadOfferStrip(){
+  const el = $('offerStrip');
+  if (!el) return;
+  try {
+    const out = await fetchLocal('./api/pricing', { cache: 'no-store' }).then(r=>r.json());
+    const cards = [
+      { key: 'single_day', title: 'BETMAN Single DAY', note: '24-hour racing access. Perfect for QR-code offers and trial conversion.', cls: 'pricing-card-tester' },
+      { key: 'single', title: 'Single User', note: 'Weekly access for individual punters.', cls: 'pricing-card-single' },
+      { key: 'commercial', title: 'Commercial', note: 'Multi-user / business access.', cls: 'pricing-card-commercial' }
+    ].filter(x => out?.[x.key]?.paymentLink);
+    el.innerHTML = cards.map(card => {
+      const item = out[card.key] || {};
+      return `<a class='pricing-card ${card.cls}' href='${escapeAttr(item.paymentLink || '#')}' target='_blank' rel='noreferrer'>
+        <div class='plan-label'>${escapeHtml(card.title)}</div>
+        <div class='plan-price'>${escapeHtml(item.price || '—')}</div>
+        <div class='plan-note'>${escapeHtml(card.note)}</div>
+      </a>`;
+    }).join('');
+  } catch {
+    el.innerHTML = `<div class='sub'>Pricing unavailable right now.</div>`;
+  }
 }
 
 async function loadAuthenticatedUser(){
@@ -9996,10 +10813,10 @@ async function createAuthUser(){
   const verified = !!$('createUserVerified')?.checked;
   const hasPersonName = !!(firstName && lastName);
   const hasCompany = !!companyName;
-  if ((planType === 'single' && !hasPersonName) || (planType === 'commercial' && !hasCompany) || !email || !password) {
+  if (((planType === 'single' || planType === 'single_day') && !hasPersonName) || (planType === 'commercial' && !hasCompany) || !email || !password) {
     return alert(planType === 'commercial'
       ? 'Commercial plan requires Company name, email, and password.'
-      : 'Single User plan requires First + Last name, email, and password.');
+      : 'Single User / Single DAY plan requires First + Last name, email, and password.');
   }
 
   try {
@@ -10398,9 +11215,19 @@ loadRaces().then(()=>{
   }
   restoreLastRaceSelection();
 });
-setInterval(async ()=>{ await loadStake(); await loadStatus(); }, 60000);
-setInterval(()=>{ if (isAdminUser) { triggerPerformancePoll(false); loadPerformance(); } }, 5 * 60 * 1000);
-setInterval(tickQueuedCountdowns, 1000);
+setInterval(async ()=>{
+  if (document.hidden) return;
+  await loadStake();
+  await loadStatus();
+}, 60000);
+setInterval(()=>{
+  if (document.hidden) return;
+  if (isAdminUser) { triggerPerformancePoll(false); loadPerformance(); }
+}, 5 * 60 * 1000);
+setInterval(()=>{
+  if (document.hidden) return;
+  tickQueuedCountdowns();
+}, 1000);
 
 
 function bindPollOddsButton(){

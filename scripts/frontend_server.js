@@ -4,6 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const dns = require('dns');
+const { mergePublicStatusLists } = require('./status_snapshot_merge');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -13,24 +14,27 @@ loadEnvFile();
 
 function loadEnvFile(file = '.env'){
   try {
-    const envPath = path.join(process.cwd(), file);
-    if (!fs.existsSync(envPath)) return;
-    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
-    lines.forEach((line) => {
-      let trimmed = (line || '').trim();
-      if (!trimmed || trimmed.startsWith('#')) return;
-      if (trimmed.startsWith('export ')) trimmed = trimmed.slice(7).trim();
-      const idx = trimmed.indexOf('=');
-      if (idx < 0) return;
-      const key = trimmed.slice(0, idx).trim();
-      if (!key) return;
-      let value = trimmed.slice(idx + 1).trim();
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      if (typeof process.env[key] === 'undefined') {
-        process.env[key] = value;
-      }
+    const roots = [process.cwd(), path.join(__dirname, '..')];
+    roots.forEach((rootDir) => {
+      const envPath = path.join(rootDir, file);
+      if (!fs.existsSync(envPath)) return;
+      const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+      lines.forEach((line) => {
+        let trimmed = (line || '').trim();
+        if (!trimmed || trimmed.startsWith('#')) return;
+        if (trimmed.startsWith('export ')) trimmed = trimmed.slice(7).trim();
+        const idx = trimmed.indexOf('=');
+        if (idx < 0) return;
+        const key = trimmed.slice(0, idx).trim();
+        if (!key) return;
+        let value = trimmed.slice(idx + 1).trim();
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        if (typeof process.env[key] === 'undefined') {
+          process.env[key] = value;
+        }
+      });
     });
   } catch {}
 }
@@ -60,6 +64,7 @@ function readStripeWebhookSecretFromCreds(){
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || process.env.BETMAN_STRIPE_SECRET_KEY || readStripeSecretFromCreds();
 const STRIPE_LINK_SINGLE = process.env.STRIPE_LINK_SINGLE || process.env.BETMAN_STRIPE_LINK_SINGLE || 'https://buy.stripe.com/8x2cN538qbMqaiY8mocZa00';
+const STRIPE_LINK_SINGLE_DAY = process.env.STRIPE_LINK_SINGLE_DAY || process.env.BETMAN_STRIPE_LINK_SINGLE_DAY || 'https://buy.stripe.com/5kQ7sL9wOcQudva9qscZa03';
 const STRIPE_LINK_COMMERCIAL = process.env.STRIPE_LINK_COMMERCIAL || process.env.BETMAN_STRIPE_LINK_COMMERCIAL || 'https://buy.stripe.com/6oU7sL10ig2G0IobyAcZa01';
 const STRIPE_LINK_TESTER = process.env.STRIPE_LINK_TESTER || process.env.BETMAN_STRIPE_LINK_TESTER || 'https://buy.stripe.com/aFa00j9wO4jYbn26egcZa02';
 let pgPool = null;
@@ -88,7 +93,8 @@ let lastPollCacheTs = 0;
 let lastPollCacheKey = '';
 let lastPerformancePollTs = 0;
 const PERFORMANCE_POLL_COOLDOWN_MS = 5 * 60 * 1000;
-let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null, signal: null, error: null };
+let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null, signal: null, error: null, log: 'logs/bakeoff-run.log', tail: [] };
+let aiModelsCache = { ts: 0, payload: null };
 
 function normalizeTenantId(v){
   const raw = String(v || 'default').trim();
@@ -141,22 +147,14 @@ function getOllamaBaseList(){
     .split(',')
     .map(normalizeBaseUrl)
     .filter(Boolean);
-  const allowDefaultSetting = process.env.BETMAN_OLLAMA_ALLOW_DEFAULT;
-  const allowDefault = allowDefaultSetting === undefined
-    ? true
-    : String(allowDefaultSetting).toLowerCase() === 'true';
-  const bases = [
-    normalizeBaseUrl(process.env.OLLAMA_BASE_URL),
+  const explicitBases = [
     normalizeBaseUrl(process.env.BETMAN_OLLAMA_BASE_URL),
+    normalizeBaseUrl(process.env.OLLAMA_BASE_URL),
     normalizeBaseUrl(process.env.BETMAN_CHAT_BASE_URL),
-    ...fallbackList,
-    ...(allowDefault ? [
-      normalizeBaseUrl(BETMAN_OLLAMA_DEFAULT_BASE),
-      normalizeBaseUrl('http://127.0.0.1:11434'),
-      normalizeBaseUrl('http://localhost:11434')
-    ] : [])
+    ...fallbackList
   ].filter(Boolean);
-  return Array.from(new Set(bases));
+  if (explicitBases.length) return Array.from(new Set(explicitBases));
+  return [normalizeBaseUrl(BETMAN_OLLAMA_DEFAULT_BASE)].filter(Boolean);
 }
 
 
@@ -361,6 +359,7 @@ function getStripe(){
 
 function paymentLinkForPlan(planType){
   const p = String(planType || '').toLowerCase();
+  if (p === 'single_day' || p === 'single-day' || p === 'day') return STRIPE_LINK_SINGLE_DAY;
   if (p === 'commercial') return STRIPE_LINK_COMMERCIAL;
   if (p === 'tester') return STRIPE_LINK_TESTER;
   return STRIPE_LINK_SINGLE;
@@ -372,12 +371,13 @@ function makeSetupToken(){
 
 function inferPlanTypeFromStripe(obj = {}){
   const text = JSON.stringify(obj).toLowerCase();
+  if (text.includes('single day') || text.includes('single_day') || text.includes('single-day')) return 'single_day';
   if (text.includes('commercial')) return 'commercial';
   if (text.includes('tester') || text.includes('free')) return 'tester';
   return 'single';
 }
 
-function upsertProvisionedUser({ email, firstName = '', lastName = '', companyName = '', planType = 'single', stripeCustomerId = '' }){
+function upsertProvisionedUser({ email, firstName = '', lastName = '', companyName = '', planType = 'single', stripeCustomerId = '', accessExpiresAt = null }){
   const normEmail = normalizeEmail(email);
   if (!normEmail) return null;
   const users = [...(authState.users || [])];
@@ -398,6 +398,7 @@ function upsertProvisionedUser({ email, firstName = '', lastName = '', companyNa
       name: planType === 'commercial' ? (companyName || existing.companyName || existing.name || normEmail) : ([firstName || existing.firstName || '', lastName || existing.lastName || ''].filter(v => v !== '').join(' ') || existing.name || normEmail),
       role: nextRole,
       stripeCustomerId: stripeCustomerId || existing.stripeCustomerId || null,
+      accessExpiresAt: accessExpiresAt || existing.accessExpiresAt || null,
       subscriptionStatus: 'active',
       subscriptionActive: true,
       setupToken: token,
@@ -420,6 +421,7 @@ function upsertProvisionedUser({ email, firstName = '', lastName = '', companyNa
     role: 'user',
     tenantId: 'default',
     stripeCustomerId: stripeCustomerId || null,
+    accessExpiresAt: accessExpiresAt || null,
     subscriptionStatus: 'active',
     subscriptionActive: true,
     setupToken: token,
@@ -453,6 +455,23 @@ async function checkSubscriptionByUser(user){
   if (!stripe) return { enforceable: false, active: true, reason: 'stripe_not_configured' };
   const email = normalizeEmail(user?.email || user?.username || '');
   if (!email) return { enforceable: true, active: false, reason: 'email_missing' };
+
+  const explicitPlanType = String(user?.planType || '').toLowerCase();
+  if (explicitPlanType === 'single_day') {
+    const exp = new Date(user?.accessExpiresAt || 0).getTime();
+    if (Number.isFinite(exp) && exp > 0) {
+      const active = Date.now() < exp;
+      return {
+        enforceable: true,
+        active,
+        reason: active ? 'ok' : 'single_day_expired',
+        customerId: user?.stripeCustomerId || '',
+        planType: 'single_day',
+        customerName: String(user?.name || ''),
+        accessExpiresAt: user?.accessExpiresAt || null
+      };
+    }
+  }
 
   let customerRecord = null;
   let customerId = user?.stripeCustomerId || '';
@@ -492,6 +511,12 @@ async function checkSubscriptionByUser(user){
   try {
     const subs = preloadSubs || await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 20 });
     const activeSub = (subs?.data || []).find(s => ['active', 'trialing', 'past_due'].includes(String(s.status || '').toLowerCase()));
+    if (planType === 'single_day') {
+      const baseTs = Number(activeSub?.current_period_end || activeSub?.trial_end || customerRecord?.created || 0);
+      const expIso = baseTs ? new Date(baseTs * 1000).toISOString() : null;
+      const active = !!baseTs && Date.now() < (baseTs * 1000);
+      return { enforceable: true, active, reason: active ? 'ok' : 'single_day_expired', customerId, planType, customerName, accessExpiresAt: expIso };
+    }
     const active = !!activeSub;
     return { enforceable: true, active, reason: active ? 'ok' : 'subscription_inactive', customerId, planType, customerName };
   } catch {
@@ -512,6 +537,7 @@ async function syncProvisioningFromStripe(){
       const next = {
         ...u,
         stripeCustomerId: sub.customerId || u.stripeCustomerId || null,
+        accessExpiresAt: sub.accessExpiresAt || u.accessExpiresAt || null,
         subscriptionActive: !!sub.active,
         subscriptionStatus: sub.reason || null,
         updatedAt: new Date().toISOString()
@@ -2567,7 +2593,7 @@ const aiHealth = {
   lastError: null
 };
 
-function recordAiOutcome({ question, payload, mode, provider, error }){
+function recordAiOutcome({ question, payload, mode, provider, error, modelRequested, modelUsed, modelAdjusted }){
   const ts = new Date().toISOString();
   if (mode === 'ai' || mode === 'cache') {
     aiHealth.lastSuccess = ts;
@@ -2582,6 +2608,9 @@ function recordAiOutcome({ question, payload, mode, provider, error }){
     mode: mode || null,
     provider: provider || null,
     error: error || null,
+    modelRequested: modelRequested || String(payload?.model || '').trim() || null,
+    modelUsed: modelUsed || null,
+    modelAdjusted: !!modelAdjusted,
     selectionCount: Number(payload?.selectionCount || 0),
     races: Array.isArray(payload?.selections) ? payload.selections.map(s => `${s.meeting || ''} R${s.race || ''}`) : [],
     question: String(question || '').slice(0, 400)
@@ -2631,6 +2660,7 @@ function rememberAiTurn(tenantId, question, answer, sourceTag = '') {
 async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = 'default', providerOverride = ''){
   const provider = String(providerOverride || '').trim().toLowerCase() || resolveAiProvider();
   const key = process.env.OPENAI_API_KEY || process.env.BETMAN_OPENAI_API_KEY;
+  const openAiBase = String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
   const ollamaBase = String(process.env.OLLAMA_BASE_URL || process.env.BETMAN_OLLAMA_BASE_URL || process.env.BETMAN_CHAT_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE).replace(/\/$/, '');
   if (provider === 'openai' && !key) return null;
   console.log('[ai-chat] provider', provider, 'question', question);
@@ -2642,6 +2672,26 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const sourceTag = String(clientContext?.source || '').toLowerCase();
   const isRaceAnalysis = sourceTag === 'race-analysis';
   const isStrategy = sourceTag === 'strategy' || /\bstrategy\b/i.test(String(question || ''));
+  const selections = Array.isArray(clientContext.selections) ? clientContext.selections : [];
+  const hasDraggedSelections = selections.length > 0;
+  const scopedSelections = hasDraggedSelections
+    ? selections.map((s) => ({
+        meeting: String(s.meeting || '').trim(),
+        race: String(s.race || '').trim(),
+        selection: String(s.selection || s.runner || '').trim(),
+        reason: String(s.reason || '').trim(),
+        tags: Array.isArray(s.tags) ? s.tags.slice(0, 12) : [],
+        odds: Number.isFinite(Number(s.odds)) ? Number(s.odds) : null,
+        aiWinProb: Number.isFinite(Number(s.aiWinProb)) ? Number(s.aiWinProb) : null,
+        impliedPct: Number.isFinite(Number(s.impliedPct)) ? Number(s.impliedPct) : null,
+        edgePct: Number.isFinite(Number(s.edgePct)) ? Number(s.edgePct) : null,
+        jockey: String(s.jockey || '').trim() || null,
+        trainer: String(s.trainer || '').trim() || null,
+        barrier: String(s.barrier || '').trim() || null,
+        form: String(s.form || '').trim() || null,
+        confidence: Number.isFinite(Number(s.confidence)) ? Number(s.confidence) : null
+      }))
+    : [];
   const isGeneralChat = !isRaceAnalysis && !isStrategy;
   const webOptional = true;
   let webContext = { results: [], domains: [] };
@@ -2715,7 +2765,6 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   };
 
   const jointRows = sameRaceJointLikelihoods();
-  const selections = Array.isArray(clientContext.selections) ? clientContext.selections : [];
 
   const analysisSource = String(clientContext?.source || '').toLowerCase();
   const rcMeeting = String(clientContext?.raceContext?.meeting || '').trim().toLowerCase();
@@ -2734,7 +2783,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   let effectiveModel = requestedModel || defaultModel;
   if (requestedModel && provider === 'openai' && !OPENAI_MODELS.has(requestedModel)) {
-    effectiveModel = defaultModel;
+    throw new Error('openai_model_not_allowed');
   }
 
   const modelProfile = (() => {
@@ -2742,22 +2791,22 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     if (m.includes('deepseek-r1:8b') || m.includes('llama3.1:8b') || m.includes('qwen2.5:1.5b')) {
       return {
         contextRace: envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS_SMALL', 8000, 3000, 16000),
-        contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL_SMALL', 4000, 900, 10000),
-        historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS_SMALL', 8, 0, 16),
-        historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS_SMALL', 1800, 300, 4000),
+        contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL_SMALL', 2600, 900, 10000),
+        historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS_SMALL', 6, 0, 16),
+        historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS_SMALL', 1200, 300, 4000),
         maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS_SMALL', 1100, 500, 2200),
-        maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS_SMALL', 1400, 300, 3000),
+        maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS_SMALL', 900, 300, 3000),
         temperatureRace: 0.15,
         temperatureGeneral: 0.28
       };
     }
     return {
       contextRace: envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS', 12000, 4000, 24000),
-      contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL', 7000, 1000, 16000),
-      historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS', 12, 0, 24),
-      historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS', 2400, 300, 5000),
+      contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL', 4200, 1000, 16000),
+      historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS', 8, 0, 24),
+      historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS', 1600, 300, 5000),
       maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS', 1400, 600, 3000),
-      maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS', 1800, 400, 4000),
+      maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS', 1100, 400, 4000),
       temperatureRace: 0.2,
       temperatureGeneral: 0.35
     };
@@ -2766,16 +2815,16 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const contextSummary = buildAiContextSummary({
     status: { updatedAt: status.updatedAt, apiStatus: status.apiStatusPublic || status.apiStatus },
     stakeProfile,
-    suggested: scopedSuggested,
-    interesting: status.interestingRunners || [],
-    marketMovers: status.marketMovers || [],
-    upcoming: status.upcomingRaces || [],
-    activity: status.activity || [],
-    webContext,
+    suggested: hasDraggedSelections ? scopedSuggested.filter(x => scopedSelections.some(s => String(x.meeting||'').trim() === s.meeting && String(x.race||'').trim() === s.race && String(x.selection||'').trim() === s.selection)) : scopedSuggested,
+    interesting: hasDraggedSelections ? [] : (status.interestingRunners || []),
+    marketMovers: hasDraggedSelections ? [] : (status.marketMovers || []),
+    upcoming: hasDraggedSelections ? [] : (status.upcomingRaces || []),
+    activity: hasDraggedSelections ? [] : (status.activity || []),
+    webContext: hasDraggedSelections ? { results: [], domains: [] } : webContext,
     clientContext,
     jointRows,
     question,
-    races: racesData.races || [],
+    races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : (racesData.races || []),
     maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral
   });
 
@@ -2787,6 +2836,27 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       content: `${systemPrompt}\n\nPriority rule: answer the user's latest question directly first. Do not ignore, rewrite, or replace the question with a generic template.`
     }
   ];
+  if (hasDraggedSelections) {
+    const draggedScope = scopedSelections.map((s, i) => {
+      const extra = [
+        Array.isArray(s.tags) && s.tags.length ? `tags ${s.tags.join(', ')}` : '',
+        Number.isFinite(s.odds) ? `odds ${s.odds.toFixed(2)}` : '',
+        Number.isFinite(s.aiWinProb) ? `model ${s.aiWinProb.toFixed(1)}%` : '',
+        Number.isFinite(s.impliedPct) ? `implied ${s.impliedPct.toFixed(1)}%` : '',
+        Number.isFinite(s.edgePct) ? `edge ${s.edgePct >= 0 ? '+' : ''}${s.edgePct.toFixed(1)} pts` : '',
+        s.barrier ? `barrier ${s.barrier}` : '',
+        s.jockey ? `jockey ${s.jockey}` : '',
+        s.trainer ? `trainer ${s.trainer}` : '',
+        s.form ? `form ${s.form}` : '',
+        Number.isFinite(s.confidence) ? `confidence ${s.confidence.toFixed(1)}%` : ''
+      ].filter(Boolean).join(' | ');
+      return `${i + 1}. ${s.meeting} R${s.race} ${s.selection}${extra ? ` | ${extra}` : ''}`;
+    }).join('\n');
+    messages.push({
+      role: 'system',
+      content: `Selection lock: answer ONLY using the explicitly dragged selections below unless the user clearly asks to broaden scope. Do not switch to other meetings, races, or generic NZ angles.\n${draggedScope}`
+    });
+  }
   if (customInstructions) {
     messages.push({ role: 'system', content: `Mandatory House Instructions:\n${customInstructions}` });
   }
@@ -2890,18 +2960,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       }
 
       if (!response.ok && response.status === 404) {
-        try {
-          const { models: installedList = [] } = await fetchOllamaModelsForBase(base);
-          const fallbackPool = [...installedList.filter(name => name && name !== modelForBase), ...DEFAULT_OLLAMA_FALLBACK_MODELS.filter(name => name !== modelForBase)];
-          const fallback = fallbackPool.find(Boolean) || '';
-          if (fallback && fallback !== modelForBase) {
-            console.warn('ollama_missing_model', modelForBase, 'fallback', fallback, 'base', base);
-            modelForBase = fallback;
-            response = await runOllamaWithRetry(base, modelForBase);
-          }
-        } catch (err) {
-          console.warn('ollama_missing_model_fallback_error', err?.message || err);
-        }
+        console.warn('ollama_model_missing', modelForBase, 'base', base);
       }
 
       if (!response.ok) {
@@ -2945,7 +3004,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         payload.reasoning = { effort: 'medium' };
       }
 
-      const r = await fetch('https://api.openai.com/v1/responses', {
+      const r = await fetch(`${openAiBase}/responses`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2993,7 +3052,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         payload.reasoning_effort = 'medium';
       }
 
-      const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      const r = await fetch(`${openAiBase}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3123,7 +3182,11 @@ const server = http.createServer(async (req, res)=>{
                   ok: false,
                   error: 'subscription_required',
                   paymentLink: paymentLinkForPlan(planType) || null,
-                  planType
+                  planType,
+                  reason: sub.reason || null,
+                  message: sub.reason === 'single_day_expired'
+                    ? 'Your BETMAN Single DAY pass has expired. Buy another day pass or upgrade to a subscription.'
+                    : 'An active BETMAN subscription is required.'
                 }, 402);
               }
               if (sub.customerId && userRow && !userRow.stripeCustomerId) {
@@ -3157,6 +3220,7 @@ const server = http.createServer(async (req, res)=>{
     return okJson(res, {
       ok: true,
       single: { price: '$9.95/week', paymentLink: STRIPE_LINK_SINGLE || null },
+      single_day: { price: '$7.95/day', paymentLink: STRIPE_LINK_SINGLE_DAY || null },
       commercial: { price: '$250/month', paymentLink: STRIPE_LINK_COMMERCIAL || null },
       tester: { price: 'Free/signup', paymentLink: STRIPE_LINK_TESTER || null }
     });
@@ -3192,7 +3256,7 @@ const server = http.createServer(async (req, res)=>{
             firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : (nameParts[0] || email.split('@')[0]);
             lastName = nameParts.length > 1 ? nameParts.slice(-1).join(' ') : '';
           }
-          const upsert = upsertProvisionedUser({ email, firstName, lastName, companyName, planType, stripeCustomerId: lookup.customerId });
+          const upsert = upsertProvisionedUser({ email, firstName, lastName, companyName, planType, stripeCustomerId: lookup.customerId, accessExpiresAt: lookup.accessExpiresAt || null });
           user = upsert?.user || null;
           sub = lookup;
           idx = (authState.users || []).findIndex(u => normalizeUsername(u.username) === normalizeUsername(email));
@@ -3210,7 +3274,7 @@ const server = http.createServer(async (req, res)=>{
       const setupExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
       const users = [...(authState.users || [])];
       if (idx >= 0) {
-        users[idx] = { ...users[idx], setupToken: token, setupExpiresAt, subscriptionActive: true, subscriptionStatus: 'active', stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, updatedAt: new Date().toISOString() };
+        users[idx] = { ...users[idx], setupToken: token, setupExpiresAt, subscriptionActive: true, subscriptionStatus: 'active', stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
         saveAuthState({ username: authState.username, password: authState.password, users });
       }
       const setupLink = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}/set-password?token=${encodeURIComponent(token)}`;
@@ -3274,7 +3338,12 @@ const server = http.createServer(async (req, res)=>{
             const firstName = String(obj?.customer_details?.name || '').trim().split(' ').slice(0, -1).join(' ');
             const lastName = String(obj?.customer_details?.name || '').trim().split(' ').slice(-1).join(' ');
             const companyName = planType === 'commercial' ? String(obj?.customer_details?.name || '') : '';
-            upsertProvisionedUser({ email, firstName, lastName, companyName, planType, stripeCustomerId: customerId });
+            let accessExpiresAt = null;
+            if (planType === 'single_day') {
+              const baseTs = Number(obj?.expires_at || obj?.current_period_end || obj?.trial_end || obj?.created || 0);
+              if (baseTs) accessExpiresAt = new Date(baseTs * 1000).toISOString();
+            }
+            upsertProvisionedUser({ email, firstName, lastName, companyName, planType, stripeCustomerId: customerId, accessExpiresAt });
           }
         }
 
@@ -3300,7 +3369,8 @@ const server = http.createServer(async (req, res)=>{
     req.on('end', async ()=>{
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
-      const planType = String(payload.planType || 'single').toLowerCase() === 'commercial' ? 'commercial' : 'single';
+      const planTypeInput = String(payload.planType || 'single').toLowerCase();
+      const planType = planTypeInput === 'commercial' ? 'commercial' : (planTypeInput === 'single_day' || planTypeInput === 'single-day' || planTypeInput === 'day' ? 'single_day' : 'single');
       const firstNameInput = String(payload.firstName || '');
       const lastNameInput = String(payload.lastName || '');
       const companyNameInput = String(payload.companyName || '');
@@ -3340,7 +3410,7 @@ const server = http.createServer(async (req, res)=>{
       let newUser = {
         username: email,
         email,
-        planType: planType === 'commercial' ? 'commercial' : 'single',
+        planType: planType === 'commercial' ? 'commercial' : (planType === 'single_day' ? 'single_day' : 'single'),
         firstName,
         lastName,
         companyName,
@@ -3815,7 +3885,15 @@ const server = http.createServer(async (req, res)=>{
     if (url.pathname === '/api/bakeoff-run-status') {
       const principal = req.authPrincipal;
       if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
-      return okJson(res, { ok: true, ...bakeoffRunState });
+      const logPath = path.join(process.cwd(), 'logs', 'bakeoff-run.log');
+      let tail = [];
+      try {
+        if (fs.existsSync(logPath)) {
+          const raw = fs.readFileSync(logPath, 'utf8');
+          tail = raw.split(/\r?\n/).filter(Boolean).slice(-12);
+        }
+      } catch {}
+      return okJson(res, { ok: true, ...bakeoffRunState, log: 'logs/bakeoff-run.log', tail });
     }
 
     if (url.pathname === '/api/bakeoff-run') {
@@ -3825,15 +3903,31 @@ const server = http.createServer(async (req, res)=>{
       const { spawn } = require('child_process');
       bakeoffRunState = { running: true, startedAt: Date.now(), endedAt: 0, exitCode: null, signal: null, error: null };
       try {
-        const child = spawn('npm', ['run', 'bakeoff'], { cwd: process.cwd(), stdio: 'ignore', detached: true });
+        const logDir = path.join(process.cwd(), 'logs');
+        fs.mkdirSync(logDir, { recursive: true });
+        const logPath = path.join(logDir, 'bakeoff-run.log');
+        const logFd = fs.openSync(logPath, 'a');
+        const childEnv = {
+          ...process.env,
+          BETMAN_OLLAMA_BASE_URL: process.env.BETMAN_OLLAMA_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE,
+          BAKEOFF_URL: process.env.BAKEOFF_URL || 'http://127.0.0.1:8080'
+        };
+        const child = spawn('npm', ['run', 'bakeoff'], {
+          cwd: process.cwd(),
+          env: childEnv,
+          stdio: ['ignore', logFd, logFd],
+          detached: true
+        });
         child.on('error', (err) => {
           bakeoffRunState = { running: false, startedAt: bakeoffRunState.startedAt, endedAt: Date.now(), exitCode: -1, signal: null, error: String(err?.message || 'spawn_error') };
+          try { fs.closeSync(logFd); } catch {}
         });
         child.on('exit', (code, signal) => {
           bakeoffRunState = { running: false, startedAt: bakeoffRunState.startedAt, endedAt: Date.now(), exitCode: Number.isFinite(code) ? code : null, signal: signal || null, error: null };
+          try { fs.closeSync(logFd); } catch {}
         });
         child.unref();
-        return okJson(res, { ok: true, started: true, running: true, startedAt: bakeoffRunState.startedAt });
+        return okJson(res, { ok: true, started: true, running: true, startedAt: bakeoffRunState.startedAt, log: 'logs/bakeoff-run.log' });
       } catch (err) {
         bakeoffRunState = { running: false, startedAt: 0, endedAt: Date.now(), exitCode: -1, signal: null, error: String(err?.message || 'spawn_error') };
         return okJson(res, { ok: false, error: bakeoffRunState.error }, 500);
@@ -4094,6 +4188,30 @@ if (url.pathname === '/api/ask-selection') {
           answer: 'I could not retrieve internet sources right now, so I cannot complete a bespoke web-backed answer. Please retry in 30–60 seconds.'
         });
       }
+      if (fallbackReason === 'openai_401') {
+        return okJson(res, {
+          ok: true,
+          mode: 'auth_error',
+          answer: 'OpenAI is configured but the server API key is invalid. Update OPENAI_API_KEY on the BETMAN server to use OpenAI models.',
+          provider: aiProvider,
+          modelRequested: String(payload?.model || '').trim() || null,
+          modelUsed: String(payload?.model || '').trim() || null,
+          modelAdjusted: false,
+          fallbackReason
+        });
+      }
+      if (fallbackReason === 'openai_model_not_allowed') {
+        return okJson(res, {
+          ok: true,
+          mode: 'model_error',
+          answer: 'The selected OpenAI model is not allowed by BETMAN. Choose an allowed model from the selector.',
+          provider: aiProvider,
+          modelRequested: String(payload?.model || '').trim() || null,
+          modelUsed: null,
+          modelAdjusted: false,
+          fallbackReason
+        });
+      }
     }
 
     if (!answerText) {
@@ -4146,7 +4264,16 @@ if (url.pathname === '/api/ask-selection') {
     }
 
     rememberAiTurn(tenantId, question, answerText, String(payload?.source || ''));
-    recordAiOutcome({ question, payload, mode, provider: aiProvider, error: mode === 'fallback' ? fallbackReason : null });
+    recordAiOutcome({
+      question,
+      payload,
+      mode,
+      provider: aiProvider,
+      error: mode === 'fallback' ? fallbackReason : null,
+      modelRequested: String(payload?.model || '').trim() || null,
+      modelUsed: aiMeta?.modelUsed || null,
+      modelAdjusted: !!aiMeta?.modelAdjusted
+    });
 
     const resolvedModelForMeta = String(aiMeta?.modelUsed || payload?.model || process.env.BETMAN_CHAT_MODEL || '').toLowerCase();
     const smallModelForMeta = resolvedModelForMeta.includes('deepseek-r1:8b') || resolvedModelForMeta.includes('llama3.1:8b') || resolvedModelForMeta.includes('qwen2.5:1.5b');
@@ -4269,7 +4396,7 @@ if (url.pathname === '/api/ask-selection') {
         let newUser = {
           username: email,
           email,
-          planType: planType === 'commercial' ? 'commercial' : 'single',
+          planType: planType === 'commercial' ? 'commercial' : (planType === 'single_day' ? 'single_day' : 'single'),
           firstName,
           lastName,
           companyName,
@@ -4442,6 +4569,27 @@ if (url.pathname === '/api/ask-selection') {
     return okJson(res, { ok: true, service: 'betman-api', ts: new Date().toISOString() });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/runtime-health') {
+    const principal = req.authPrincipal;
+    if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
+    const mem = process.memoryUsage();
+    return okJson(res, {
+      ok: true,
+      pid: process.pid,
+      uptimeSec: Math.round(process.uptime()),
+      rssMb: Math.round((mem.rss || 0) / 1048576),
+      heapUsedMb: Math.round((mem.heapUsed || 0) / 1048576),
+      heapTotalMb: Math.round((mem.heapTotal || 0) / 1048576),
+      openAiConfigured: !!(process.env.OPENAI_API_KEY || process.env.BETMAN_OPENAI_API_KEY),
+      openAiBaseUrl: String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'),
+      ollamaBaseUrl: String(process.env.OLLAMA_BASE_URL || process.env.BETMAN_OLLAMA_BASE_URL || process.env.BETMAN_CHAT_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE),
+      bakeoffRunning: !!bakeoffRunState.running,
+      bakeoffExitCode: bakeoffRunState.exitCode,
+      aiModelsCacheAgeSec: aiModelsCache.ts ? Math.round((Date.now() - aiModelsCache.ts) / 1000) : null,
+      ts: new Date().toISOString()
+    });
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/ai-models') {
     const principal = req.authPrincipal;
     const openAiAllowed = canUseOpenAiByPrincipal(principal);
@@ -4461,24 +4609,33 @@ if (url.pathname === '/api/ask-selection') {
       openAiUiEnabled,
       ollamaBases
     };
+    const now = Date.now();
+    if (aiModelsCache.payload && (now - aiModelsCache.ts) < 60000) {
+      return okJson(res, { ok: true, ...aiModelsCache.payload, ...basePayload, cached: true });
+    }
     fetchOllamaModelsFromBases(ollamaBases)
-      .then(({ base: resolvedBase, models }) => okJson(res, {
-        ok: true,
-        providerDefault: resolveAiProvider(),
-        ollamaBase: resolvedBase,
-        ollamaModels: Array.from(new Set([
-          ...((Array.isArray(models) && models.length) ? models : []),
-          ...fallbackOllama
-        ].filter(Boolean))),
-        ...basePayload
-      }))
-      .catch(() => okJson(res, {
-        ok: true,
-        providerDefault: resolveAiProvider(),
-        ollamaBase: ollamaBases[0] || BETMAN_OLLAMA_DEFAULT_BASE,
-        ollamaModels: fallbackOllama,
-        ...basePayload
-      }));
+      .then(({ base: resolvedBase, models }) => {
+        aiModelsCache = {
+          ts: Date.now(),
+          payload: {
+            providerDefault: resolveAiProvider(),
+            ollamaBase: resolvedBase,
+            ollamaModels: (Array.isArray(models) && models.length) ? models : fallbackOllama
+          }
+        };
+        return okJson(res, { ok: true, ...aiModelsCache.payload, ...basePayload, cached: false });
+      })
+      .catch(() => {
+        aiModelsCache = {
+          ts: Date.now(),
+          payload: {
+            providerDefault: resolveAiProvider(),
+            ollamaBase: ollamaBases[0] || BETMAN_OLLAMA_DEFAULT_BASE,
+            ollamaModels: fallbackOllama
+          }
+        };
+        return okJson(res, { ok: true, ...aiModelsCache.payload, ...basePayload, cached: false });
+      });
     return;
   }
 
@@ -4500,64 +4657,11 @@ if (url.pathname === '/api/ask-selection') {
 
   if (req.method === 'GET' && url.pathname === '/api/status') {
     const statusFile = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json');
-    const status = loadJson(statusFile, {});
+    let status = loadJson(statusFile, {});
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
     if (tenantId !== 'default') {
       const globalStatus = loadJson(path.join(process.cwd(), 'frontend', 'data', 'status.json'), {});
-      const normMeeting = (val = '') => String(val || '').trim().toLowerCase();
-      const normRace = (val = '') => String(val || '').replace(/^R/i, '').trim();
-      const normText = (val = '') => String(val || '').replace(/\s+/g, ' ').trim().toLowerCase();
-      const mergeList = (key, keyBuilder) => {
-        const rows = new Map();
-        (globalStatus[key] || []).forEach(row => {
-          const dedupe = keyBuilder(row);
-          if (dedupe) rows.set(dedupe, row);
-        });
-        (status[key] || []).forEach(row => {
-          const dedupe = keyBuilder(row);
-          if (dedupe) rows.set(dedupe, row);
-        });
-        if (rows.size) status[key] = Array.from(rows.values());
-      };
-      mergeList('marketMovers', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const runner = normText(row.runner);
-        if (!meeting || !race || !runner) return null;
-        return `${meeting}|${race}|${runner}`;
-      });
-      mergeList('suggestedBets', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const selection = normText(row.selection);
-        const type = normText(row.type);
-        if (!meeting || !race || !selection || !type) return null;
-        return `${meeting}|${race}|${selection}|${type}`;
-      });
-      mergeList('nextPlans', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const selection = normText(row.selection);
-        const type = normText(row.type);
-        const state = normText(row.state || row.status || 'pending');
-        if (!meeting || !race || !selection) return null;
-        return `${meeting}|${race}|${selection}|${type}|${state}`;
-      });
-      mergeList('betPlans', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const selection = normText(row.selection);
-        const type = normText(row.type);
-        if (!meeting || !race || !selection) return null;
-        return `${meeting}|${race}|${selection}|${type}`;
-      });
-      mergeList('interestingRunners', row => {
-        const meeting = normMeeting(row.meeting);
-        const race = normRace(row.race);
-        const runner = normText(row.runner);
-        if (!meeting || !race || !runner) return null;
-        return `${meeting}|${race}|${runner}`;
-      });
+      status = mergePublicStatusLists(globalStatus, status);
     }
     const audited = buildDecisionAudit(status);
     return okJson(res, { ...status, ...audited, tenantId, decisionStandardDoc: '/docs/BETMAN_DECISION_STANDARD.md', aiHealth });
@@ -4689,19 +4793,10 @@ if (url.pathname === '/api/ask-selection') {
   if (req.method === 'GET' && url.pathname === '/data/status.json') {
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
     const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json');
-    const status = (DB_URL ? await loadDataSnapshotFromPg(tenantId, 'status.json') : null) || loadJson(p, {});
+    let status = (DB_URL ? await loadDataSnapshotFromPg(tenantId, 'status.json') : null) || loadJson(p, {});
     if (tenantId !== 'default') {
       const globalStatus = (DB_URL ? await loadDataSnapshotFromPg('default', 'status.json') : null) || loadJson(path.join(process.cwd(), 'frontend', 'data', 'status.json'), {});
-      const merged = new Map();
-      for (const row of (globalStatus.marketMovers || [])) {
-        const key = `${String(row.meeting || '').toLowerCase()}|${String(row.race || '')}|${String(row.runner || '').toLowerCase()}`;
-        merged.set(key, row);
-      }
-      for (const row of (status.marketMovers || [])) {
-        const key = `${String(row.meeting || '').toLowerCase()}|${String(row.race || '')}|${String(row.runner || '').toLowerCase()}`;
-        merged.set(key, row);
-      }
-      status.marketMovers = Array.from(merged.values());
+      status = mergePublicStatusLists(globalStatus, status);
     }
     return send(res, 200, JSON.stringify(status), 'application/json');
   }
