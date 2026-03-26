@@ -95,5 +95,6 @@ const ctx6 = buildAiContextSummary({
 });
 assert(ctx6.includes('Midfield 2/4'), 'meeting profile pace stats should be in context');
 assert(ctx6.includes('trackCondition'), 'meeting profile should include trackCondition field');
+assert(ctx6.includes('Soft5'), 'meeting profile should include track condition value');
 
 console.log('ai_meeting_notes tests passed');
