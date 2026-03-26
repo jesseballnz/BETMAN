@@ -40,8 +40,8 @@ function isTrueFallback(row) {
 
 async function run() {
   const baseUrl = arg('url', process.env.BAKEOFF_URL || 'http://127.0.0.1:8080');
-  let user = arg('user', process.env.BAKEOFF_USER || process.env.BETMAN_USERNAME || '');
-  let pass = arg('pass', process.env.BAKEOFF_PASS || process.env.BETMAN_PASSWORD || '');
+  let user = arg('user', process.env.BAKEOFF_USER || process.env.BETMAN_USERNAME || process.env.BETMAN_USER || '');
+  let pass = arg('pass', process.env.BAKEOFF_PASS || process.env.BETMAN_PASSWORD || process.env.BETMAN_PASS || '');
   if (!user || !pass) {
     try {
       const authState = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'memory', 'betman-auth.json'), 'utf8'));
@@ -141,7 +141,7 @@ async function run() {
           fallbackReason: body?.fallbackReason || null,
           scoreQuality: ok ? scoreAnswer(answer, p) : 0,
           answerChars: String(answer).length,
-          answer: answer ? String(answer).slice(0, 2000) : '',
+          answer: answer ? String(answer).slice(0, 4000) : '',
           error: err
         });
         process.stdout.write(`run model=${model} prompt=${p.id} #${i + 1} ok=${ok} latency=${latencyMs}ms\n`);

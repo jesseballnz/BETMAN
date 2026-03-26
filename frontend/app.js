@@ -3466,7 +3466,8 @@ You MUST explicitly mention each of these runners by name: ${selectionNames}.`;
         source: 'strategy',
         uiContext: { day: selectedDay, country: selectedCountry, meeting: selectedMeeting },
         provider: selectedAiModel.provider,
-        model: selectedAiModel.model
+        model: selectedAiModel.model,
+        userNotes: queryAiUserNotes('', selectedMeeting).slice(0, 5).map(n => ({ text: n.text, meeting: n.meeting, createdAt: n.createdAt }))
       })
     });
     const out = await res.json();
@@ -7791,7 +7792,8 @@ function bindAiAnalyseButton(){
       selectionCount: 0,
       selections: [],
       uiContext: { day: selectedDay, country: selectedCountry, meeting: selectedMeeting },
-      raceContext: { meeting: selectedRace.meeting, raceNumber: selectedRace.race_number, raceName: selectedRace.description }
+      raceContext: { meeting: selectedRace.meeting, raceNumber: selectedRace.race_number, raceName: selectedRace.description },
+      userNotes: queryAiUserNotes('', selectedMeeting).slice(0, 5).map(n => ({ text: n.text, meeting: n.meeting, createdAt: n.createdAt }))
     };
     const requestStarted = performance.now();
     let responseMs = null;
@@ -10156,7 +10158,8 @@ async function runBakeoffModelTest(){
             selectionCount: 0,
             selections: [],
             uiContext: { day: selectedDay, country: selectedCountry, meeting: selectedMeeting },
-            raceContext: { meeting: race.meeting, raceNumber: race.race_number, raceName: race.description }
+            raceContext: { meeting: race.meeting, raceNumber: race.race_number, raceName: race.description },
+            userNotes: queryAiUserNotes('', selectedMeeting).slice(0, 5).map(n => ({ text: n.text, meeting: n.meeting, createdAt: n.createdAt }))
           })
         });
         const out = await res.json();
