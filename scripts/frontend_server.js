@@ -3977,7 +3977,9 @@ const server = http.createServer(async (req, res)=>{
         const childEnv = {
           ...process.env,
           BETMAN_OLLAMA_BASE_URL: process.env.BETMAN_OLLAMA_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE,
-          BAKEOFF_URL: process.env.BAKEOFF_URL || 'http://127.0.0.1:8080'
+          BAKEOFF_URL: process.env.BAKEOFF_URL || 'http://127.0.0.1:8080',
+          BAKEOFF_USER: process.env.BAKEOFF_USER || authState.username || '',
+          BAKEOFF_PASS: process.env.BAKEOFF_PASS || authState.password || ''
         };
         const child = spawn('npm', ['run', 'bakeoff'], {
           cwd: process.cwd(),
