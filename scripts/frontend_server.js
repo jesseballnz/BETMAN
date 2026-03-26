@@ -829,6 +829,11 @@ function envNumber(name, fallback, min = null, max = null){
   return v;
 }
 
+function isSmallModel(model){
+  const m = String(model || '').toLowerCase();
+  return m.includes('deepseek-r1:8b') || m.includes('llama3.1:8b') || m.includes('llama3.2:3b') || m.includes('qwen2.5:1.5b') || m.includes('qwen2.5:3b');
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000){
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -2788,7 +2793,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   const modelProfile = (() => {
     const m = String(effectiveModel || '').toLowerCase();
-    if (m.includes('deepseek-r1:8b') || m.includes('llama3.1:8b') || m.includes('qwen2.5:1.5b')) {
+    if (isSmallModel(m)) {
       return {
         contextRace: envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS_SMALL', 8000, 3000, 16000),
         contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL_SMALL', 2600, 900, 10000),
@@ -4095,7 +4100,7 @@ if (url.pathname === '/api/ask-selection') {
       if (cacheFresh && cacheCompatible) {
         if (String(cached.mode || '').toLowerCase() === 'ai' && withinMinRefresh) {
           const resolvedModel = String(cached.modelUsed || cached.modelRequested || requestedModel || process.env.BETMAN_CHAT_MODEL || 'qwen2.5:1.5b').toLowerCase();
-          const smallModel = resolvedModel.includes('deepseek-r1:8b') || resolvedModel.includes('llama3.1:8b') || resolvedModel.includes('qwen2.5:1.5b');
+          const smallModel = isSmallModel(resolvedModel);
           const fallbackContextMax = isRaceAnalysis
             ? (smallModel
               ? envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS_SMALL', 8000, 3000, 16000)
@@ -4276,7 +4281,7 @@ if (url.pathname === '/api/ask-selection') {
     });
 
     const resolvedModelForMeta = String(aiMeta?.modelUsed || payload?.model || process.env.BETMAN_CHAT_MODEL || '').toLowerCase();
-    const smallModelForMeta = resolvedModelForMeta.includes('deepseek-r1:8b') || resolvedModelForMeta.includes('llama3.1:8b') || resolvedModelForMeta.includes('qwen2.5:1.5b');
+    const smallModelForMeta = isSmallModel(resolvedModelForMeta);
     const fallbackContextMeta = isRaceAnalysis
       ? (smallModelForMeta
         ? envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS_SMALL', 8000, 3000, 16000)
@@ -4821,6 +4826,13 @@ if (url.pathname === '/api/ask-selection') {
     if (payload) return send(res, 200, JSON.stringify(payload), 'application/json');
     const p = safePath(`/data/${filename}`);
     if (p && fs.existsSync(p)) return send(res, 200, fs.readFileSync(p), 'application/json');
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/instructions') {
+    const text = loadText(AI_INSTRUCTIONS_FILE, '').trim();
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(text);
+    return;
   }
 
   // GET static

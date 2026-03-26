@@ -371,34 +371,73 @@ async function loadAiModels(){
 }
 
 
+let analysisProgressInterval = null;
+let analysisProgressPct = 0;
+
+function setAnalysisProgress(pct){
+  analysisProgressPct = Math.max(0, Math.min(100, pct));
+  const bar = $('analysisProgressBar');
+  const label = $('analysisProgressPct');
+  if (bar) bar.style.width = `${analysisProgressPct}%`;
+  if (label) label.textContent = `${Math.round(analysisProgressPct)}%`;
+}
+
+function startAnalysisProgressMeter(){
+  stopAnalysisProgressMeter();
+  analysisProgressPct = 0;
+  setAnalysisProgress(0);
+  const startedAt = Date.now();
+  const expectedMs = 12000;
+  analysisProgressInterval = setInterval(() => {
+    const elapsed = Date.now() - startedAt;
+    const raw = (elapsed / expectedMs) * 90;
+    const eased = raw < 60 ? raw : 60 + (raw - 60) * 0.3;
+    setAnalysisProgress(Math.min(92, eased));
+  }, 200);
+}
+
+function stopAnalysisProgressMeter(complete){
+  if (analysisProgressInterval) {
+    clearInterval(analysisProgressInterval);
+    analysisProgressInterval = null;
+  }
+  if (complete) setAnalysisProgress(100);
+}
+
 function showAnalysisProcessingHint(msg){
   const hint = $('analysisProcessingHint');
   if (!hint) return;
   hint.classList.add('active');
-  hint.style.display = 'block';
+  hint.style.display = '';
   if (msg) {
-    hint.textContent = msg;
+    const text = $('analysisProcessingText');
+    if (text) text.textContent = msg;
     stopAnalysisProcessingStages();
   } else {
     startAnalysisProcessingStages();
   }
+  startAnalysisProgressMeter();
 }
 
 function hideAnalysisProcessingHint(){
   const hint = $('analysisProcessingHint');
   if (!hint) return;
   stopAnalysisProcessingStages();
-  hint.classList.remove('active');
-  hint.style.display = 'none';
+  stopAnalysisProgressMeter(true);
+  setTimeout(() => {
+    hint.classList.remove('active');
+    hint.style.display = 'none';
+    setAnalysisProgress(0);
+  }, 400);
 }
 
 function startAnalysisProcessingStages(){
   stopAnalysisProcessingStages();
-  const hint = $('analysisProcessingHint');
-  if (!hint) return;
+  const text = $('analysisProcessingText');
+  if (!text) return;
   const modelLabel = selectedAiModel.model || '—';
   const setStageText = (label) => {
-    hint.textContent = `${label} · ${modelLabel}`;
+    text.textContent = `${label} · ${modelLabel}`;
   };
   analysisProcessingStageIndex = 0;
   setStageText(AI_ANALYSIS_PROGRESS_STAGES[analysisProcessingStageIndex]);
@@ -617,17 +656,21 @@ let betPlanPerfWindow = 'day';
 let performanceDailyCache = null;
 
 function summarizeInstructions(raw){
-  if (!raw) return '';
-  const headline = 'Professional punter brief: build a panel-based opinion and price every runner with discipline.';
-  const runnerDataSummary = 'Data: race #, name, barrier, jockey, trainer, weight, form lines (incl. trials/sectionals), odds, breeding (sire/dam/dam-sire), career/track/dist/condition stats, 1st/2nd-up, recent form, early/mid/late splits, pattern + speed map, suitability score, trainer/jockey strike rates, stable form, prep timing, weather bias.';
-  const templateSummary = 'Output: meeting header, speed map, key profiles, odds vs model/value table, 999,999-run sim math, overlays/underlays, punter panel debate to consensus, staking plan, confidence %, invalidation triggers.';
-  const summary = `${headline} ${runnerDataSummary} ${templateSummary}`.trim();
-  return summary.length > 500 ? `${summary.slice(0, 500)}…` : summary;
+  if (!raw || raw.length < 10) return '';
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length <= 1 && /no additional/i.test(raw)) return '';
+  const condensed = lines
+    .filter(l => !/^#+\s/.test(l) && !/^```/.test(l) && !/^---/.test(l))
+    .map(l => l.replace(/^[-•·]\s*/, '').trim())
+    .filter(Boolean)
+    .join(' ');
+  const summary = condensed.length > 800 ? `${condensed.slice(0, 800)}…` : condensed;
+  return summary;
 }
 
 function ensureInstructionsLoaded(){
   if (!instructionsLoadPromise) {
-    instructionsLoadPromise = fetch('./instructions/instructions.md')
+    instructionsLoadPromise = fetch('./api/instructions')
       .then(res => res.ok ? res.text() : '')
       .then(text => {
         instructionsTemplate = summarizeInstructions(text || '');
@@ -7538,12 +7581,12 @@ function attachAnalysisSelectionHandlers(race){
   updateAnalysisToggleLabel();
 }
 
-function buildAiAnalysisCacheKey(){
+function buildAiAnalysisCacheKey(overrideProvider, overrideModel){
   if (!selectedRace) return '';
   const raceKey = buildAiRaceKey(selectedRace);
   if (!raceKey) return '';
-  const provider = selectedAiModel.provider || 'ollama';
-  const model = selectedAiModel.model || '';
+  const provider = overrideProvider || selectedAiModel.provider || 'ollama';
+  const model = overrideModel || selectedAiModel.model || '';
   return `${raceKey}|${provider}|${model}`;
 }
 
@@ -7574,6 +7617,7 @@ function refreshAiAnalyseButtonState(){
     const cooldownMinutes = AI_ANALYSE_COOLDOWN_MS / 60000;
     const label = Number.isInteger(cooldownMinutes) ? String(cooldownMinutes) : cooldownMinutes.toFixed(1);
     btn.title = `AI analysis cooling down (${label} min)`;
+    ensureAiCooldownTimer();
   } else {
     btn.title = '';
     if (aiCooldownInterval) {
@@ -7633,7 +7677,8 @@ function ensureAiCooldownTimer(){
 
 function renderCachedAiAnalysisIfPresent(race){
   if (!race) return false;
-  const key = buildAiAnalysisCacheKey();
+  const resolved = resolveAutoTuneModelSelection();
+  const key = buildAiAnalysisCacheKey(resolved.provider, resolved.model);
   if (!key) return false;
   const cached = aiAnalysisCache.get(key);
   if (!cached || !cached.answerHtml) return false;
@@ -7643,7 +7688,7 @@ function renderCachedAiAnalysisIfPresent(race){
     return false;
   }
   const responseLabel = formatResponseTime(cached.durationMs) || 'n/a';
-  const modelName = cached.modelName || selectedAiModel.model || '—';
+  const modelName = cached.modelName || resolved.model || selectedAiModel.model || '—';
   const meta = `<div class='analysis-meta'>Answer ${new Date(cached.timestamp || Date.now()).toLocaleTimeString()} · Response ${responseLabel} · ${modelName} · Cached</div>`;
   setAiAnswerPanel(`<div class='ai-answer-block'>${cached.answerHtml}</div>${meta}`);
   return true;
@@ -7674,7 +7719,8 @@ function bindAiAnalyseButton(){
     };
     const serveCache = () => {
       if (!selectedRace) return false;
-      const key = buildAiAnalysisCacheKey();
+      const resolved = resolveAutoTuneModelSelection();
+      const key = buildAiAnalysisCacheKey(resolved.provider, resolved.model);
       if (!key) return false;
       const cached = aiAnalysisCache.get(key);
       if (!cached || !cached.answerHtml) return false;
@@ -7684,7 +7730,7 @@ function bindAiAnalyseButton(){
         return false;
       }
       const responseLabel = formatResponseTime(cached.durationMs) || 'n/a';
-      const modelName = cached.modelName || selectedAiModel.model || '—';
+      const modelName = cached.modelName || resolved.model || selectedAiModel.model || '—';
       const meta = `<div class='analysis-meta'>Answer ${new Date(cached.timestamp).toLocaleTimeString()} · Response ${responseLabel} · ${modelName} · Cached</div>`;
       analysisViewMode = 'engine';
       updateAnalysisToggleLabel();
@@ -7724,11 +7770,18 @@ function bindAiAnalyseButton(){
     $('analysisTitle').textContent = `${selectedRace.meeting} R${selectedRace.race_number} — ${selectedRace.description}`;
     ensureAiAnswerHost();
     setAiAnswerPanel(`<div class='ai-answer-block pending'>Running AI analysis…</div>`);
-    const cacheKey = buildAiAnalysisCacheKey();
     const cooldownKey = buildAiCooldownKey(selectedRace);
     await ensureInstructionsLoaded().catch(()=>{});
     await loadRunnerMetrics().catch(()=>{});
     const autoTuneSelection = resolveAutoTuneModelSelection();
+    const cacheKey = (() => {
+      if (!selectedRace) return '';
+      const raceKey = buildAiRaceKey(selectedRace);
+      if (!raceKey) return '';
+      const provider = autoTuneSelection.provider || 'ollama';
+      const model = autoTuneSelection.model || '';
+      return `${raceKey}|${provider}|${model}`;
+    })();
     const payload = {
       source: 'race-analysis',
       question: buildAiAnalysisPrompt(selectedRace),
@@ -7767,7 +7820,7 @@ function bindAiAnalyseButton(){
       hideAnalysisProcessingHint();
       if (cooldownKey) startAiAnalyseCooldown(cooldownKey);
       if (cacheKey) {
-        aiAnalysisCache.set(cacheKey, { answerHtml, modelName, timestamp: generatedAt, durationMs: responseMs });
+        aiAnalysisCache.set(cacheKey, { answerHtml, modelName: modelLabel, timestamp: generatedAt, durationMs: responseMs });
         persistAiAnalysisCache();
       }
     } catch (err) {
@@ -9634,8 +9687,8 @@ function chooseChampion(rows){
   const best = sorted[0];
   const second = sorted[1] || null;
   const compositeGap = Number(best?.composite || 0) - Number(second?.composite || 0);
-  const success = Number(best?.successRate || 0);
-  const quality = Number(best?.qualityAvg || 0);
+  const success = formatBakeoffPct(best?.successRate || 0);
+  const quality = formatBakeoffPct(best?.qualityAvg || 0);
   const runs = Number(best?.runs || 0);
   const canPromote = success >= 55 && quality >= 55 && runs >= 20 && compositeGap >= 0.5;
   return {

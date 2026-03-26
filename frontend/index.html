@@ -182,7 +182,13 @@
             <button id="pickAiMulti4Btn" class="btn btn-ghost">Pick 4‑Race Multi</button>
           </div>
         </div>
-        <div id="analysisProcessingHint" class="analysis-hint" style="display:none">AI processing…</div>
+        <div id="analysisProcessingHint" class="analysis-hint" style="display:none">
+          <span id="analysisProcessingText">AI processing…</span>
+          <div id="analysisProgressWrap" class="analysis-progress-wrap">
+            <div id="analysisProgressBar" class="analysis-progress-bar"></div>
+            <span id="analysisProgressPct" class="analysis-progress-pct">0%</span>
+          </div>
+        </div>
         <div id="aiCooldownTimer" class="analysis-meta" style="display:none"></div>
         <div id="analysisBody" class="analysis-body">Click a race to load analysis.</div>
       </div>
