@@ -3999,7 +3999,11 @@ function renderNextPlanned(rows){
     const aiProbText = Number.isFinite(Number(r.aiWinProb))
       ? `AI win probability is ${Number(r.aiWinProb).toFixed(1)}%.`
       : (() => {
-          if (exotic) return 'AI win probability not applicable for this market type.';
+          if (exotic) {
+            const modelPrice = Number.isFinite(odds) && odds > 0 ? `$${odds.toFixed(2)}` : '—';
+            const impliedPct = Number.isFinite(odds) && odds > 0 ? `${(100 / odds).toFixed(1)}%` : '—';
+            return `Model probability unavailable for this market. Model price ${modelPrice} (implied ${impliedPct}).`;
+          }
           if (fallbackRow) {
             return 'AI win probability pending — placeholder runner until a qualified AI signal enters the window.';
           }
