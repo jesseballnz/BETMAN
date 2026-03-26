@@ -124,6 +124,24 @@ async function postAsk(payload){
           model: 'gpt-5.2'
         },
         expect: { context: 3200, historyTurns: 8, historyChars: 1400, model: 'gpt-5.2' }
+      },
+      {
+        name: 'llama32_3b_race',
+        payload: {
+          question: 'Model audit llama3.2 race',
+          source: 'race-analysis',
+          raceContext: { meeting: 'Avondale', raceNumber: '2' },
+          model: 'llama3.2:3b'
+        },
+        expect: { context: 9100, historyTurns: 5, historyChars: 950, model: 'llama3.2:3b' }
+      },
+      {
+        name: 'llama32_3b_general',
+        payload: {
+          question: 'Model audit llama3.2 general',
+          model: 'llama3.2:3b'
+        },
+        expect: { context: 1900, historyTurns: 5, historyChars: 950, model: 'llama3.2:3b' }
       }
     ];
 

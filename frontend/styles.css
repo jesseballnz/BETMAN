@@ -221,8 +221,12 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .admin-tab-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(197,255,0,.12)}
 .admin-tab-btn.disabled,.admin-tab-btn:disabled{opacity:.5;pointer-events:none;cursor:not-allowed}
 .analysis-hint{display:none;font-size:13px;color:#7aa3c7;margin:6px 0 0;}
-.analysis-hint.active{display:block;animation:pulseHint 1.4s ease-in-out infinite;}
+.analysis-hint.active{display:flex;flex-direction:column;gap:6px;animation:none;}
+.analysis-hint.active #analysisProcessingText{animation:pulseHint 1.4s ease-in-out infinite;}
 @keyframes pulseHint{0%{opacity:.35;}50%{opacity:1;}100%{opacity:.35;}}
+.analysis-progress-wrap{position:relative;width:100%;max-width:420px;height:18px;background:rgba(122,163,199,.12);border-radius:9px;overflow:hidden;}
+.analysis-progress-bar{position:absolute;left:0;top:0;height:100%;width:0%;background:linear-gradient(90deg,#1a6baa,#5bc0eb);border-radius:9px;transition:width .4s ease-out;}
+.analysis-progress-pct{position:absolute;right:8px;top:0;line-height:18px;font-size:11px;font-weight:600;color:#e0eaf4;}
 .race-card-summary{display:flex;flex-direction:column;gap:12px;}
 .race-card-meta,.race-card-highlights{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px 18px;font-size:13px;}
 .runner-name-static{display:inline-flex;align-items:center;gap:6px;font-weight:600;}
