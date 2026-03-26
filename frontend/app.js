@@ -10688,6 +10688,104 @@ async function sendAiChat(){
   }
 }
 
+async function auditAiChatModels(){
+  const PREVIEW_MAX_LENGTH = 400;
+  const auditBtn = $('aiChatAuditBtn');
+  const input = $('aiChatInput');
+  const box = $('aiChatMessages');
+
+  // Resolve question: use input value or fall back to last user message in chat
+  let q = String(input?.value || '').trim();
+  if (!q) {
+    const lastUser = [...(box?.querySelectorAll('.ai-msg.user') || [])].slice(-1)[0];
+    q = lastUser ? String(lastUser.textContent || '').trim() : '';
+  }
+  if (!q && draggedSelections.length) {
+    const lines = buildDraggedContextLines();
+    q = `Using only these dragged runners, provide ranked win chances, best structure, edge vs market, and key risks:\n${lines.join('\n')}`;
+  }
+  if (!q) return pushAiChat('bot', 'Enter a question first, then tap Compare.');
+
+  if (!((aiModelCatalog.ollamaModels || []).length || (aiModelCatalog.openaiModels || []).length)) {
+    await loadAiModels().catch(()=>{});
+  }
+
+  const catalog = [
+    ...(aiModelCatalog.ollamaModels || []).map(m => ({ provider: 'ollama', model: m })),
+    ...(aiModelCatalog.capabilities?.openaiPermitted ? (aiModelCatalog.openaiModels || []).map(m => ({ provider: 'openai', model: m })) : [])
+  ];
+  if (!catalog.length) return pushAiChat('bot', 'No models available to compare. Configure Ollama or add an OpenAI key.');
+
+  if (auditBtn) { auditBtn.disabled = true; auditBtn.textContent = '⏱ Running…'; }
+
+  // Show "thinking" placeholder
+  const thinking = document.createElement('div');
+  thinking.className = 'ai-msg bot thinking';
+  thinking.textContent = `Comparing ${catalog.length} model${catalog.length > 1 ? 's' : ''} in parallel…`;
+  box?.appendChild(thinking);
+  if (box) box.scrollTop = box.scrollHeight;
+
+  // Build shared payload (same shape as sendAiChat)
+  const raceKeys = [...new Set((draggedSelections || []).map(x => `${x.meeting}|${x.race}`))];
+  const recentNotes = queryAiUserNotes('', selectedMeeting).slice(0, 5).map(n => ({
+    text: n.text, meeting: n.meeting, createdAt: n.createdAt
+  }));
+  const basePayload = {
+    question: q,
+    source: draggedSelections.length ? 'strategy' : 'chat',
+    selectionCount: draggedSelections.length,
+    selections: draggedSelections,
+    multiRaceContext: { enabled: raceKeys.length > 1, raceCount: raceKeys.length, races: raceKeys },
+    uiContext: { day: selectedDay, country: selectedCountry, meeting: selectedMeeting },
+    userNotes: recentNotes
+  };
+
+  // Fire all models in parallel
+  const results = await Promise.allSettled(catalog.map(async entry => {
+    const started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const res = await fetchLocal('./api/ask-selection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...basePayload, provider: entry.provider, model: entry.model })
+    });
+    const out = await res.json();
+    const latencyMs = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - started);
+    if (!res.ok || !out?.ok) throw Object.assign(new Error(out?.error || `HTTP ${res.status}`), { entry, latencyMs });
+    return { entry, out, latencyMs };
+  }));
+
+  thinking.remove();
+
+  // Render comparison block
+  const cards = results.map(r => {
+    if (r.status === 'fulfilled') {
+      const { entry, out, latencyMs } = r.value;
+      const latSec = (latencyMs / 1000).toFixed(2);
+      const preview = String(out.answer || '').trim().slice(0, PREVIEW_MAX_LENGTH) + (String(out.answer || '').length > PREVIEW_MAX_LENGTH ? '…' : '');
+      return `<div class="bakeoff-test-card success">
+        <div class="head"><div>${escapeHtml(entry.model)} <span class="provider">(${escapeHtml(entry.provider)})</span></div><div class="status">OK · ${latSec}s</div></div>
+        <div class="body"><div class="bakeoff-metrics">${latSec}s · ${escapeHtml(out.mode || 'ai')}${out.modelUsed && out.modelUsed !== entry.model ? ` · used ${escapeHtml(out.modelUsed)}` : ''}</div>${formatAiAnswer(preview)}</div>
+      </div>`;
+    } else {
+      const err = r.reason;
+      const entry = err?.entry || {};
+      const latSec = err?.latencyMs ? (err.latencyMs / 1000).toFixed(2) + 's' : '—';
+      return `<div class="bakeoff-test-card error">
+        <div class="head"><div>${escapeHtml(entry.model || 'unknown')} <span class="provider">(${escapeHtml(entry.provider || '?')})</span></div><div class="status">Error · ${latSec}</div></div>
+        <div class="body">${escapeHtml(String(err?.message || 'Failed'))}</div>
+      </div>`;
+    }
+  }).join('');
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'ai-msg bot';
+  wrapper.innerHTML = `<div class="ai-audit-compare"><div class="ai-audit-head">⚖️ Model Comparison — ${escapeHtml(q.slice(0, 80))}${q.length > 80 ? '…' : ''}</div><div class="bakeoff-test-results" style="margin-top:8px">${cards}</div></div>`;
+  box?.appendChild(wrapper);
+  if (box) box.scrollTop = box.scrollHeight;
+
+  if (auditBtn) { auditBtn.disabled = false; auditBtn.textContent = '⚖️ Compare'; }
+}
+
 function toggleAuthModal(show){
   const modal = $('authModal');
   if (!modal) return;
@@ -11113,6 +11211,7 @@ $('aiChatAnalyzeBasket')?.addEventListener('click', ()=>{
   sendAiChat();
 });
 $('aiChatSend')?.addEventListener('click', sendAiChat);
+$('aiChatAuditBtn')?.addEventListener('click', auditAiChatModels);
 $('aiFormatRace')?.addEventListener('click', ()=>{
   if (!draggedSelections.length) return pushAiChat('bot', 'Drag at least one runner first, then use Race Context.');
   const input = $('aiChatInput');

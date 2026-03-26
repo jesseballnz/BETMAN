@@ -314,6 +314,50 @@ function loadJson(filePath, fallback){
   try { return JSON.parse(fs.readFileSync(filePath,'utf8')); } catch { return fallback; }
 }
 
+function safeSlug(s){
+  return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function loadMeetingProfiles(date){
+  const dir = path.join(process.cwd(), 'data', 'meeting_profiles', date || 'today');
+  const out = {};
+  try {
+    for (const f of fs.readdirSync(dir)){
+      if (!f.endsWith('.json')) continue;
+      const p = loadJson(path.join(dir, f), null);
+      if (p && p.meeting) {
+        const slug = safeSlug(p.meeting);
+        if (out[slug]) console.warn(`[meeting-profiles] slug collision: "${p.meeting}" → "${slug}"`);
+        out[slug] = p;
+      }
+    }
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.error('[meeting-profiles] load error:', e.message);
+  }
+  return out;
+}
+
+function formatMeetingProfile(prof){
+  if (!prof || !prof.totals?.races_final) return null;
+  const total = prof.totals.races_final;
+  const pace = prof.winners?.pace || {};
+  const bar = prof.winners?.barrier || {};
+  const paceArr = Object.entries(pace)
+    .filter(([,v]) => v > 0)
+    .sort((a,b) => b[1]-a[1])
+    .map(([k,v]) => `${k} ${v}/${total}`);
+  const paceWinsSummary = paceArr.length ? paceArr.join(', ') : 'n/a';
+  const barrierParts = [];
+  if (bar.low) barrierParts.push(`low(1-4) ${bar.low}/${total}`);
+  if (bar.mid) barrierParts.push(`mid(5-9) ${bar.mid}/${total}`);
+  if (bar.high) barrierParts.push(`high(10+) ${bar.high}/${total}`);
+  return {
+    racesScored: total,
+    paceWins: paceWinsSummary,
+    barrierWins: barrierParts.length ? barrierParts.join(', ') : 'n/a'
+  };
+}
+
 function loadText(filePath, fallback = ''){
   try { return fs.readFileSync(filePath, 'utf8'); } catch { return fallback; }
 }
@@ -2348,6 +2392,7 @@ function buildAiContextSummary({
   jointRows = [],
   question = '',
   races = [],
+  meetingProfiles = {},
   maxLength = 1200
 } = {}) {
   const lines = [];
@@ -2467,6 +2512,7 @@ function buildAiContextSummary({
     const primary = findRunnerPayload(mergedSelections[0], raceLookup, races);
     if (primary.race) {
       const rc = primary.race;
+      const meetingProf = formatMeetingProfile(meetingProfiles[safeSlug(rc.meeting || '')]);
       const raceJson = {
         meeting: rc.meeting,
         raceNumber: rc.race_number,
@@ -2477,7 +2523,8 @@ function buildAiContextSummary({
         runners: (rc.runners || []).length,
         loveracingAvailable: !!rc?.loveracing?.available,
         loveracingWeather: rc?.loveracing?.weather || 'n/a',
-        loveracingCommentary: rc?.loveracing?.race_commentary || 'n/a'
+        loveracingCommentary: rc?.loveracing?.race_commentary || 'n/a',
+        meetingProfile: meetingProf || 'n/a'
       };
       selectionLines.push(`MANDATORY_RACE_VALUES: ${JSON.stringify(raceJson)}`);
       selectionLines.push(`Primary race context: ${rc.meeting || '—'} R${rc.race_number || '—'} ${rc.description || ''} | Distance ${rc.distance || 'n/a'}m | Track ${rc.track_condition || 'n/a'} | Rail ${rc.rail_position || 'n/a'} | Runners ${(rc.runners || []).length || 'n/a'}`);
@@ -2492,6 +2539,7 @@ function buildAiContextSummary({
       String(r.race_number || '').trim() === rcRace
     );
     if (rc) {
+      const meetingProf = formatMeetingProfile(meetingProfiles[safeSlug(rc.meeting || '')]);
       const raceJson = {
         meeting: rc.meeting,
         raceNumber: rc.race_number,
@@ -2502,7 +2550,8 @@ function buildAiContextSummary({
         runners: (rc.runners || []).length,
         loveracingAvailable: !!rc?.loveracing?.available,
         loveracingWeather: rc?.loveracing?.weather || 'n/a',
-        loveracingCommentary: rc?.loveracing?.race_commentary || 'n/a'
+        loveracingCommentary: rc?.loveracing?.race_commentary || 'n/a',
+        meetingProfile: meetingProf || 'n/a'
       };
       const fieldRows = (rc.runners || []).map(rr => ({
         runner: rr.name || rr.runner_name || 'n/a',
@@ -2833,6 +2882,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     jointRows,
     question,
     races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : (racesData.races || []),
+    meetingProfiles: loadMeetingProfiles('today'),
     maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral
   });
 
