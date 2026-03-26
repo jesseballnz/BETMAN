@@ -4074,8 +4074,9 @@ function renderAutobetFeed(rows){
   let sourceRows = filtered;
   let feedNote = '';
   if (!filtered.length) {
+    const plannedWindow = Number(earlyWindowMin || 1800);
     const planned = baseSuggestedRows(latestSuggestedBets || [])
-      .filter(r => jumpsInToMinutes(r.jumpsIn) <= Number(aiWindowMin || 10))
+      .filter(r => jumpsInToMinutes(r.jumpsIn) <= plannedWindow)
       .map(r => ({
         meeting: r.meeting,
         race: r.race,
@@ -4092,7 +4093,7 @@ function renderAutobetFeed(rows){
       : planned.filter(r => autobetStrategyKey(r.type) === autobetFilterType);
     sourceRows = plannedFiltered;
     feedNote = sourceRows.length
-      ? `No queued bets yet — showing bets inside the ${Number(aiWindowMin || 10)}m placement window.`
+      ? `No queued bets yet — showing bets inside the ${plannedWindow}m bet window.`
       : (autobetFilterType === 'ALL' ? 'No queued bets right now.' : `No queued bets for ${autobetFilterType}.`);
   }
   if (!sourceRows.length) {
