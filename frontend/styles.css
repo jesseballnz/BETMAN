@@ -168,9 +168,10 @@ body.landing-page .app{max-width:960px;padding:0 20px 80px;margin:0 auto}
 .comp-amber{background:rgba(245,192,102,.12);border-color:rgba(245,192,102,.5);color:#f5c066}
 .comp-red{background:rgba(255,107,107,.12);border-color:rgba(255,107,107,.5);color:#ff8a8a}
 .ai-chat{position:fixed;top:84px;right:24px;width:360px;max-width:calc(100vw - 24px);background:rgba(18,26,36,.98);border:1px solid var(--border-soft);border-radius:14px;box-shadow:0 18px 36px rgba(0,0,0,.45);z-index:1200;padding:10px}
+.ai-chat-head .btn-row{margin-top:4px;width:100%;justify-content:flex-start}
 .ai-chat.hidden{display:none}
 .ai-chat.drag-over{border-color:var(--accent);box-shadow:0 0 0 2px rgba(197,255,0,.2),0 20px 40px rgba(0,0,0,.45)}
-.ai-chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--border-soft);cursor:move}
+.ai-chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--border-soft);cursor:move;flex-wrap:wrap}
 body.dragging-ai-chat{user-select:none}
 body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .ai-basket{margin-top:8px;padding:8px;border:1px dashed #2a3b52;border-radius:10px;background:#0f1824;display:grid;gap:6px}
