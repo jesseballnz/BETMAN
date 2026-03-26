@@ -4102,6 +4102,15 @@ function renderAutobetFeed(rows){
       ? `No queued bets yet — showing bets inside the ${plannedWindow}m bet window.`
       : (autobetFilterType === 'ALL' ? 'No queued bets right now.' : `No queued bets for ${autobetFilterType}.`);
   }
+  const sortKey = (row) => {
+    const mins = jumpsInToMinutes(row.eta || row.jumpsIn);
+    if (Number.isFinite(mins) && mins !== Number.POSITIVE_INFINITY) return mins;
+    const ts = selectionStartTimestamp(row);
+    if (Number.isFinite(ts)) return (ts - Date.now()) / 60000;
+    return Number.POSITIVE_INFINITY;
+  };
+  sourceRows = sourceRows.slice().sort((a,b) => sortKey(a) - sortKey(b));
+
   if (!sourceRows.length) {
     const empty = document.createElement('div');
     empty.className = 'row';
