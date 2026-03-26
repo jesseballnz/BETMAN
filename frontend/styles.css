@@ -782,3 +782,6 @@ body:not(.landing-page){
 .btn{ box-shadow:0 3px 10px rgba(197,255,0,.16) }
 .page-tab{ text-transform:none; letter-spacing:.02em }
 .suggested-note{color:var(--text-soft);font-size:11px;line-height:1.35}
+.autobet-tile{cursor:pointer;transition:transform .12s ease, box-shadow .12s ease}
+.autobet-tile:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.35)}
+.autobet-tile.active{border-color:var(--accent);box-shadow:0 0 0 1px rgba(197,255,0,.45) inset}

@@ -508,6 +508,7 @@ let latestInterestingRows = [];
 let latestMarketMovers = [];
 let latestMarketOddsHistory = {};
 let latestMarketOddsSnapshot = {};
+let latestUpcomingBets = [];
 let latestDataVersion = 0;
 function loadAiUserNotes(){
   try {
@@ -951,8 +952,9 @@ async function loadStatus(){
     renderMultis(filteredSuggested);
     renderNextPlanned(filteredSuggested);
     renderRaces(racesCache);
-    renderBets(data.upcomingBets || []);
-    renderAutobetFeed(data.upcomingBets || []);
+    latestUpcomingBets = data.upcomingBets || [];
+    renderBets(latestUpcomingBets);
+    renderAutobetFeed(latestUpcomingBets);
     renderAiCompare(latestAiCompare);
     renderCompleted(data.completedBets || []);
     renderActivity(data.activity || []);
@@ -4036,6 +4038,17 @@ function renderNextPlanned(rows){
   makeSelectionsDraggable();
 }
 
+let autobetFilterType = 'ALL';
+
+function autobetStrategyKey(type){
+  const t = String(type || '').toLowerCase();
+  if (t.includes('ew')) return 'EW';
+  if (t.includes('odds') || t.includes('value')) return 'ODDS';
+  if (t.includes('long')) return 'LONG';
+  if (t.includes('top') || t.includes('trifecta') || t.includes('multi') || t.includes('exotic')) return 'EXOTICS';
+  return 'WIN';
+}
+
 function autobetTagClass(type){
   const t = String(type || '').toLowerCase();
   if (t.includes('top4')) return 'tag top4';
@@ -4053,10 +4066,14 @@ function renderAutobetFeed(rows){
   if (!table) return;
   table.innerHTML = '';
   const queued = (rows || []).filter(r => String(r.type || '').toLowerCase().includes('queued'));
-  if (!queued.length) {
+  const filtered = autobetFilterType === 'ALL'
+    ? queued
+    : queued.filter(r => autobetStrategyKey(r.type) === autobetFilterType);
+  if (!filtered.length) {
     const empty = document.createElement('div');
     empty.className = 'row';
-    empty.innerHTML = `<div style='grid-column:1/-1'>No queued bets right now.</div>`;
+    const label = autobetFilterType === 'ALL' ? 'No queued bets right now.' : `No queued bets for ${autobetFilterType}.`;
+    empty.innerHTML = `<div style='grid-column:1/-1'>${label}</div>`;
     table.appendChild(empty);
     return;
   }
@@ -4064,7 +4081,7 @@ function renderAutobetFeed(rows){
   header.className = 'row header';
   header.innerHTML = `<div>Race</div><div>Selection</div><div>Type</div><div>Stake</div><div>Odds</div><div class='right'>ETA</div>`;
   table.appendChild(header);
-  queued.forEach(r => {
+  filtered.forEach(r => {
     const row = document.createElement('div');
     row.className = 'row';
     const typeLabel = String(r.type || '').replace(/\(queued\)/i, '').trim();
@@ -4078,6 +4095,52 @@ function renderAutobetFeed(rows){
       <div class='right'>${escapeHtml(String(r.eta || r.sortTime || 'upcoming'))}</div>
     `;
     table.appendChild(row);
+  });
+}
+
+function renderAutobetTiles(agg30){
+  const wrap = $('autobetRoiTiles');
+  if (!wrap) return;
+  const empty = !agg30;
+  const winRoi = agg30?.pick?.win?.roi_stake_units ? (agg30.pick.win.profit_rec / agg30.pick.win.roi_stake_units) : null;
+  const ewRoi = agg30?.pick?.ew?.roi_stake_units ? (agg30.pick.ew.profit_rec / agg30.pick.ew.roi_stake_units) : null;
+  const oddsRoi = agg30?.pick?.odds_runner?.roi_stake_units ? (agg30.pick.odds_runner.profit_rec / agg30.pick.odds_runner.roi_stake_units) : null;
+  const longRoi = agg30?.long?.roi_stake_units ? (agg30.long.profit_rec / agg30.long.roi_stake_units) : null;
+  const exoticRoi = agg30?.exotic_stake ? (agg30.exotic_profit / agg30.exotic_stake) : null;
+  const combinedStake = (agg30?.pick?.win?.roi_stake_units || 0)
+    + (agg30?.pick?.ew?.roi_stake_units || 0)
+    + (agg30?.pick?.odds_runner?.roi_stake_units || 0)
+    + (agg30?.long?.roi_stake_units || 0)
+    + (agg30?.exotic_stake || 0);
+  const combinedProfit = (agg30?.pick?.win?.profit_rec || 0)
+    + (agg30?.pick?.ew?.profit_rec || 0)
+    + (agg30?.pick?.odds_runner?.profit_rec || 0)
+    + (agg30?.long?.profit_rec || 0)
+    + (agg30?.exotic_profit || 0);
+  const allRoi = combinedStake ? (combinedProfit / combinedStake) : null;
+
+  const tiles = [
+    { key: 'ALL', label: 'ALL', roi: allRoi },
+    { key: 'WIN', label: 'WIN', roi: winRoi },
+    { key: 'EW', label: 'EW', roi: ewRoi },
+    { key: 'ODDS', label: 'ODDS', roi: oddsRoi },
+    { key: 'LONG', label: 'LONG', roi: longRoi },
+    { key: 'EXOTICS', label: 'EXOTICS', roi: exoticRoi }
+  ];
+  wrap.innerHTML = tiles.map(t => {
+    const active = autobetFilterType === t.key ? 'active' : '';
+    return `<div class='perf-card autobet-tile ${active}' data-filter='${t.key}'>
+      <div class='label'>${t.label}</div>
+      <div class='value'>${empty ? '—' : fmtRoi(t.roi)}</div>
+    </div>`;
+  }).join('');
+
+  wrap.querySelectorAll('.autobet-tile').forEach(tile => {
+    tile.onclick = () => {
+      autobetFilterType = tile.dataset.filter || 'ALL';
+      renderAutobetTiles(agg30);
+      renderAutobetFeed(latestUpcomingBets || []);
+    };
   });
 }
 
@@ -5875,6 +5938,7 @@ async function loadPerformance(){
     $('perfEwTypePct') && ($('perfEwTypePct').textContent = fmtPct(winRateEw));
     $('perfLongTypePct') && ($('perfLongTypePct').textContent = fmtPct(winRateLong));
   }
+  renderAutobetTiles(agg30);
   applyHeroTiles('heroDay', aggregateLastNDays(daily, 1));
   applyHeroTiles('heroWeek', aggregateLastNDays(daily, 7));
   applyHeroTiles('heroMonth', aggregateLastNDays(daily, 30));
