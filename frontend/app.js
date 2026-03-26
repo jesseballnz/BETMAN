@@ -4079,17 +4079,27 @@ function renderAutobetFeed(rows){
   }
   const header = document.createElement('div');
   header.className = 'row header';
-  header.innerHTML = `<div>Race</div><div>Selection</div><div>Type</div><div>Stake</div><div>Odds</div><div class='right'>ETA</div>`;
+  header.innerHTML = `<div>Race</div><div>Selection</div><div>Type</div><div>AI %</div><div>Stake</div><div>Odds</div><div class='right'>ETA</div>`;
   table.appendChild(header);
+  const probMap = new Map();
+  (latestSuggestedBets || []).forEach(x => {
+    const key = `${String(x.meeting || '').trim().toLowerCase()}|${String(x.race || '').trim()}|${normalizeRunnerName(String(x.selection || '').trim())}`;
+    const wp = Number(x.aiWinProb);
+    const prob = Number.isFinite(wp) ? wp : parseReasonWinProb(x.reason);
+    if (Number.isFinite(prob)) probMap.set(key, prob);
+  });
   filtered.forEach(r => {
     const row = document.createElement('div');
     row.className = 'row';
     const typeLabel = String(r.type || '').replace(/\(queued\)/i, '').trim();
     const tagClass = autobetTagClass(typeLabel);
+    const key = `${String(r.meeting || '').trim().toLowerCase()}|${String(r.race || '').trim()}|${normalizeRunnerName(String(r.selection || '').trim())}`;
+    const aiProb = probMap.get(key);
     row.innerHTML = `
       <div><span class="badge">${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || '—'))}</div>
       <div>${escapeHtml(String(r.selection || '—'))}</div>
       <div><span class='${tagClass}'>${escapeHtml(typeLabel || '—')}</span></div>
+      <div>${Number.isFinite(aiProb) ? `${aiProb.toFixed(1)}%` : '—'}</div>
       <div>${Number.isFinite(Number(r.stake)) ? `$${Number(r.stake).toFixed(2)}` : '—'}</div>
       <div>${r.odds || '—'}</div>
       <div class='right'>${escapeHtml(String(r.eta || r.sortTime || 'upcoming'))}</div>
