@@ -715,7 +715,7 @@ function refreshTabAccess(){
       btn.title = isAdminUser ? '' : 'Admin only';
       return;
     }
-    if (p === 'workspace' || p === 'help') {
+    if (p === 'workspace' || p === 'help' || p === 'autobet') {
       btn.disabled = false;
       btn.title = '';
       return;
@@ -728,7 +728,7 @@ function refreshTabAccess(){
 function setActivePage(page){
   if ((page === 'bakeoff' || page === 'performance') && !isAdminUser) page = 'workspace';
   if (page !== 'workspace' && selectedMeeting === 'ALL') {
-    if (page !== 'help' && (page !== 'performance' || !isAdminUser)) page = 'workspace';
+    if (page !== 'help' && page !== 'autobet' && (page !== 'performance' || !isAdminUser)) page = 'workspace';
   }
   activePage = page;
   document.querySelectorAll('.page-tab').forEach(btn=>{
@@ -742,6 +742,9 @@ function setActivePage(page){
   if (page === 'performance') {
     loadPerformance();
     loadRuntimeHealth();
+  }
+  if (page === 'autobet') {
+    loadPerformance();
   }
   if (page === 'bakeoff') {
     loadBakeoffLeaderboard();
