@@ -952,6 +952,7 @@ async function loadStatus(){
     renderNextPlanned(filteredSuggested);
     renderRaces(racesCache);
     renderBets(data.upcomingBets || []);
+    renderAutobetFeed(data.upcomingBets || []);
     renderAiCompare(latestAiCompare);
     renderCompleted(data.completedBets || []);
     renderActivity(data.activity || []);
@@ -4033,6 +4034,51 @@ function renderNextPlanned(rows){
 
   attachNextPlannedHandlers();
   makeSelectionsDraggable();
+}
+
+function autobetTagClass(type){
+  const t = String(type || '').toLowerCase();
+  if (t.includes('top4')) return 'tag top4';
+  if (t.includes('top')) return 'tag';
+  if (t.includes('trifecta') || t.includes('multi')) return 'tag';
+  if (t.includes('ew')) return 'tag ew';
+  if (t.includes('win')) return 'tag win';
+  if (t.includes('odds') || t.includes('value')) return 'tag value';
+  if (t.includes('long')) return 'tag value';
+  return 'tag';
+}
+
+function renderAutobetFeed(rows){
+  const table = $('autobetFeed');
+  if (!table) return;
+  table.innerHTML = '';
+  const queued = (rows || []).filter(r => String(r.type || '').toLowerCase().includes('queued'));
+  if (!queued.length) {
+    const empty = document.createElement('div');
+    empty.className = 'row';
+    empty.innerHTML = `<div style='grid-column:1/-1'>No queued bets right now.</div>`;
+    table.appendChild(empty);
+    return;
+  }
+  const header = document.createElement('div');
+  header.className = 'row header';
+  header.innerHTML = `<div>Race</div><div>Selection</div><div>Type</div><div>Stake</div><div>Odds</div><div class='right'>ETA</div>`;
+  table.appendChild(header);
+  queued.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const typeLabel = String(r.type || '').replace(/\(queued\)/i, '').trim();
+    const tagClass = autobetTagClass(typeLabel);
+    row.innerHTML = `
+      <div><span class="badge">${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || '—'))}</div>
+      <div>${escapeHtml(String(r.selection || '—'))}</div>
+      <div><span class='${tagClass}'>${escapeHtml(typeLabel || '—')}</span></div>
+      <div>${Number.isFinite(Number(r.stake)) ? `$${Number(r.stake).toFixed(2)}` : '—'}</div>
+      <div>${r.odds || '—'}</div>
+      <div class='right'>${escapeHtml(String(r.eta || r.sortTime || 'upcoming'))}</div>
+    `;
+    table.appendChild(row);
+  });
 }
 
 function renderBets(rows){
