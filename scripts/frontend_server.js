@@ -4657,6 +4657,20 @@ if (url.pathname === '/api/ask-selection') {
     });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/bakeoff-run-status') {
+    const principal = req.authPrincipal;
+    if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
+    const logPath = path.join(process.cwd(), 'logs', 'bakeoff-run.log');
+    let tail = [];
+    try {
+      if (fs.existsSync(logPath)) {
+        const raw = fs.readFileSync(logPath, 'utf8');
+        tail = raw.split(/\r?\n/).filter(Boolean).slice(-12);
+      }
+    } catch {}
+    return okJson(res, { ok: true, ...bakeoffRunState, log: 'logs/bakeoff-run.log', tail });
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/ai-models') {
     const principal = req.authPrincipal;
     const openAiAllowed = canUseOpenAiByPrincipal(principal);
