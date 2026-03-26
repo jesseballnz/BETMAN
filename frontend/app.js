@@ -2428,9 +2428,16 @@ function reasonToEnglish(reason){
   return raw || 'Insufficient quantified inputs (win%, odds, or sectionals) to justify a reliable signal.';
 }
 
-function marketEdgeText(reason){
-  const p = parseReasonWinProb(reason);
-  const o = parseReasonOdds(reason);
+function marketEdgeText(rowOrReason){
+  const reason = typeof rowOrReason === 'string' ? rowOrReason : String(rowOrReason?.reason || '');
+  const pDirect = (typeof rowOrReason === 'object' && rowOrReason)
+    ? parseWinProbValue(rowOrReason.aiWinProb ?? rowOrReason.win_p)
+    : NaN;
+  const p = Number.isFinite(pDirect) ? pDirect : parseReasonWinProb(reason);
+  const oddsDirect = (typeof rowOrReason === 'object' && rowOrReason)
+    ? Number(rowOrReason.odds)
+    : NaN;
+  const o = Number.isFinite(oddsDirect) ? oddsDirect : parseReasonOdds(reason);
   if (!Number.isFinite(p) || !Number.isFinite(o) || o <= 0) return 'Edge: n/a';
   const implied = 100 / o;
   const edgePts = p - implied;
@@ -2585,7 +2592,7 @@ function renderSuggested(rows){
       <div><button class='bet-btn race-cell-btn suggested-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
       <div><button class='bet-btn suggested-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-selection='${escapeAttr(cleanRunnerText(r.selection))}' data-reason='${escapeAttr(r.reason||'')}'><span class='bet-icon'>💡</span>${escapeHtml(cleanRunnerText(r.selection))}${tag}</button></div>
       <div>${r.type}</div>
-      <div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div><div class='sub'>${marketEdgeText(r.reason)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
+      <div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div><div class='sub'>${marketEdgeText(r)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
       <div class='right'>${signalMeterFromScore(suggestedSignal)}<div class='sub' style='margin-top:6px'>${reasonToEnglish(r.reason)}</div></div>
     `;
     table.appendChild(row);
@@ -2739,7 +2746,7 @@ function renderMultis(rows){
       <div><button class='bet-btn race-cell-btn multi-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
       <div><button class='bet-btn multi-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-selection='${escapeAttr(cleanRunnerText(r.selection))}' data-reason='${(r.reason||'').replace(/"/g,'&quot;')}'><span class='bet-icon'>🧩</span>${cleanRunnerText(r.selection)}</button></div>
       <div>${r.type}</div>
-      <div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div><div class='sub'>${marketEdgeText(r.reason)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
+      <div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div><div class='sub'>${marketEdgeText(r)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
       <div class='right'>${signalMeterFromScore(exScore)}<div class='sub' style='margin-top:6px'>${r.reason || ''}</div></div>
     `;
     frag.appendChild(row);
