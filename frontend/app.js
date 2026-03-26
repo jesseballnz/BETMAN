@@ -4152,23 +4152,33 @@ function renderAutobetTiles(daily){
   const oddsPct = pct(agg?.pick?.odds_runner?.wins, agg?.pick?.odds_runner?.bets);
   const longPct = pct(agg?.long?.wins, agg?.long?.bets);
   const exoticPct = pct(agg?.exotic?.hits, agg?.exotic?.bets);
+  const roi = (profit, stake) => (Number.isFinite(profit) && Number.isFinite(stake) && stake > 0) ? (profit / stake) : null;
+  const winRoi = roi(agg?.pick?.win?.profit_rec, agg?.pick?.win?.roi_stake_units);
+  const ewRoi = roi(agg?.pick?.ew?.profit_rec, agg?.pick?.ew?.roi_stake_units);
+  const oddsRoi = roi(agg?.pick?.odds_runner?.profit_rec, agg?.pick?.odds_runner?.roi_stake_units);
+  const longRoi = roi(agg?.long?.profit_rec, agg?.long?.roi_stake_units);
+  const exoticRoi = roi(agg?.exotic_profit, agg?.exotic_stake);
   const allWins = (agg?.pick?.win?.wins || 0) + (agg?.pick?.ew?.wins || 0) + (agg?.pick?.odds_runner?.wins || 0) + (agg?.long?.wins || 0) + (agg?.exotic?.hits || 0);
   const allBets = (agg?.pick?.win?.bets || 0) + (agg?.pick?.ew?.bets || 0) + (agg?.pick?.odds_runner?.bets || 0) + (agg?.long?.bets || 0) + (agg?.exotic?.bets || 0);
   const allPct = pct(allWins, allBets);
+  const allProfit = (agg?.pick?.win?.profit_rec || 0) + (agg?.pick?.ew?.profit_rec || 0) + (agg?.pick?.odds_runner?.profit_rec || 0) + (agg?.long?.profit_rec || 0) + (agg?.exotic_profit || 0);
+  const allStake = (agg?.pick?.win?.roi_stake_units || 0) + (agg?.pick?.ew?.roi_stake_units || 0) + (agg?.pick?.odds_runner?.roi_stake_units || 0) + (agg?.long?.roi_stake_units || 0) + (agg?.exotic_stake || 0);
+  const allRoi = roi(allProfit, allStake);
 
   const tiles = [
-    { key: 'ALL', label: 'ALL', pct: allPct },
-    { key: 'WIN', label: 'WIN', pct: winPct },
-    { key: 'EW', label: 'EW', pct: ewPct },
-    { key: 'ODDS', label: 'ODDS', pct: oddsPct },
-    { key: 'LONG', label: 'LONG', pct: longPct },
-    { key: 'EXOTICS', label: 'EXOTICS', pct: exoticPct }
+    { key: 'ALL', label: 'ALL', pct: allPct, roi: allRoi },
+    { key: 'WIN', label: 'WIN', pct: winPct, roi: winRoi },
+    { key: 'EW', label: 'EW', pct: ewPct, roi: ewRoi },
+    { key: 'ODDS', label: 'ODDS', pct: oddsPct, roi: oddsRoi },
+    { key: 'LONG', label: 'LONG', pct: longPct, roi: longRoi },
+    { key: 'EXOTICS', label: 'EXOTICS', pct: exoticPct, roi: exoticRoi }
   ];
   wrap.innerHTML = tiles.map(t => {
     const active = autobetFilterType === t.key ? 'active' : '';
     return `<div class='perf-card autobet-tile ${active}' data-filter='${t.key}'>
       <div class='label'>${t.label}</div>
       <div class='value'>${empty ? '—' : fmtPct(t.pct)}</div>
+      <div class='sub'>ROI ${empty ? '—' : fmtRoi(t.roi)}</div>
     </div>`;
   }).join('');
 
