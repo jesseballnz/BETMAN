@@ -1073,7 +1073,33 @@ function persistAiAnalysisCache(){
   }
 }
 
+function persistAiCooldown(){
+  try {
+    const rows = Array.from(aiAnalysisCooldown.entries()).map(([key, until]) => ({ key, until }));
+    localStorage.setItem('betmanAiCooldown', JSON.stringify(rows));
+  } catch (err) {
+    console.warn('ai_cooldown_save_failed', err?.message || err);
+  }
+}
+
+function hydrateAiCooldownFromStorage(){
+  try {
+    const rows = JSON.parse(localStorage.getItem('betmanAiCooldown') || '[]');
+    if (!Array.isArray(rows)) return;
+    const now = Date.now();
+    rows.forEach(row => {
+      const key = String(row?.key || '').trim();
+      const until = Number(row?.until || 0);
+      if (!key || !Number.isFinite(until) || until <= now) return;
+      aiAnalysisCooldown.set(key, until);
+    });
+  } catch (err) {
+    console.warn('ai_cooldown_hydrate_failed', err?.message || err);
+  }
+}
+
 hydrateAiAnalysisCacheFromStorage();
+hydrateAiCooldownFromStorage();
 (function restoreMeetingLock(){
   try {
     const saved = JSON.parse(localStorage.getItem(MEETING_LOCK_KEY) || '{}');
@@ -7532,6 +7558,7 @@ function getAiAnalyseCooldownRemaining(key){
   const remaining = until - Date.now();
   if (remaining <= 0) {
     aiAnalysisCooldown.delete(key);
+    persistAiCooldown();
     return 0;
   }
   return remaining;
@@ -7567,6 +7594,7 @@ function updateAnalysisAiModelNote(){
 function startAiAnalyseCooldown(key){
   if (!key) return;
   aiAnalysisCooldown.set(key, Date.now() + AI_ANALYSE_COOLDOWN_MS);
+  persistAiCooldown();
   refreshAiAnalyseButtonState();
   ensureAiCooldownTimer();
 }
@@ -7746,6 +7774,7 @@ function bindAiAnalyseButton(){
       console.error('ai_analyse_failed', err);
       if (cooldownKey) {
         aiAnalysisCooldown.delete(cooldownKey);
+        persistAiCooldown();
       }
       if (responseMs === null) responseMs = performance.now() - requestStarted;
       const responseLabel = formatResponseTime(responseMs) || 'n/a';
