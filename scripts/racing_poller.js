@@ -567,6 +567,7 @@ async function main() {
                 race: raceKey,
                 market: 'Trifecta',
                 mins_to_start: Math.round(minsToStart * 10) / 10,
+                selections: rank.slice(0, 3),
                 structure: {
                   first: rank[0].selection,
                   second_third_box: [rank[1].selection, rank[2].selection]

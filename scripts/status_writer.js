@@ -400,6 +400,9 @@ const exoticSuggested = (state.exotic_plans || []).map(x => {
   } else if (x.structure) {
     selection = `${x.structure.first} > ${x.structure.second_third_box.join(' / ')}`;
   }
+  const winProb = Array.isArray(x.selections)
+    ? x.selections.map(s => Number(s?.win_prob)).filter(v => Number.isFinite(v) && v > 0).reduce((a,b)=>a+b,0)
+    : NaN;
   return {
     meeting,
     race,
@@ -407,6 +410,7 @@ const exoticSuggested = (state.exotic_plans || []).map(x => {
     type: x.market,
     stake: capStakeForType(x.market, x.stake, x),
     signal_score: computeExoticSignalScore(x),
+    aiWinProb: Number.isFinite(winProb) ? Math.min(95, Math.round(winProb * 10) / 10) : null,
     jumpsIn: minsToEnglish(x.mins_to_start),
     reason: `${x.note || 'exotic profile'} · ${minsToEnglish(x.mins_to_start)}`
   };

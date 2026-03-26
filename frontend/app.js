@@ -4000,9 +4000,16 @@ function renderNextPlanned(rows){
       ? `AI win probability is ${Number(r.aiWinProb).toFixed(1)}%.`
       : (() => {
           if (exotic) {
-            const modelPrice = Number.isFinite(odds) && odds > 0 ? `$${odds.toFixed(2)}` : '—';
-            const impliedPct = Number.isFinite(odds) && odds > 0 ? `${(100 / odds).toFixed(1)}%` : '—';
-            return `Model probability unavailable for this market. Model price ${modelPrice} (implied ${impliedPct}).`;
+            const aiProb = Number(r.aiWinProb);
+            if (Number.isFinite(aiProb) && aiProb > 0) {
+              const modelPrice = (100 / aiProb);
+              return `AI probability (synthetic) ${aiProb.toFixed(1)}% · model $${modelPrice.toFixed(2)}.`;
+            }
+            if (Number.isFinite(odds) && odds > 0) {
+              const impliedPct = `${(100 / odds).toFixed(1)}%`;
+              return `AI probability pending. Model price $${odds.toFixed(2)} (implied ${impliedPct}).`;
+            }
+            return 'AI probability pending — awaiting model inputs.';
           }
           if (fallbackRow) {
             return 'AI win probability pending — placeholder runner until a qualified AI signal enters the window.';
