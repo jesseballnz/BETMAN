@@ -19,6 +19,15 @@ const fetchLocal = async (u, opts = {}) => {
   }
   return res;
 };
+
+const readJsonSafe = async (res) => {
+  const text = await res.text();
+  try {
+    return { data: JSON.parse(text), raw: text };
+  } catch {
+    return { data: null, raw: text };
+  }
+};
 const BETMAN_BUILD = '20260319-0936';
 const STRATEGY_MIN_BETS = 30;
 const SIGNAL_GLOSSARY = {
@@ -9976,13 +9985,19 @@ async function loadBakeoffLeaderboard(manualData = null){
     return;
   }
   try {
-    const out = await fetchLocal('./api/model-bakeoff/latest', { cache:'no-store' }).then(r=>r.json());
-    if (!out.ok) {
+    const res = await fetchLocal('./api/model-bakeoff/latest', { cache:'no-store' });
+    const { data, raw } = await readJsonSafe(res);
+    if (!data) {
+      summary.textContent = 'Bakeoff API returned non-JSON response.';
+      if (coverage) coverage.innerHTML = `<div class="sub">${escapeHtml(String(raw || '').slice(0, 280))}</div>`;
+      return;
+    }
+    if (!data.ok) {
       summary.textContent = 'No bakeoff results found yet.';
       if (coverage) coverage.innerHTML = '<div class="sub">Run npm run bakeoff to generate stats.</div>';
       return;
     }
-    renderView(out);
+    renderView(data);
   } catch {
     summary.textContent = 'Unable to load bakeoff leaderboard.';
     if (coverage) coverage.innerHTML = '<div class="sub">Unable to load model coverage.</div>';
@@ -10004,7 +10019,13 @@ function renderBakeoffRunFeedback(out, startedAt){
 async function pollBakeoffFullSoakStatus(startedAt = Date.now()){
   try {
     const res = await fetchLocal('./api/bakeoff-run-status');
-    const out = await res.json().catch(() => ({}));
+    const { data, raw } = await readJsonSafe(res);
+    if (!data) {
+      setBakeoffRunIndicator('error', '⚠️ Full soak status returned non-JSON response.');
+      renderBakeoffRunFeedback({ tail: [String(raw || '').slice(0, 240)] }, startedAt);
+      return;
+    }
+    const out = data;
     if (!res.ok || out?.ok === false) return;
     if (out.running) {
       setBakeoffRunIndicator('running', `🔥 Full soak running… ${Math.max(0, Math.round((Date.now() - startedAt) / 1000))}s`);
@@ -10029,7 +10050,13 @@ async function pollBakeoffFullSoakStatus(startedAt = Date.now()){
 async function restoreBakeoffRunFeedback(){
   try {
     const res = await fetchLocal('./api/bakeoff-run-status');
-    const out = await res.json().catch(() => ({}));
+    const { data, raw } = await readJsonSafe(res);
+    if (!data) {
+      setBakeoffRunIndicator('error', '⚠️ Full soak status returned non-JSON response.');
+      renderBakeoffRunFeedback({ tail: [String(raw || '').slice(0, 240)] }, Date.now());
+      return;
+    }
+    const out = data;
     if (!res.ok || out?.ok === false) return;
     const startedAt = Number(out.startedAt || Date.now());
     if (out.running) {
@@ -10055,7 +10082,13 @@ async function runBakeoffFullSoak(){
   const startedAt = Date.now();
   try {
     const res = await fetchLocal('./api/bakeoff-run', { method: 'POST' });
-    const out = await res.json().catch(() => ({}));
+    const { data, raw } = await readJsonSafe(res);
+    if (!data) {
+      setBakeoffRunIndicator('error', '⚠️ Full soak start returned non-JSON response.');
+      renderBakeoffRunFeedback({ tail: [String(raw || '').slice(0, 240)] }, startedAt);
+      return;
+    }
+    const out = data;
     if (!res.ok || out?.ok === false) {
       setBakeoffRunIndicator('error', `⚠️ Full soak failed to start: ${out?.error || 'unknown_error'}`);
       return;
