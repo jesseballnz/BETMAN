@@ -2713,10 +2713,12 @@ function rememberAiTurn(tenantId, question, answer, sourceTag = '') {
 }
 
 async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = 'default', providerOverride = ''){
-  const provider = String(providerOverride || '').trim().toLowerCase() || resolveAiProvider();
+  const requestedProvider = String(providerOverride || '').trim().toLowerCase() || resolveAiProvider();
   const key = process.env.OPENAI_API_KEY || process.env.BETMAN_OPENAI_API_KEY;
   const openAiBase = String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
   const ollamaBase = String(process.env.OLLAMA_BASE_URL || process.env.BETMAN_OLLAMA_BASE_URL || process.env.BETMAN_CHAT_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE).replace(/\/$/, '');
+  const ollamaDisabled = String(process.env.BETMAN_OLLAMA_DISABLED || 'false').toLowerCase() === 'true';
+  const provider = (ollamaDisabled && requestedProvider === 'ollama' && key) ? 'openai' : requestedProvider;
   if (provider === 'openai' && !key) return null;
   console.log('[ai-chat] provider', provider, 'question', question);
 
