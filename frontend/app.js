@@ -2292,6 +2292,13 @@ function parseReasonOdds(reason){
   return m ? Number(m[1]) : NaN;
 }
 
+function parseWinProbValue(val){
+  if (val == null || val === '') return NaN;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : NaN;
+  const match = String(val).match(/([0-9]+(?:\.[0-9]+)?)/);
+  return match ? Number(match[1]) : NaN;
+}
+
 function whyCategoryMatch(row, why, opts = {}){
   const allowExotic = opts.allowExotic !== false;
   if (why === 'ALL') return true;
@@ -2305,7 +2312,8 @@ function whyCategoryMatch(row, why, opts = {}){
   if (exotic) return false;
   if (why === 'STRONG') {
     if (Number.isFinite(signal) && signal >= 60) return true;
-    const winProb = Number.isFinite(Number(row?.win_p)) ? Number(row.win_p) : parseReasonWinProb(row?.reason);
+    const winProbDirect = parseWinProbValue(row?.aiWinProb ?? row?.win_p);
+    const winProb = Number.isFinite(winProbDirect) ? winProbDirect : parseReasonWinProb(row?.reason);
     const shortFav = Number.isFinite(odds) && odds > 0 && odds <= 3.2;
     const favContext = /favourite|favorite|market\s+leader|short\s+price/.test(reason);
     const formStatus = String(runnerFormSignal(row)?.status || '').toUpperCase();
@@ -3030,7 +3038,7 @@ function buildStrategyPlanCandidates(type){
 }
 
 function strategyEdgePts(row){
-  const rowWinProb = Number(row?.aiWinProb ?? row?.win_p);
+  const rowWinProb = parseWinProbValue(row?.aiWinProb ?? row?.win_p);
   const winProb = Number.isFinite(rowWinProb) ? rowWinProb : parseReasonWinProb(row?.reason);
   const odds = Number(row?.odds);
   const parsedOdds = parseReasonOdds(row?.reason);
@@ -3044,7 +3052,7 @@ function scoreStrategyCandidate(row){
   if (Number.isFinite(directSignal)) return directSignal;
   const derivedSignal = signalScore(row?.reason || '', row?.type || 'win', row?.selection || row?.runner || '');
   if (Number.isFinite(derivedSignal)) return derivedSignal;
-  const rowWinProb = Number(row?.aiWinProb ?? row?.win_p);
+  const rowWinProb = parseWinProbValue(row?.aiWinProb ?? row?.win_p);
   const winProb = Number.isFinite(rowWinProb) ? rowWinProb : parseReasonWinProb(row.reason);
   const odds = Number(row?.odds);
   const parsedOdds = parseReasonOdds(row.reason);
@@ -3383,7 +3391,7 @@ async function buildStrategyPlan(){
   const winProbVals = picks
     .map(r => {
       const fromReason = parseReasonWinProb(r.reason);
-      const fromRow = Number(r.win_p);
+      const fromRow = parseWinProbValue(r.aiWinProb ?? r.win_p);
       return Number.isFinite(fromReason) ? fromReason : (Number.isFinite(fromRow) ? fromRow : NaN);
     })
     .filter(v => Number.isFinite(v) && v > 0);
