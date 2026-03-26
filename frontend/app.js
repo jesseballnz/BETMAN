@@ -3987,9 +3987,14 @@ function renderNextPlanned(rows){
       return true;
     });
     const tag = tags.length ? ` ${tags.join(' ')}` : '';
+    const fallbackRow = /^fallback/.test(String(r.reason || '').trim().toLowerCase());
     const aiProbText = Number.isFinite(Number(r.aiWinProb))
       ? `AI win probability is ${Number(r.aiWinProb).toFixed(1)}%.`
       : (() => {
+          if (exotic) return 'AI win probability not applicable for this market type.';
+          if (fallbackRow) {
+            return 'AI win probability pending — placeholder runner until a qualified AI signal enters the window.';
+          }
           const f = String(formStatus || '').toUpperCase();
           if (Number.isFinite(odds) && odds > 0 && odds <= 3.2) {
             return `AI win probability is unavailable for this market. WHY: short-priced favourite${f ? ` with ${f} form` : ''}.`;

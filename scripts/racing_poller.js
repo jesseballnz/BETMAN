@@ -369,8 +369,8 @@ async function main() {
   const splitTop1 = parseFloat(getArg('split_top1', '0.6')); // remainder to 2nd pick
   const ewWinMin = parseFloat(getArg('ew_win_min', '6'));
   const ewPlaceMin = parseFloat(getArg('ew_place_min', '2'));
-  const earlyWindowMin = parseFloat(getArg('early_window_min', '180'));
-  const aiWindowMin = parseFloat(getArg('ai_window_min', '10'));
+  const earlyWindowMin = parseFloat(getArg('early_window_min', String(stakeCfg.earlyWindowMin ?? 180)));
+  const aiWindowMin = parseFloat(getArg('ai_window_min', String(stakeCfg.aiWindowMin ?? 10)));
 
   const outBase = path.join(process.cwd(), 'data', 'tab', date);
   const statePath = path.join(process.cwd(), 'memory', 'racing-poll-state.json');
