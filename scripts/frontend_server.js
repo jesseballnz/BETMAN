@@ -2436,15 +2436,6 @@ function buildAiContextSummary({
 
   if (jointRows?.length) lines.push(`Joint likelihoods: ${summarizeList(jointRows, 3, formatJoint)}`);
 
-  const edgeSignals = Array.isArray(clientContext?.edgeSignals) ? clientContext.edgeSignals : [];
-  if (edgeSignals.length) {
-    const formatted = edgeSignals
-      .slice(0, 8)
-      .map(r => `${r.name || '—'} ${Number.isFinite(r.impliedPct) ? `implied ${Number(r.impliedPct).toFixed(1)}%` : ''}${Number.isFinite(r.modeledPct) ? ` model ${Number(r.modeledPct).toFixed(1)}%` : ''}${Number.isFinite(r.edgePct) ? ` edge ${Number(r.edgePct) >= 0 ? '+' : ''}${Number(r.edgePct).toFixed(1)}pts` : ''}`.trim())
-      .join(' | ');
-    lines.push(`Edge viz: ${formatted}`);
-  }
-
   const raceLookup = buildRaceLookup(races);
   const explicitSelections = Array.isArray(clientContext?.selections) ? clientContext.selections.slice(0, 6) : [];
   const inferredSelections = inferSelectionsFromQuestion(question, suggested, races);
@@ -2551,8 +2542,8 @@ function buildAiContextSummary({
   if (webContext?.query) lines.push(`Search query: ${trimText(webContext.query, 120)}`);
 
   const summary = lines.filter(Boolean).join('\n');
-  const truncated = summary.length > maxLength;
-  return truncated ? `${summary.slice(0, maxLength - 1)}…` : summary;
+  if (summary.length <= maxLength) return summary;
+  return `${summary.slice(0, maxLength - 1)}…`;
 }
 
 const BETMAN_ANALYST_SYSTEM_PROMPT = `You are BETMAN's senior racing analyst. Be direct, structured, and evidence-first.
@@ -2610,7 +2601,7 @@ const aiHealth = {
   lastError: null
 };
 
-function recordAiOutcome({ question, payload, mode, provider, error, modelRequested, modelUsed, modelAdjusted, contextLen, contextMax, contextTruncated, historyTurnsUsed, historyCharsUsed, edgeSignalsCount }){
+function recordAiOutcome({ question, payload, mode, provider, error, modelRequested, modelUsed, modelAdjusted }){
   const ts = new Date().toISOString();
   if (mode === 'ai' || mode === 'cache') {
     aiHealth.lastSuccess = ts;
@@ -2628,12 +2619,6 @@ function recordAiOutcome({ question, payload, mode, provider, error, modelReques
     modelRequested: modelRequested || String(payload?.model || '').trim() || null,
     modelUsed: modelUsed || null,
     modelAdjusted: !!modelAdjusted,
-    contextLen: Number.isFinite(contextLen) ? contextLen : null,
-    contextMax: Number.isFinite(contextMax) ? contextMax : null,
-    contextTruncated: contextTruncated === true,
-    historyTurnsUsed: Number.isFinite(historyTurnsUsed) ? historyTurnsUsed : null,
-    historyCharsUsed: Number.isFinite(historyCharsUsed) ? historyCharsUsed : null,
-    edgeSignalsCount: Number.isFinite(edgeSignalsCount) ? edgeSignalsCount : null,
     selectionCount: Number(payload?.selectionCount || 0),
     races: Array.isArray(payload?.selections) ? payload.selections.map(s => `${s.meeting || ''} R${s.race || ''}`) : [],
     question: String(question || '').slice(0, 400)
@@ -2850,11 +2835,6 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : (racesData.races || []),
     maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral
   });
-  const contextMeta = {
-    length: String(contextSummary || '').length,
-    maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
-    truncated: String(contextSummary || '').length > (isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral)
-  };
 
   const customInstructions = loadText(AI_INSTRUCTIONS_FILE, '').trim();
   const systemPrompt = (isRaceAnalysis || isStrategy) ? BETMAN_ANALYST_SYSTEM_PROMPT : BETMAN_CHAT_SYSTEM_PROMPT;
@@ -2920,8 +2900,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       modelAdjusted: !!requestedModel && requestedModel !== effectiveModel,
       contextMaxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
       historyTurnsUsed: modelProfile.historyTurns,
-      historyCharsUsed: modelProfile.historyChars,
-      contextMeta
+      historyCharsUsed: modelProfile.historyChars
     };
   }
 
@@ -3138,8 +3117,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     modelAdjusted: !!requestedModel && requestedModel !== effectiveModel,
     contextMaxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
     historyTurnsUsed: modelProfile.historyTurns,
-    historyCharsUsed: modelProfile.historyChars,
-    contextMeta
+    historyCharsUsed: modelProfile.historyChars
   };
 }
 
@@ -4301,13 +4279,7 @@ if (url.pathname === '/api/ask-selection') {
       error: mode === 'fallback' ? fallbackReason : null,
       modelRequested: String(payload?.model || '').trim() || null,
       modelUsed: aiMeta?.modelUsed || null,
-      modelAdjusted: !!aiMeta?.modelAdjusted,
-      contextLen: aiMeta?.contextMeta?.length,
-      contextMax: aiMeta?.contextMeta?.maxLength,
-      contextTruncated: aiMeta?.contextMeta?.truncated,
-      historyTurnsUsed: aiMeta?.historyTurnsUsed,
-      historyCharsUsed: aiMeta?.historyCharsUsed,
-      edgeSignalsCount: Array.isArray(payload?.edgeSignals) ? payload.edgeSignals.length : 0
+      modelAdjusted: !!aiMeta?.modelAdjusted
     });
 
     const resolvedModelForMeta = String(aiMeta?.modelUsed || payload?.model || process.env.BETMAN_CHAT_MODEL || '').toLowerCase();

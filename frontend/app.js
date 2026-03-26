@@ -1073,38 +1073,7 @@ function persistAiAnalysisCache(){
   }
 }
 
-function persistAiCooldown(){
-  try {
-    const rows = Array.from(aiAnalysisCooldown.entries()).map(([key, until]) => ({ key, until }));
-    localStorage.setItem('betmanAiCooldown', JSON.stringify(rows));
-  } catch (err) {
-    console.warn('ai_cooldown_save_failed', err?.message || err);
-  }
-}
-
-function hydrateAiCooldownFromStorage(){
-  let changed = false;
-  try {
-    const stored = JSON.parse(localStorage.getItem('betmanAiCooldown') || '[]');
-    if (!Array.isArray(stored)) return;
-    const now = Date.now();
-    stored.forEach(entry => {
-      if (!entry || typeof entry !== 'object') { changed = true; return; }
-      const key = String(entry.key || '').trim();
-      const until = Number(entry.until || 0);
-      if (!key || !Number.isFinite(until)) { changed = true; return; }
-      if (until <= now) { changed = true; return; }
-      aiAnalysisCooldown.set(key, until);
-    });
-    if (changed) persistAiCooldown();
-    if (aiAnalysisCooldown.size) ensureAiCooldownTimer();
-  } catch (err) {
-    console.warn('ai_cooldown_hydrate_failed', err?.message || err);
-  }
-}
-
 hydrateAiAnalysisCacheFromStorage();
-hydrateAiCooldownFromStorage();
 (function restoreMeetingLock(){
   try {
     const saved = JSON.parse(localStorage.getItem(MEETING_LOCK_KEY) || '{}');
@@ -6143,9 +6112,7 @@ async function selectRace(key, fallbackMeeting = null, fallbackRace = null){
   makeSelectionsDraggable();
   ensureAiAnswerHost();
   clearAiAnswerPanel();
-  if (!renderCachedAiAnalysisIfPresent(selectedRace)) {
-    loadServerRaceAnalysisCache(selectedRace).catch(()=>{});
-  }
+  renderCachedAiAnalysisIfPresent(selectedRace);
   refreshAiAnalyseButtonState();
   renderRaces(racesCache);
   renderInteresting(latestInterestingRows || []);
@@ -6171,33 +6138,10 @@ function refreshSelectedRaceAnalysis(){
   $('analysisTitle').textContent = `${selectedRace.meeting} R${selectedRace.race_number} — ${selectedRace.description || ''}`;
   if (!renderCachedAiAnalysisIfPresent(selectedRace)) {
     clearAiAnswerPanel();
-    loadServerRaceAnalysisCache(selectedRace).catch(()=>{});
   }
 }
 
-async function loadServerRaceAnalysisCache(race){
-  if (!race) return;
-  const meeting = String(race.meeting || '').trim();
-  const raceNo = String(race.race_number || race.race || '').replace(/^R/i,'').trim();
-  if (!meeting || !raceNo) return;
-  try {
-    const url = `./api/race-analysis?meeting=${encodeURIComponent(meeting)}&race=${encodeURIComponent(raceNo)}`;
-    const res = await fetchLocal(url, { cache: 'no-store' });
-    const out = await res.json();
-    if (!out || !out.answer) return;
-    const answerHtml = formatAiAnswer(out.answer);
-    const responseLabel = 'cache';
-    const modelLabel = out.modelUsed || out.modelRequested || selectedAiModel.model || '—';
-    const meta = `<div class='analysis-meta'>[CACHE] · Answer ${new Date(out.createdAt || Date.now()).toLocaleTimeString()} · Response ${responseLabel} · ${modelLabel}</div>`;
-    ensureAiAnswerHost();
-    setAiAnswerPanel(`<div class='ai-answer-block'>${answerHtml}</div>${meta}`);
-    const cacheKey = buildAiAnalysisCacheKey();
-    if (cacheKey) {
-      aiAnalysisCache.set(cacheKey, { answerHtml, modelName: modelLabel, timestamp: Date.now(), durationMs: null });
-      persistAiAnalysisCache();
-    }
-  } catch {}
-}
+
 
 function cleanRunnerText(v){
   return String(v || '')
@@ -7588,7 +7532,6 @@ function getAiAnalyseCooldownRemaining(key){
   const remaining = until - Date.now();
   if (remaining <= 0) {
     aiAnalysisCooldown.delete(key);
-    persistAiCooldown();
     return 0;
   }
   return remaining;
@@ -7624,7 +7567,6 @@ function updateAnalysisAiModelNote(){
 function startAiAnalyseCooldown(key){
   if (!key) return;
   aiAnalysisCooldown.set(key, Date.now() + AI_ANALYSE_COOLDOWN_MS);
-  persistAiCooldown();
   refreshAiAnalyseButtonState();
   ensureAiCooldownTimer();
 }
@@ -7756,7 +7698,6 @@ function bindAiAnalyseButton(){
     setAiAnswerPanel(`<div class='ai-answer-block pending'>Running AI analysis…</div>`);
     const cacheKey = buildAiAnalysisCacheKey();
     const cooldownKey = buildAiCooldownKey(selectedRace);
-    if (cooldownKey) startAiAnalyseCooldown(cooldownKey);
     await ensureInstructionsLoaded().catch(()=>{});
     await loadRunnerMetrics().catch(()=>{});
     const autoTuneSelection = resolveAutoTuneModelSelection();
@@ -7767,7 +7708,6 @@ function bindAiAnalyseButton(){
       model: autoTuneSelection.model,
       selectionCount: 0,
       selections: [],
-      edgeSignals: Array.isArray(latestAnalysisSignals?.edgeRows) ? latestAnalysisSignals.edgeRows : [],
       uiContext: { day: selectedDay, country: selectedCountry, meeting: selectedMeeting },
       raceContext: { meeting: selectedRace.meeting, raceNumber: selectedRace.race_number, raceName: selectedRace.description }
     };
@@ -7797,6 +7737,7 @@ function bindAiAnalyseButton(){
       const meta = `<div class='analysis-meta'>${modeBadge} · Answer ${new Date(generatedAt).toLocaleTimeString()} · Response ${responseLabel} · ${modelLabel}</div>`;
       setAiAnswerPanel(`<div class='ai-answer-block'>${oddsTableHtml}${answerHtml}</div>${meta}`);
       hideAnalysisProcessingHint();
+      if (cooldownKey) startAiAnalyseCooldown(cooldownKey);
       if (cacheKey) {
         aiAnalysisCache.set(cacheKey, { answerHtml, modelName, timestamp: generatedAt, durationMs: responseMs });
         persistAiAnalysisCache();
