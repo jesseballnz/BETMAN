@@ -4039,6 +4039,8 @@ function renderNextPlanned(rows){
 }
 
 let autobetFilterType = 'ALL';
+let autobetWindow = 'day';
+let autobetPerfDaily = null;
 
 function autobetStrategyKey(type){
   const t = String(type || '').toLowerCase();
@@ -4108,48 +4110,57 @@ function renderAutobetFeed(rows){
   });
 }
 
-function renderAutobetTiles(agg30){
+function renderAutobetTiles(daily){
   const wrap = $('autobetRoiTiles');
   if (!wrap) return;
-  const empty = !agg30;
-  const winRoi = agg30?.pick?.win?.roi_stake_units ? (agg30.pick.win.profit_rec / agg30.pick.win.roi_stake_units) : null;
-  const ewRoi = agg30?.pick?.ew?.roi_stake_units ? (agg30.pick.ew.profit_rec / agg30.pick.ew.roi_stake_units) : null;
-  const oddsRoi = agg30?.pick?.odds_runner?.roi_stake_units ? (agg30.pick.odds_runner.profit_rec / agg30.pick.odds_runner.roi_stake_units) : null;
-  const longRoi = agg30?.long?.roi_stake_units ? (agg30.long.profit_rec / agg30.long.roi_stake_units) : null;
-  const exoticRoi = agg30?.exotic_stake ? (agg30.exotic_profit / agg30.exotic_stake) : null;
-  const combinedStake = (agg30?.pick?.win?.roi_stake_units || 0)
-    + (agg30?.pick?.ew?.roi_stake_units || 0)
-    + (agg30?.pick?.odds_runner?.roi_stake_units || 0)
-    + (agg30?.long?.roi_stake_units || 0)
-    + (agg30?.exotic_stake || 0);
-  const combinedProfit = (agg30?.pick?.win?.profit_rec || 0)
-    + (agg30?.pick?.ew?.profit_rec || 0)
-    + (agg30?.pick?.odds_runner?.profit_rec || 0)
-    + (agg30?.long?.profit_rec || 0)
-    + (agg30?.exotic_profit || 0);
-  const allRoi = combinedStake ? (combinedProfit / combinedStake) : null;
+  const windowDays = autobetWindow === 'day' ? 1 : (autobetWindow === 'week' ? 7 : (autobetWindow === 'month' ? 30 : 365));
+  const agg = aggregateLastNDays(daily, windowDays);
+  const empty = !agg;
+  const pct = (wins, bets) => (Number.isFinite(wins) && Number.isFinite(bets) && bets > 0) ? (wins / bets) : null;
+  const winPct = pct(agg?.pick?.win?.wins, agg?.pick?.win?.bets);
+  const ewPct = pct(agg?.pick?.ew?.wins, agg?.pick?.ew?.bets);
+  const oddsPct = pct(agg?.pick?.odds_runner?.wins, agg?.pick?.odds_runner?.bets);
+  const longPct = pct(agg?.long?.wins, agg?.long?.bets);
+  const exoticPct = pct(agg?.exotic?.hits, agg?.exotic?.bets);
+  const allWins = (agg?.pick?.win?.wins || 0) + (agg?.pick?.ew?.wins || 0) + (agg?.pick?.odds_runner?.wins || 0) + (agg?.long?.wins || 0) + (agg?.exotic?.hits || 0);
+  const allBets = (agg?.pick?.win?.bets || 0) + (agg?.pick?.ew?.bets || 0) + (agg?.pick?.odds_runner?.bets || 0) + (agg?.long?.bets || 0) + (agg?.exotic?.bets || 0);
+  const allPct = pct(allWins, allBets);
 
   const tiles = [
-    { key: 'ALL', label: 'ALL', roi: allRoi },
-    { key: 'WIN', label: 'WIN', roi: winRoi },
-    { key: 'EW', label: 'EW', roi: ewRoi },
-    { key: 'ODDS', label: 'ODDS', roi: oddsRoi },
-    { key: 'LONG', label: 'LONG', roi: longRoi },
-    { key: 'EXOTICS', label: 'EXOTICS', roi: exoticRoi }
+    { key: 'ALL', label: 'ALL', pct: allPct },
+    { key: 'WIN', label: 'WIN', pct: winPct },
+    { key: 'EW', label: 'EW', pct: ewPct },
+    { key: 'ODDS', label: 'ODDS', pct: oddsPct },
+    { key: 'LONG', label: 'LONG', pct: longPct },
+    { key: 'EXOTICS', label: 'EXOTICS', pct: exoticPct }
   ];
   wrap.innerHTML = tiles.map(t => {
     const active = autobetFilterType === t.key ? 'active' : '';
     return `<div class='perf-card autobet-tile ${active}' data-filter='${t.key}'>
       <div class='label'>${t.label}</div>
-      <div class='value'>${empty ? '—' : fmtRoi(t.roi)}</div>
+      <div class='value'>${empty ? '—' : fmtPct(t.pct)}</div>
     </div>`;
   }).join('');
 
   wrap.querySelectorAll('.autobet-tile').forEach(tile => {
     tile.onclick = () => {
       autobetFilterType = tile.dataset.filter || 'ALL';
-      renderAutobetTiles(agg30);
+      renderAutobetTiles(daily);
       renderAutobetFeed(latestUpcomingBets || []);
+    };
+  });
+}
+
+function renderAutobetWindowTabs(){
+  const wrap = $('autobetWindowTabs');
+  if (!wrap) return;
+  wrap.querySelectorAll('button').forEach(btn => {
+    const key = btn.dataset.window || 'day';
+    btn.classList.toggle('active', key === autobetWindow);
+    btn.onclick = () => {
+      autobetWindow = key;
+      renderAutobetWindowTabs();
+      renderAutobetTiles(autobetPerfDaily);
     };
   });
 }
@@ -5948,7 +5959,9 @@ async function loadPerformance(){
     $('perfEwTypePct') && ($('perfEwTypePct').textContent = fmtPct(winRateEw));
     $('perfLongTypePct') && ($('perfLongTypePct').textContent = fmtPct(winRateLong));
   }
-  renderAutobetTiles(agg30);
+  autobetPerfDaily = daily;
+  renderAutobetWindowTabs();
+  renderAutobetTiles(daily);
   applyHeroTiles('heroDay', aggregateLastNDays(daily, 1));
   applyHeroTiles('heroWeek', aggregateLastNDays(daily, 7));
   applyHeroTiles('heroMonth', aggregateLastNDays(daily, 30));
