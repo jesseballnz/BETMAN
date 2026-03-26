@@ -5883,6 +5883,24 @@ async function loadPerformance(){
     returnBarEl.style.width = `${pct}%`;
     returnBarEl.classList.toggle('neg', roi != null && roi < 0);
   }
+  const returnTableEl = $('betmanReturnTable');
+  if (returnTableEl) {
+    const rows = [
+      { label: 'Combined P/L', pl: netReturn, roi, stake: invested },
+      { label: 'Base Strategies P/L', pl: baseReturn, roi: baseRoi, stake: baseInvested },
+      { label: 'Exotics P/L', pl: exoticReturn, roi: exoticRoi, stake: exoticInvested }
+    ];
+    const table = [`<div class='row header'><div>Bucket</div><div>P/L (u)</div><div>ROI</div><div class='right'>Stake (u)</div></div>`];
+    rows.forEach(row => {
+      table.push(`<div class='row'>
+        <div>${row.label}</div>
+        <div>${fmtUnits(row.pl)}</div>
+        <div>${fmtPct(row.roi)}</div>
+        <div class='right'>${fmtUnits(row.stake)}</div>
+      </div>`);
+    });
+    returnTableEl.innerHTML = table.join('');
+  }
 
   renderBetPlansRoi(daily, weekly, monthly);
   renderPerformanceTable('perfDailyTable', daily, { strategyDetail: true });
