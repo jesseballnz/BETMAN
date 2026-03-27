@@ -1091,6 +1091,47 @@ function inferSelectionsFromQuestion(question, suggested = [], races = []){
       });
     });
   }
+
+  if (results.length < 2) {
+    const nowSec = Date.now() / 1000;
+    const meetingMap = new Map();
+    (races || []).forEach(r => {
+      const name = String(r.meeting || '').trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (!meetingMap.has(key)) meetingMap.set(key, name);
+    });
+    for (const [meetingKey, meetingName] of meetingMap.entries()) {
+      if (!q.includes(meetingKey)) continue;
+      const meetingRaces = (races || []).filter(r => String(r.meeting || '').trim().toLowerCase() === meetingKey);
+      if (!meetingRaces.length) continue;
+      meetingRaces.sort((a, b) => Number(a.advertised_start || 0) - Number(b.advertised_start || 0));
+      const targetRace = meetingRaces.find(r => Number(r.advertised_start || 0) >= nowSec) || meetingRaces[meetingRaces.length - 1];
+      if (!targetRace) continue;
+      const raceNum = String(targetRace.race_number || '').trim();
+      const matchedSuggestions = (suggested || []).filter(row =>
+        String(row.meeting || '').trim().toLowerCase() === meetingKey &&
+        String(row.race || '').replace(/^R/i, '').trim() === raceNum
+      );
+      let runnerName = null;
+      if (matchedSuggestions.length) {
+        matchedSuggestions.sort((a, b) => (Number(b.aiWinProb) || 0) - (Number(a.aiWinProb) || 0));
+        runnerName = matchedSuggestions[0]?.selection || null;
+      }
+      if (!runnerName) {
+        const sortedRunners = (targetRace.runners || []).slice().sort((a, b) => {
+          const oddsA = Number(a.fixed_win || a.odds || a.tote_win || Infinity);
+          const oddsB = Number(b.fixed_win || b.odds || b.tote_win || Infinity);
+          return oddsA - oddsB;
+        });
+        runnerName = sortedRunners[0]?.name || sortedRunners[0]?.runner_name || null;
+      }
+      if (runnerName) {
+        addSel(meetingName, raceNum, runnerName);
+      }
+      if (results.length >= 4) break;
+    }
+  }
   return results.slice(0, 4);
 }
 
