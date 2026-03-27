@@ -148,11 +148,47 @@ function computeRacePedigreeAdvantageMap(race, runners){
   }).map(x => x.key));
   return new Map(entries.map(x => [x.key, { ...x.signal, relativeEdge: x.signal.score - avg, qualifies: qualifiedKeys.has(x.key), topScore: top, averageScore: avg }]));
 }
+
+function trackConditionConfirmation(runner, signal) {
+  if (!runner?.stats || !signal) return 1;
+  const arch = String(signal.archetype || '');
+  const isWet = arch.includes('WET');
+  const conditionStats = isWet
+    ? (runner.stats.heavy || runner.stats.soft)
+    : (runner.stats.good || runner.stats.firm);
+  if (!conditionStats) return 1;
+  const starts = Number(conditionStats.number_of_starts || 0);
+  if (starts < 3) return 1;
+  const wins = Number(conditionStats.number_of_wins || 0);
+  const placings = Number(conditionStats.number_of_placings || 0);
+  const placeRate = placings / starts;
+  const winRate = wins / starts;
+  if (winRate >= 0.25 || placeRate >= 0.5) return 1.15;
+  if (placeRate < 0.15) return 0.7;
+  return 1;
+}
+
+function pedigreeAdjFactor(runner, pedigreeMap) {
+  if (!pedigreeMap) return 0;
+  const key = normalizeRunnerName(runner?.runner_name || runner?.name || '');
+  if (!key) return 0;
+  const signal = pedigreeMap.get(key);
+  if (!signal || !Number.isFinite(signal.score)) return 0;
+  const relEdge = Number.isFinite(signal.relativeEdge) ? signal.relativeEdge : 0;
+  const conf = Number.isFinite(signal.confidence) ? signal.confidence : 0;
+  if (relEdge <= 0 || conf < 0.50) return 0;
+  const trackConfirm = trackConditionConfirmation(runner, signal);
+  const scaledEdge = Math.min(relEdge / 10, 1);
+  return Math.min(0.02, scaledEdge * conf * 0.02 * trackConfirm);
+}
+
 module.exports = {
   normalizeTrackBucket,
   inferRaceArchetype,
   inferRacePedigreeDemand,
   runnerPedigreeSignal,
   computeRacePedigreeAdvantageMap,
+  pedigreeAdjFactor,
+  trackConditionConfirmation,
   loadBloodlineLibrary
 };

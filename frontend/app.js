@@ -23,8 +23,8 @@ const BETMAN_BUILD = '20260319-0936';
 const STRATEGY_MIN_BETS = 30;
 const SIGNAL_GLOSSARY = {
   implied: 'Market-implied probability from current odds (100 / odds).',
-  model: 'BETMAN simulation-based probability estimate.',
-  edge: 'Edge = Model % - Implied %. Positive suggests potential value; negative suggests price may be too short.',
+  model: 'BETMAN simulation-based probability estimate, adjusted for form, barrier, speedmap, meeting bias, and pedigree advantage.',
+  edge: 'Edge = Model % - Implied %. Positive suggests potential value; negative suggests price may be too short. Pedigree advantage can contribute up to ~2 pts when a runner has strong bloodline fit for the race archetype.',
   recommended: 'Primary win selection after policy checks. Forced fallback can apply when enabled.',
   oddsRunner: 'Longer-price runner tracked for upside. Qualified requires positive edge and minimum odds.',
   ew: 'Each-way candidate requiring place profile support and minimum win chance.'
