@@ -2086,8 +2086,8 @@ const speedMapText = speedMap
 function buildSelectionFactAnswer(question, clientContext = {}, tenantId = 'default'){
   const q = String(question || '').trim().toLowerCase();
   const status = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json'), {});
-  const racesData = loadJson(path.join(process.cwd(), 'frontend', 'data', 'races.json'), {});
-  const suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
+  const racesData = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), {});
+  let suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
   const isRaceAnalysis = String(clientContext?.source || '').toLowerCase() === 'race-analysis';
 
   if (isRaceAnalysis && clientContext?.raceContext) {
@@ -2168,6 +2168,16 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
   // Venue-aware scoping: if the question mentions a specific venue, constrain answers
   const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
   const liveRaces = allRaces.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
+  // Filter suggested bets to exclude picks for races that have already finished
+  suggested = suggested.filter(s => {
+    const m = String(s.meeting || '').trim().toLowerCase();
+    const r = String(s.race || '').trim().replace(/^R/i, '');
+    const raceObj = allRaces.find(x =>
+      String(x.meeting || '').trim().toLowerCase() === m &&
+      String(x.race_number || '').trim() === r
+    );
+    return !raceObj || !FINISHED_RACE_STATUSES.has(String(raceObj.race_status || '').toLowerCase());
+  });
   // Include venues from suggested bets so venue detection works even when races.json
   // is loaded from a different path (e.g. tenant data with separate status/races).
   const suggestedVenues = [...new Set(suggested.map(x => String(x.meeting || '').trim()).filter(Boolean))]
@@ -2991,8 +3001,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   console.log('[ai-chat] provider', provider, 'question', question);
 
   const status = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json'), {});
-  const racesData = loadJson(path.join(process.cwd(), 'frontend', 'data', 'races.json'), {});
-  const suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
+  const racesData = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), {});
+  let suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
 
   const sourceTag = String(clientContext?.source || '').toLowerCase();
   const isRaceAnalysis = sourceTag === 'race-analysis';
@@ -3094,6 +3104,16 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   // Venue-aware context scoping for general chat (no dragged selections, no raceContext)
   const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
   const liveRaces = allRaces.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
+  // Filter suggested bets to exclude picks for races that have already finished
+  suggested = suggested.filter(s => {
+    const m = String(s.meeting || '').trim().toLowerCase();
+    const r = String(s.race || '').trim().replace(/^R/i, '');
+    const raceObj = allRaces.find(x =>
+      String(x.meeting || '').trim().toLowerCase() === m &&
+      String(x.race_number || '').trim() === r
+    );
+    return !raceObj || !FINISHED_RACE_STATUSES.has(String(raceObj.race_status || '').toLowerCase());
+  });
   const venueInference = (!hasDraggedSelections && !isRaceAnalysis)
     ? inferMeetingFromQuestion(question, liveRaces)
     : { mentioned: null, matched: [], available: [] };
@@ -3194,7 +3214,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     clientContext: effectiveClientContext,
     jointRows,
     question,
-    races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : venueScopedRaces,
+    races: hasDraggedSelections ? liveRaces.filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : venueScopedRaces,
     meetingProfiles: loadMeetingProfiles('today'),
     maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
     venueNote
