@@ -100,7 +100,7 @@ assert(a6.includes('Not So Unusual'));
 assert(/Next in line:/i.test(a6));
 
 const formatted = enforceDecisionAnswerFormat('Raw output without structure');
-['Verdict:', 'Market edge:', 'Risk:', 'Invalidation points:'].forEach(token => {
+['Verdict:', 'Market edge:', 'Risk:', 'Pass conditions:'].forEach(token => {
   assert(formatted.includes(token));
 });
 
@@ -115,5 +115,65 @@ fs.mkdirSync(emptyDir, { recursive: true });
 fs.writeFileSync(path.join(emptyDir, 'status.json'), JSON.stringify({ suggestedBets: [] }, null, 2));
 const a7 = buildSelectionFactAnswer('Any picks loaded?', {}, emptyTenant);
 assert(/I do not have any current selections loaded yet/i.test(a7));
+
+// Finished-race filter: suggested bets for finished races must not appear in answers
+const finishedTenant = 'ai_chat_test_finished';
+const finishedDir = path.join(ROOT, 'memory', 'tenants', finishedTenant, 'frontend-data');
+fs.mkdirSync(finishedDir, { recursive: true });
+const finishedStatusFixture = {
+  updatedAt: '2026-03-05T04:00:00.000Z',
+  suggestedBets: [
+    { meeting: 'Wingatui', race: '1', selection: 'Global Jewel', type: 'Win', stake: 4.0, reason: 'p=20% @ 3.60' },
+    { meeting: 'Wingatui', race: '4', selection: 'Momento', type: 'Win', stake: 4.0, reason: 'p=18% @ 5.50' },
+    { meeting: 'Wingatui', race: '6', selection: 'Open Horse', type: 'Win', stake: 4.0, reason: 'p=22% @ 4.00' }
+  ]
+};
+const finishedRacesFixture = {
+  races: [
+    {
+      key: 'NZ:Wingatui:R1',
+      country: 'NZ',
+      meeting: 'Wingatui',
+      race_number: '1',
+      race_status: 'Final',
+      description: 'Wingatui Race 1',
+      runners: [
+        { runner_number: 1, name: 'Global Jewel', odds: 3.6 },
+        { runner_number: 2, name: 'Master Marko', odds: 2.8 }
+      ]
+    },
+    {
+      key: 'NZ:Wingatui:R4',
+      country: 'NZ',
+      meeting: 'Wingatui',
+      race_number: '4',
+      race_status: 'resulted',
+      description: 'Wingatui Race 4',
+      runners: [
+        { runner_number: 1, name: 'Momento', odds: 5.5 },
+        { runner_number: 2, name: 'Strong', odds: 3.2 }
+      ]
+    },
+    {
+      key: 'NZ:Wingatui:R6',
+      country: 'NZ',
+      meeting: 'Wingatui',
+      race_number: '6',
+      race_status: 'open',
+      description: 'Wingatui Race 6',
+      runners: [
+        { runner_number: 1, name: 'Open Horse', odds: 4.0 }
+      ]
+    }
+  ]
+};
+fs.writeFileSync(path.join(finishedDir, 'status.json'), JSON.stringify(finishedStatusFixture, null, 2));
+fs.writeFileSync(path.join(finishedDir, 'races.json'), JSON.stringify(finishedRacesFixture, null, 2));
+
+const a8 = buildSelectionFactAnswer('What picks do we have?', {}, finishedTenant);
+// R1 and R4 are finished — should NOT appear; R6 is open — SHOULD appear
+assert(!a8.includes('Global Jewel'), 'Finished race R1 pick (Global Jewel) should not appear in answer');
+assert(!a8.includes('Momento'), 'Finished race R4 pick (Momento) should not appear in answer');
+assert(a8.includes('Open Horse'), 'Live race R6 pick (Open Horse) should appear in answer');
 
 console.log('ai_chat scenarios tests passed');

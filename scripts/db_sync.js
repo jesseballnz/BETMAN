@@ -93,6 +93,6 @@ async function main(){
 }
 
 main().catch(err => {
-  console.error('[db_sync] failed', err.message || err);
+  console.error('[db_sync] failed', err);
   process.exit(1);
 });

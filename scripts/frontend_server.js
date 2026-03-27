@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const dns = require('dns');
 const { mergePublicStatusLists } = require('./status_snapshot_merge');
+const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -362,11 +363,14 @@ function formatMeetingProfile(prof){
   if (bar.low) barrierParts.push(`low(1-4) ${bar.low}/${total}`);
   if (bar.mid) barrierParts.push(`mid(5-9) ${bar.mid}/${total}`);
   if (bar.high) barrierParts.push(`high(10+) ${bar.high}/${total}`);
-  return {
+  const result = {
     racesScored: total,
     paceWins: paceWinsSummary,
     barrierWins: barrierParts.length ? barrierParts.join(', ') : 'n/a'
   };
+  if (prof.track_condition) result.trackCondition = prof.track_condition;
+  if (prof.rail_position) result.railPosition = prof.rail_position;
+  return result;
 }
 
 function loadText(filePath, fallback = ''){
@@ -955,6 +959,7 @@ async function fetchOllamaModelsForBase(base){
       models = DEFAULT_OLLAMA_FALLBACK_MODELS.slice();
     }
   } catch (err) {
+    console.error('ollama_models_fetch_error', normalized, err?.message || err);
     if (cached && Array.isArray(cached.models) && cached.models.length) {
       clearTimeout(timer);
       return { base: normalized, models: cached.models.slice(), ok: !!cached.ok };
@@ -1051,15 +1056,24 @@ function formatSelectionDetails(sel, raceLookup, races = []){
   if (race?.distance) bits.push(`${race.distance}m`);
   if (race?.track_condition) bits.push(`Track ${race.track_condition}`);
   if (race?.rail_position) bits.push(`Rail ${race.rail_position}`);
-  if (runner?.barrier) bits.push(`Barrier ${runner.barrier}`);
+  if (runner?.runner_number) bits.push(`#${runner.runner_number}`);
+  if (runner?.barrier) bits.push(`Gate ${runner.barrier}`);
   if (runner?.jockey) bits.push(`Jockey ${runner.jockey}`);
+  if (runner?.apprentice_indicator) bits.push('(A)');
   if (runner?.trainer) bits.push(`Trainer ${runner.trainer}`);
-  if (runner?.weight) bits.push(`Weight ${runner.weight}kg`);
+  if (runner?.trainer_location) bits.push(`(${runner.trainer_location})`);
+  if (runner?.weight || runner?.weight_total) bits.push(`Weight ${runner.weight || runner.weight_total}kg`);
+  if (runner?.age) bits.push(`Age ${runner.age}`);
+  if (runner?.sex) bits.push(runner.sex);
+  if (runner?.gear) bits.push(`Gear ${runner.gear}`);
   if (runner?.last_twenty_starts) bits.push(`Form ${runner.last_twenty_starts}`);
+  if (runner?.form_comment) bits.push(`Comment ${runner.form_comment}`);
   if (runner?.speedmap) bits.push(`Speedmap ${runner.speedmap}`);
   if (runner?.sire) bits.push(`Sire ${runner.sire}`);
   if (runner?.dam) bits.push(`Dam ${runner.dam}`);
   if (runner?.dam_sire) bits.push(`Dam Sire ${runner.dam_sire}`);
+  const statsStr = formatStatsCompact(runner?.stats);
+  if (statsStr) bits.push(`Stats ${statsStr}`);
   return bits.filter(Boolean).join(' · ');
 }
 
@@ -1135,6 +1149,129 @@ function inferSelectionsFromQuestion(question, suggested = [], races = []){
   return results.slice(0, 4);
 }
 
+// Well-known NZ and Australian racecourses for detecting venue mentions
+// when the venue is not in today's available races.
+const KNOWN_VENUES = [
+  'riccarton','ellerslie','trentham','wingatui','matamata','pukekohe',
+  'tauranga','tauherenikau','whanganui','ashburton','te aroha','te rapa',
+  'hastings','ruakaka','otaki','awapuni','new plymouth','rotorua',
+  'cambridge','addington','forbury park','alexandra park',
+  'randwick','caulfield','flemington','rosehill','eagle farm','doomben',
+  'moonee valley','morphettville','ascot','warwick farm','canterbury',
+  'sandown','cranbourne','pakenham','geelong','ballarat','bendigo',
+  'gold coast','sunshine coast','kembla grange','newcastle','hawkesbury',
+  'gosford','wyong','scone','launceston','hobart'
+];
+
+function inferMeetingFromQuestion(question, races = []) {
+  const q = String(question || '').toLowerCase();
+  if (!q) return { mentioned: null, matched: [], available: [] };
+
+  const available = [...new Set(
+    (races || []).map(r => String(r.meeting || '').trim()).filter(Boolean)
+  )];
+  const availableLower = available.map(m => m.toLowerCase());
+
+  // Check if any available meeting name appears in the question (word-boundary match)
+  const matched = available.filter((_m, i) => {
+    const lower = availableLower[i];
+    if (!lower) return false;
+    const escaped = lower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`, 'i').test(q);
+  });
+
+  if (matched.length) {
+    return { mentioned: matched[0], matched, available };
+  }
+
+  // Check known venues not in today's races
+  for (const venue of KNOWN_VENUES) {
+    if (availableLower.some(a => a === venue || a.startsWith(venue + ' ') || a.startsWith(venue + '-'))) continue;
+    const escaped = venue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`\\b${escaped}\\b`, 'i').test(q)) {
+      const titleCase = venue.replace(/\b\w/g, c => c.toUpperCase());
+      return { mentioned: titleCase, matched: [], available };
+    }
+  }
+
+  return { mentioned: null, matched: [], available: [] };
+}
+
+/**
+ * Detect temporal race intent ("next race", "last race", "previous race", etc.)
+ * at a specific venue. Returns { race, direction } or null.
+ *
+ * "next" / "upcoming" / "coming" → first non-finished race (ascending race number)
+ * "last" / "previous" / "latest" / "most recent" / "just ran" → most recently
+ *   finished race (descending race number among finished)
+ */
+function inferTemporalRaceAtVenue(question, races, venueMeeting) {
+  const q = String(question || '').toLowerCase();
+  if (!venueMeeting) return null;
+
+  const wantsNext = /\b(next|upcoming|coming up)\b/.test(q);
+  const wantsLast = /\b(last|previous|latest|most recent|just ran|just run)\b/.test(q);
+  if (!wantsNext && !wantsLast) return null;
+
+  const meetingLower = String(venueMeeting).trim().toLowerCase();
+  const venueRaces = (races || [])
+    .filter(r => String(r.meeting || '').trim().toLowerCase() === meetingLower);
+
+  if (wantsLast) {
+    const finished = venueRaces
+      .filter(r => FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()))
+      .sort((a, b) => (Number(b.race_number) || 0) - (Number(a.race_number) || 0));
+    if (finished.length) return { race: finished[0], direction: 'last' };
+  }
+
+  // Default to "next" if both keywords appear or only "next"
+  if (wantsNext || !wantsLast) {
+    const upcoming = venueRaces
+      .filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()))
+      .sort((a, b) => (Number(a.race_number) || 0) - (Number(b.race_number) || 0));
+    if (upcoming.length) return { race: upcoming[0], direction: 'next' };
+  }
+
+  return null;
+}
+
+/**
+ * Backwards-compatible wrapper: returns just the race object or null.
+ */
+function inferNextRaceAtVenue(question, races, venueMeeting) {
+  const result = inferTemporalRaceAtVenue(question, races, venueMeeting);
+  return result ? result.race : null;
+}
+
+/**
+ * Format a runner's stats object into a compact summary suitable for AI context.
+ * e.g. "track 3:1-0-1, distance 5:2-1-0, good 8:3-2-1"
+ */
+function formatStatsCompact(stats) {
+  if (!stats || typeof stats !== 'object') return null;
+  const parts = [];
+  const fmt = (label, s) => {
+    if (!s || typeof s !== 'object') return;
+    const starts = Number(s.number_of_starts || 0);
+    if (starts <= 0) return;
+    const w = Number(s.number_of_wins || 0);
+    const p2 = Number(s.number_of_seconds || 0);
+    const p3 = Number(s.number_of_thirds || 0);
+    parts.push(`${label} ${starts}:${w}-${p2}-${p3}`);
+  };
+  fmt('track', stats.track);
+  fmt('dist', stats.distance);
+  fmt('trk+dist', stats.track_distance);
+  fmt('good', stats.good);
+  fmt('soft', stats.soft);
+  fmt('heavy', stats.heavy);
+  fmt('firm', stats.firm);
+  fmt('synthetic', stats.synthetic);
+  fmt('1st-up', stats.first_up);
+  fmt('2nd-up', stats.second_up);
+  return parts.length ? parts.join(', ') : null;
+}
+
 function mergeSelections(explicit = [], inferred = []){
   const merged = [];
   const seen = new Set();
@@ -1152,6 +1289,24 @@ function mergeSelections(explicit = [], inferred = []){
   inferred.forEach(pushSel);
   return merged;
 }
+
+const FINISHED_RACE_STATUSES = new Set(['final', 'closed', 'abandoned', 'resulted']);
+
+/** Return true when `entry` (any object with meeting + race/race_number) does NOT
+ *  belong to a race whose status is in FINISHED_RACE_STATUSES.  Entries that have
+ *  no matching race in allRaces are kept (safe default). */
+function isLiveRaceEntry(entry, allRaces) {
+  const m = String(entry.meeting || '').trim().toLowerCase();
+  const r = String(entry.race || entry.race_number || '').trim().replace(/^R/i, '');
+  const raceObj = allRaces.find(x =>
+    String(x.meeting || '').trim().toLowerCase() === m &&
+    String(x.race_number || '').trim() === r
+  );
+  return !raceObj || !FINISHED_RACE_STATUSES.has(String(raceObj.race_status || '').toLowerCase());
+}
+
+const MIN_AI_ANSWER_LENGTH = 60;
+const MIN_RACE_ANALYSIS_ANSWER_LENGTH = 80;
 
 function aiAnswerRespectsSelections(answer, payload){
   const sels = Array.isArray(payload?.selections) ? payload.selections : [];
@@ -1231,10 +1386,10 @@ function enforceDecisionAnswerFormat(answer){
   const hasRisk = /\brisk\b/i.test(out);
   const hasInvalidation = /invalidation|pass\s+conditions?/i.test(out);
 
-  if (!hasVerdict) out += `\n\nVerdict: Use only if edge remains positive versus current market.`;
-  if (!hasEdge) out += `\nMarket edge: unavailable from current response text.`;
-  if (!hasRisk) out += `\nRisk: medium (variance and pace-shape uncertainty).`;
-  if (!hasInvalidation) out += `\nInvalidation points: pass if market drifts materially or race shape changes against setup.`;
+  if (!hasVerdict) out += `\n\nVerdict: Refer to the analysis above — verify edge is positive before acting.`;
+  if (!hasEdge) out += `\nMarket edge: not calculated in this response — check odds table above.`;
+  if (!hasRisk) out += `\nRisk: assess based on field size and pace-shape uncertainty.`;
+  if (!hasInvalidation) out += `\nPass conditions: pass if market drifts beyond edge or race shape changes against setup.`;
   return out;
 }
 
@@ -1256,6 +1411,7 @@ function isMalformedJsonLikeAnswer(answer){
 
 function raceAnalysisMatchesContext(answer, clientContext = {}){
   const txt = String(answer || '');
+  if (txt.length < MIN_RACE_ANALYSIS_ANSWER_LENGTH) return false;
   const rc = clientContext?.raceContext || {};
   const meeting = String(rc.meeting || '').trim();
   const raceNo = String(rc.raceNumber || '').replace(/^R/i, '').trim();
@@ -1264,8 +1420,6 @@ function raceAnalysisMatchesContext(answer, clientContext = {}){
   const hasMeeting = new RegExp(meeting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(txt);
   const raceMentions = [...txt.matchAll(/\bR(?:ace)?\s*([0-9]{1,2})\b/gi)].map(m => String(m[1]));
   if (raceMentions.length && !raceMentions.includes(raceNo)) return false;
-  // Meeting name is preferred but not mandatory; avoid false fallback when model omits header text.
-  if (!hasMeeting && !raceMentions.length) return true;
   return true;
 }
 
@@ -1646,8 +1800,12 @@ function renderHorseProfileLine(runner, idx){
   const digit = normalizeHorseProfileDigit(idx);
   const barrier = runner?.barrier ?? 'n/a';
   const jockey = runner?.jockey || 'n/a';
+  const apprentice = runner?.apprentice_indicator ? ' (A)' : '';
   const trainer = runner?.trainer || 'n/a';
+  const trainerLoc = runner?.trainer_location ? ` (${runner.trainer_location})` : '';
   const weight = runner?.weight || runner?.weight_total || runner?.carrying_weight || 'n/a';
+  const ageSex = [runner?.age, runner?.sex].filter(Boolean).join('');
+  const gear = runner?.gear || null;
   const formText = describeRunnerForm(runner);
   const sectional = describeRunnerSectional(runner);
   const speed = runner?.speedmap || 'n/a';
@@ -1661,9 +1819,13 @@ function renderHorseProfileLine(runner, idx){
   if (track) statsBits.push(`Track ${track}`);
   if (distance) statsBits.push(`Dist ${distance}`);
   const statsText = statsBits.length ? ` · Stats: ${statsBits.slice(0, 2).join(' | ')}` : '';
+  const extraBits = [ageSex, gear].filter(Boolean).join(' ');
+  const extraLine = extraBits ? ` · ${extraBits}` : '';
+  const commentLine = runner?.form_comment ? `\n- Comment: ${runner.form_comment}` : '';
+  const indicatorsLine = runner?.form_indicators ? `\n- Signals: ${runner.form_indicators}` : '';
   return `${digit} ${runner?.name || runner?.runner_name || 'n/a'}
-- Barrier / Jockey / Trainer / Weight: ${barrier} / ${jockey} / ${trainer} / ${weight}
-- Form/sectionals/speed map/suitability: ${formText} / ${sectional} / ${speed} / ${suitability}${statsText}`;
+- Gate / Jockey / Trainer / Weight: ${barrier} / ${jockey}${apprentice} / ${trainer}${trainerLoc} / ${weight}${extraLine}
+- Form/sectionals/speed map/suitability: ${formText} / ${sectional} / ${speed} / ${suitability}${statsText}${commentLine}${indicatorsLine}`;
 }
 
 function formatHorseProfileLines(runners, limit = 3){
@@ -1879,8 +2041,13 @@ function enforceRaceAnalysisAnswerFormat(answer, clientContext = {}, tenantId = 
   // Remove low-value generic boilerplate carried over from decision-format enforcement.
   out = out
     .replace(/\n?Verdict:\s*Use only if edge remains positive versus current market\.?/ig, '')
+    .replace(/\n?Verdict:\s*Refer to the analysis above.*?before acting\.?/ig, '')
     .replace(/\n?Risk:\s*medium\s*\(variance and pace-shape uncertainty\)\.?/ig, '')
+    .replace(/\n?Risk:\s*assess based on field size and pace-shape uncertainty\.?/ig, '')
     .replace(/\n?Invalidation points:\s*pass if market drifts materially or race shape changes against setup\.?/ig, '')
+    .replace(/\n?Pass conditions:\s*pass if market drifts beyond edge or race shape changes against setup\.?/ig, '')
+    .replace(/\n?Market edge:\s*not calculated in this response.*?above\.?/ig, '')
+    .replace(/\n?Market edge:\s*unavailable from current response text\.?/ig, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   const rc = clientContext?.raceContext || {};
@@ -2013,8 +2180,8 @@ const speedMapText = speedMap
 function buildSelectionFactAnswer(question, clientContext = {}, tenantId = 'default'){
   const q = String(question || '').trim().toLowerCase();
   const status = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json'), {});
-  const racesData = loadJson(path.join(process.cwd(), 'frontend', 'data', 'races.json'), {});
-  const suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
+  const racesData = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), {});
+  let suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
   const isRaceAnalysis = String(clientContext?.source || '').toLowerCase() === 'race-analysis';
 
   if (isRaceAnalysis && clientContext?.raceContext) {
@@ -2091,6 +2258,25 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
 📈 Confidence %
 - ${confidence === 'n/a' ? 'n/a' : `${confidence}%`}`;
   }
+
+  // Venue-aware scoping: if the question mentions a specific venue, constrain answers
+  const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
+  const liveRaces = allRaces.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
+  // Filter suggested bets to exclude picks for races that have already finished
+  suggested = suggested.filter(s => isLiveRaceEntry(s, allRaces));
+  // Include venues from suggested bets so venue detection works even when races.json
+  // is loaded from a different path (e.g. tenant data with separate status/races).
+  const suggestedVenues = [...new Set(suggested.map(x => String(x.meeting || '').trim()).filter(Boolean))]
+    .filter(m => !liveRaces.some(r => String(r.meeting || '').trim().toLowerCase() === m.toLowerCase()))
+    .map(m => ({ meeting: m }));
+  const venueInf = inferMeetingFromQuestion(question, liveRaces.concat(suggestedVenues));
+  if (venueInf.mentioned && venueInf.matched.length === 0) {
+    const availableList = venueInf.available.length
+      ? venueInf.available.join(', ')
+      : 'none currently loaded';
+    return `There are no races at ${venueInf.mentioned} in today's data. Venues racing today: ${availableList}. Ask me about one of those instead.`;
+  }
+
   const auditSnapshot = buildDecisionAudit(status || {});
   const stakeProfile = {
     stakePerRace: status.stakePerRace ?? null,
@@ -2098,8 +2284,22 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
     earlyWindowMin: status.earlyWindowMin ?? null,
     aiWindowMin: status.aiWindowMin ?? null
   };
-  const nonMulti = suggested.filter(x => !['multi','top2','top3','top4','trifecta'].includes(String(x.type || '').toLowerCase()));
-  const multis = suggested.filter(x => ['multi','top2','top3','top4','trifecta'].includes(String(x.type || '').toLowerCase()));
+
+  // When a venue is matched, scope suggested bets to that venue.
+  // When "next race" or "last race" is detected, further scope to that race.
+  let scopedSuggested = suggested;
+  if (venueInf.matched.length > 0) {
+    const matchedLower = new Set(venueInf.matched.map(m => m.toLowerCase()));
+    scopedSuggested = suggested.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+    const temporal = inferTemporalRaceAtVenue(question, allRaces, venueInf.matched[0]);
+    if (temporal) {
+      const rNum = String(temporal.race.race_number);
+      scopedSuggested = scopedSuggested.filter(x => String(x.race || '').replace(/^R/i, '').trim() === rNum);
+    }
+  }
+
+  const nonMulti = scopedSuggested.filter(x => !['multi','top2','top3','top4','trifecta'].includes(String(x.type || '').toLowerCase()));
+  const multis = scopedSuggested.filter(x => ['multi','top2','top3','top4','trifecta'].includes(String(x.type || '').toLowerCase()));
 
   if (!suggested.length) {
     return 'I do not have any current selections loaded yet. Please run a refresh, then ask again and I will explain the picks in detail.';
@@ -2198,18 +2398,26 @@ const describeRunner = (runner, raceInfo, impliedPct) => {
   if (runner) {
     const tags = [];
     if (runner.runner_number != null) tags.push(`#${runner.runner_number}`);
-    if (runner.barrier != null) tags.push(`barrier ${runner.barrier}`);
+    if (runner.barrier != null) tags.push(`Gate ${runner.barrier}`);
+    if (runner.age) tags.push(`${runner.age}yo`);
+    if (runner.sex) tags.push(runner.sex);
     const tagStr = tags.length ? ` (${tags.join(', ')})` : '';
     const riderBits = [];
-    if (runner.jockey) riderBits.push(`${runner.jockey} up`);
-    if (runner.trainer) riderBits.push(`for ${runner.trainer}`);
-    if (runner.weight) riderBits.push(`${runner.weight}kg`);
+    if (runner.jockey) riderBits.push(`${runner.jockey}${runner.apprentice_indicator ? ' (A)' : ''} up`);
+    if (runner.trainer) {
+      const loc = runner.trainer_location ? ` (${runner.trainer_location})` : '';
+      riderBits.push(`for ${runner.trainer}${loc}`);
+    }
+    if (runner.weight || runner.weight_total) riderBits.push(`${runner.weight || runner.weight_total}kg`);
     if (riderBits.length) {
       sentences.push(`${runner.name || 'This runner'}${tagStr} with ${riderBits.join(', ')}.`);
     } else {
       sentences.push(`${runner.name || 'This runner'}${tagStr}.`);
     }
+    if (runner.gear) sentences.push(`Gear: ${runner.gear}.`);
     if (runner.last_twenty_starts) sentences.push(`Recent form ${runner.last_twenty_starts}.`);
+    if (runner.form_comment) sentences.push(`Comment: ${runner.form_comment}.`);
+    if (runner.form_indicators) sentences.push(`Signals: ${runner.form_indicators}.`);
     if (runner.speedmap) sentences.push(`Maps ${runner.speedmap.toLowerCase()} per the speed map.`);
     const priceParts = [];
     if (runner.fixed_win) priceParts.push(`fixed $${Number(runner.fixed_win).toFixed(2)}`);
@@ -2223,6 +2431,8 @@ const describeRunner = (runner, raceInfo, impliedPct) => {
     }
     const breeding = [runner.sire, runner.dam, runner.dam_sire].filter(Boolean);
     if (breeding.length) sentences.push(`Breeding: ${breeding.join(' / ')}.`);
+    const statsStr = formatStatsCompact(runner.stats);
+    if (statsStr) sentences.push(`Stats: ${statsStr}.`);
   }
   if (raceInfo) {
     const meta = [];
@@ -2289,15 +2499,43 @@ ${extra}` : base;
   }
 
   if (q.includes('top') || q.includes('best') || q.includes('winner') || q.includes('pick')) {
-    const top = nonMulti[0] || suggested[0];
-    const alts = nonMulti.slice(1,3).map(x => `${x.selection}`).join(', ');
-    return `${explain(top)}${alts ? ` Next in line: ${alts}.` : ''}`;
+    // If user is asking for a multi/exotic, let the multi handler below take priority
+    if (!(q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4'))) {
+      const top = nonMulti[0] || suggested[0];
+      const alts = nonMulti.slice(1,3).map(x => `${x.selection}`).join(', ');
+      return `${explain(top)}${alts ? ` Next in line: ${alts}.` : ''}`;
+    }
   }
 
   if (q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4')) {
-    if (!multis.length) return 'There are no active multi or exotic suggestions right now. If you want, I can still explain the best win selections and how they could be combined.';
-    const m = multis[0];
-    return `${m.meeting} Race ${m.race}: the leading exotic is ${m.selection} (${m.type}) at $${m.stake}. Reason: ${m.reason || 'exotic structure derived from the top probability cluster'}. This is higher variance than a straight win bet, so keep stake disciplined.`;
+    if (multis.length) {
+      // Show the best multi/exotic suggestion with full detail
+      const m = multis[0];
+      const extras = multis.slice(1, 3).map(x => `• ${x.meeting} R${x.race} ${x.selection} (${x.type}) $${x.stake}`).join('\n');
+      const base = `${m.meeting} Race ${m.race}: the leading exotic is ${m.selection} (${m.type}) at $${m.stake}. Reason: ${m.reason || 'exotic structure derived from the top probability cluster'}. This is higher variance than a straight win bet, so keep stake disciplined.`;
+      return extras ? `${base}\n\nOther exotics available:\n${extras}` : base;
+    }
+    // No exotic suggestions — construct a multi recommendation from top win picks across different races
+    const raceKeys = new Set();
+    const multiLegs = [];
+    for (const x of nonMulti) {
+      const rk = `${x.meeting}|${x.race}`;
+      if (raceKeys.has(rk)) continue;
+      raceKeys.add(rk);
+      multiLegs.push(x);
+      if (multiLegs.length >= 3) break;
+    }
+    if (multiLegs.length >= 2) {
+      const legLines = multiLegs.map((x, i) => {
+        const p = parsePct(x.reason);
+        return `Leg ${i + 1}: ${x.meeting} R${x.race} ${x.selection}${p != null ? ` (${p.toFixed(1)}%)` : ''} @ $${parseOdds(x.reason) || 'n/a'}`;
+      }).join('\n');
+      const probs = multiLegs.map(x => parsePct(x.reason)).filter(p => p != null);
+      const jointPct = probs.length >= 2 ? probs.reduce((a, b) => a * b / 100, probs.shift()) : null;
+      const jointLine = jointPct != null ? `\nCombined multi probability ≈ ${jointPct.toFixed(1)}%` : '';
+      return `Multi recommendation from today's strongest win picks across races:\n${legLines}${jointLine}\n\nThis is a ${multiLegs.length}-leg multi. Higher variance — keep stake small.`;
+    }
+    return 'There are no active multi or exotic suggestions right now. If you want, I can still explain the best win selections and how they could be combined.';
   }
 
   // Better same-race interpretation when we have at least 2 picks in the same race.
@@ -2388,10 +2626,10 @@ async function searchWebSnippets(query, maxResults = 5){
         })).filter(x => x.url);
         if (rows.length) return rows;
       } else {
-        console.warn('brave_search_failed', r.status);
+        console.error('brave_search_failed', r.status);
       }
     } catch (err) {
-      console.warn('brave_search_error', err?.message || err);
+      console.error('brave_search_error', err?.message || err);
     }
   }
 
@@ -2401,7 +2639,7 @@ async function searchWebSnippets(query, maxResults = 5){
       headers: { 'User-Agent': 'Mozilla/5.0 BETMAN/1.0' }
     }, searchTimeout);
     if (!r.ok) {
-      console.warn('ddg_search_failed', r.status);
+      console.error('ddg_search_failed', r.status);
       return [];
     }
     const html = await r.text();
@@ -2416,7 +2654,7 @@ async function searchWebSnippets(query, maxResults = 5){
     }
     return out;
   } catch (err) {
-    console.warn('ddg_search_error', err?.message || err);
+    console.error('ddg_search_error', err?.message || err);
     return [];
   }
 }
@@ -2473,10 +2711,12 @@ function buildAiContextSummary({
   question = '',
   races = [],
   meetingProfiles = {},
-  maxLength = 1200
+  maxLength = 1200,
+  venueNote = ''
 } = {}) {
   const lines = [];
   const selectionLines = [];
+  if (venueNote) lines.push(venueNote);
   const snapshotLine = `Snapshot: updated ${status.updatedAt || 'n/a'} | API ${status.apiStatus || 'n/a'}`;
   lines.push(snapshotLine.trim());
 
@@ -2576,16 +2816,26 @@ function buildAiContextSummary({
         trackCondition: race.track_condition,
         railPosition: race.rail_position,
         runner: runner.name,
+        runnerNumber: runner.runner_number ?? null,
         barrier: runner.barrier,
         jockey: runner.jockey,
         trainer: runner.trainer,
-        weight: runner.weight,
+        trainerLocation: runner.trainer_location || null,
+        apprentice: runner.apprentice_indicator || null,
+        weight: runner.weight || runner.weight_total || null,
+        age: runner.age || null,
+        sex: runner.sex || null,
+        gear: runner.gear || null,
         form: runner.last_twenty_starts,
+        lastStarts: runner.last_starts || null,
+        formComment: runner.form_comment || null,
+        formIndicators: runner.form_indicators || null,
         speedmap: runner.speedmap,
         sire: runner.sire,
         dam: runner.dam,
         damSire: runner.dam_sire,
-        odds: runner.odds || runner.fixed_win || runner.tote_win || null
+        odds: runner.odds || runner.fixed_win || runner.tote_win || null,
+        stats: formatStatsCompact(runner.stats) || null
       };
       selectionLines.push(`SELECTION_DATA: ${JSON.stringify(selectionJson)}`);
     });
@@ -2635,17 +2885,27 @@ function buildAiContextSummary({
       };
       const fieldRows = (rc.runners || []).map(rr => ({
         runner: rr.name || rr.runner_name || 'n/a',
+        runnerNumber: rr.runner_number ?? 'n/a',
         barrier: rr.barrier ?? 'n/a',
         jockey: rr.jockey || 'n/a',
         trainer: rr.trainer || 'n/a',
+        trainerLocation: rr.trainer_location || null,
+        apprentice: rr.apprentice_indicator || null,
         weight: rr.weight || rr.weight_total || 'n/a',
+        age: rr.age || null,
+        sex: rr.sex || null,
+        gear: rr.gear || null,
         form: rr.last_twenty_starts || 'n/a',
+        lastStarts: rr.last_starts || null,
+        formComment: rr.form_comment || null,
+        formIndicators: rr.form_indicators || null,
         odds: rr.odds || rr.fixed_win || rr.tote_win || 'n/a',
         sire: rr.sire || 'n/a',
         dam: rr.dam || 'n/a',
         damSire: rr.dam_sire || 'n/a',
         speedmap: rr.speedmap || 'n/a',
-        loveracingNote: rr.loveracing_note || 'n/a'
+        stats: formatStatsCompact(rr.stats) || null,
+        loveracingNote: rr.loveracing_note || null
       }));
       selectionLines.push(`MANDATORY_RACE_VALUES: ${JSON.stringify(raceJson)}`);
       selectionLines.push(`RACE_FIELD_DATA: ${JSON.stringify(fieldRows)}`);
@@ -2667,9 +2927,27 @@ function buildAiContextSummary({
   }
   if (webContext?.query) lines.push(`Search query: ${trimText(webContext.query, 120)}`);
 
+  const userNotes = Array.isArray(clientContext?.userNotes) ? clientContext.userNotes.slice(0, 5) : [];
+  if (userNotes.length) {
+    const noteParts = userNotes
+      .map(n => trimText(String(n?.text || ''), 120))
+      .filter(Boolean);
+    if (noteParts.length) {
+      const meetingTag = userNotes[0]?.meeting ? ` (${userNotes[0].meeting})` : '';
+      lines.push(`User meeting notes${meetingTag}: ${noteParts.join(' | ')}`);
+    }
+  }
+
   const summary = lines.filter(Boolean).join('\n');
   if (summary.length <= maxLength) return summary;
-  return `${summary.slice(0, maxLength - 1)}…`;
+  // Truncate lower-priority sections first (from end) instead of slicing mid-content.
+  const trimmed = lines.filter(Boolean);
+  while (trimmed.join('\n').length > maxLength && trimmed.length > 1) {
+    trimmed.pop();
+  }
+  const result = trimmed.join('\n');
+  if (result.length <= maxLength) return result;
+  return `${result.slice(0, maxLength - 1)}…`;
 }
 
 const BETMAN_ANALYST_SYSTEM_PROMPT = `You are BETMAN's senior racing analyst. Be direct, structured, and evidence-first.
@@ -2687,8 +2965,12 @@ Hard rules:
 8) If the user names a runner (or drags it into context), call that runner out by name with its map role, strengths/risks, and why it is or isn’t the play.
 9) Use ONLY the race + runner data provided in context (selection profiles, race context, odds tables). If something is missing, write "n/a" instead of inventing it. Mirror the template defined in instructions.md without skipping sections.
 10) The JSON blocks labeled MANDATORY_RACE_VALUES and SELECTION_DATA are ground truth. Copy their values exactly when filling headers, tables, and horse profiles.
-11) If RACE_FIELD_DATA is provided, use it to populate full-field horse profiles (barrier/jockey/trainer/weight/form/odds/pedigree/speedmap) before writing any narrative.
+11) If RACE_FIELD_DATA is provided, use it to populate full-field horse profiles (runner name/number/barrier/jockey/trainer/weight/age/sex/gear/form/formComment/formIndicators/odds/pedigree/speedmap/stats) before writing any narrative. The "stats" field contains track/distance/condition-specific starts:wins-seconds-thirds records — use them to assess each runner's suitability to today's race conditions. The "form" field is a concise recent-starts string (e.g. "12x34" where digits are finishing positions and x means unplaced beyond 9th) — count actual wins (1s) and places (1-3) to assess true form. The "formIndicators" field contains flags such as early speed (HIGH/MODERATE/LOW), wet track aptitude, and racing pattern — always reference these when assessing map fit and track condition suitability. The "lastStarts" array gives finish positions with distance/track/condition for each recent run — use it to evaluate consistency, class, and track/distance trends. The "loveracingNote" field, when present, contains official form notes — treat it as additional source data for narrative commentary. The "apprentice" field, when populated, indicates the jockey allowance claim (e.g. "-2kg") — factor weight reduction into your assessment.
 12) Never output placeholder tokens (e.g., [Jockey Name], [Trainer Name], [Weight]); if unknown, write "n/a".
+13) If meetingProfile data is present in MANDATORY_RACE_VALUES, use it to weight your analysis: pace-bias stats (e.g., "Midfield 4/8") indicate which running styles are winning at the venue today; barrier-bias stats indicate which barrier ranges are favoured. Factor these into your race map, runner assessments, and final tips.
+14) If "User meeting notes" are provided in context, treat them as first-hand observations from the punter. Incorporate them into your analysis and reference specific notes where relevant.
+15) If the context states there are no races at a specific venue, do NOT fabricate analysis for that venue. Clearly state there are no races there and suggest the available alternatives listed in context.
+16) If race data is scoped to a specific venue the user mentioned, anchor your analysis to that venue only. Do not discuss races from other venues unless asked.
 
 Response format:
 - Verdict (1-2 lines)
@@ -2715,6 +2997,10 @@ Rules:
 6) Avoid boilerplate and avoid repeating fixed section headings unless the user asks for a formal report.
 7) For follow-ups, carry forward relevant prior context and assumptions so the answer feels continuous.
 8) For broad "ask me anything racing" questions, provide depth: map/tempo, form cycle, trainer/jockey patterns, market/price dynamics, and risk management implications.
+9) If meeting profile data is available (pace/barrier bias from completed races), factor it into your assessment of which running styles and barrier positions suit the venue.
+10) If the user has added meeting notes (labelled "User meeting notes" in context), incorporate those observations into your answer.
+11) If the context states there are no races at a specific venue, do NOT fabricate analysis for that venue. Clearly state there are no races there and suggest the available alternatives listed in context.
+12) If race data is scoped to a specific venue the user mentioned, anchor your answer to that venue only. Do not discuss races from other venues unless asked.
 
 Style: expert punter, plain English, no fluff.`;
 
@@ -2803,8 +3089,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   console.log('[ai-chat] provider', provider, 'question', question);
 
   const status = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json'), {});
-  const racesData = loadJson(path.join(process.cwd(), 'frontend', 'data', 'races.json'), {});
-  const suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
+  const racesData = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), {});
+  let suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
 
   const sourceTag = String(clientContext?.source || '').toLowerCase();
   const isRaceAnalysis = sourceTag === 'race-analysis';
@@ -2837,7 +3123,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   } catch (e) {
     // For race-analysis/strategy, internet context is optional; keep going with local race context.
     if (!webOptional) throw e;
-    console.warn('optional_web_context_unavailable', String(e?.message || e));
+    console.error('optional_web_context_unavailable', String(e?.message || e));
   }
   if (!webOptional && !webContext?.results?.length) throw new Error('web_context_unavailable');
 
@@ -2903,6 +3189,35 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   const jointRows = sameRaceJointLikelihoods();
 
+  // Venue-aware context scoping for general chat (no dragged selections, no raceContext)
+  const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
+  const liveRaces = allRaces.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
+  // Filter suggested bets to exclude picks for races that have already finished
+  suggested = suggested.filter(s => isLiveRaceEntry(s, allRaces));
+  const venueInference = (!hasDraggedSelections && !isRaceAnalysis)
+    ? inferMeetingFromQuestion(question, liveRaces)
+    : { mentioned: null, matched: [], available: [] };
+
+  let venueNote = '';
+  let venueScopedRaces = liveRaces;
+  let venueScopedSuggested = suggested;
+  // Exclude interesting runners & market movers for races that have already finished
+  let venueScopedInteresting = (status.interestingRunners || []).filter(s => isLiveRaceEntry(s, allRaces));
+  let venueScopedMovers = (status.marketMovers || []).filter(s => isLiveRaceEntry(s, allRaces));
+
+  if (venueInference.mentioned && venueInference.matched.length > 0) {
+    const matchedLower = new Set(venueInference.matched.map(m => m.toLowerCase()));
+    venueScopedRaces = liveRaces.filter(r => matchedLower.has(String(r.meeting || '').trim().toLowerCase()));
+    venueScopedSuggested = suggested.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+    venueScopedInteresting = venueScopedInteresting.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+    venueScopedMovers = venueScopedMovers.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+  } else if (venueInference.mentioned && venueInference.matched.length === 0) {
+    const availableList = venueInference.available.length
+      ? venueInference.available.join(', ')
+      : 'none currently loaded';
+    venueNote = `IMPORTANT: There are no races at ${venueInference.mentioned} in today's data. Do NOT provide analysis for ${venueInference.mentioned}. Available venues racing today: ${availableList}. Clearly state that ${venueInference.mentioned} has no races today and suggest alternatives from the available venues.`;
+  }
+
   const analysisSource = String(clientContext?.source || '').toLowerCase();
   const rcMeeting = String(clientContext?.raceContext?.meeting || '').trim().toLowerCase();
   const rcRace = String(clientContext?.raceContext?.raceNumber || '').replace(/^R/i, '').trim();
@@ -2911,7 +3226,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         String(x.meeting || '').trim().toLowerCase() === rcMeeting &&
         String(x.race || '').replace(/^R/i, '').trim() === rcRace
       )
-    : suggested;
+    : venueScopedSuggested;
 
   const requestedModel = String(clientContext?.model || '').trim();
   const defaultModel = process.env.BETMAN_CHAT_MODEL || (provider === 'ollama' ? 'qwen2.5:1.5b' : 'gpt-4o-mini');
@@ -2951,21 +3266,39 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     };
   })();
 
+  // Temporal race detection: when venue is matched and user asks about "the next race"
+  // or "the last race", find the matching race and inject raceContext so full field data is included.
+  let effectiveClientContext = clientContext;
+  if (!hasDraggedSelections && !isRaceAnalysis && !clientContext?.raceContext && venueInference.matched.length > 0) {
+    const temporal = inferTemporalRaceAtVenue(question, allRaces, venueInference.matched[0]);
+    if (temporal) {
+      effectiveClientContext = Object.assign({}, clientContext, {
+        raceContext: {
+          meeting: temporal.race.meeting,
+          raceNumber: String(temporal.race.race_number),
+          raceName: temporal.race.description || '',
+          direction: temporal.direction
+        }
+      });
+    }
+  }
+
   const contextSummary = buildAiContextSummary({
     status: { updatedAt: status.updatedAt, apiStatus: status.apiStatusPublic || status.apiStatus },
     stakeProfile,
     suggested: hasDraggedSelections ? scopedSuggested.filter(x => scopedSelections.some(s => String(x.meeting||'').trim() === s.meeting && String(x.race||'').trim() === s.race && String(x.selection||'').trim() === s.selection)) : scopedSuggested,
-    interesting: hasDraggedSelections ? [] : (status.interestingRunners || []),
-    marketMovers: hasDraggedSelections ? [] : (status.marketMovers || []),
-    upcoming: hasDraggedSelections ? [] : (status.upcomingRaces || []),
+    interesting: hasDraggedSelections ? [] : venueScopedInteresting,
+    marketMovers: hasDraggedSelections ? [] : venueScopedMovers,
+    upcoming: hasDraggedSelections ? [] : (status.upcomingRaces || []).filter(s => isLiveRaceEntry(s, allRaces)),
     activity: hasDraggedSelections ? [] : (status.activity || []),
     webContext: hasDraggedSelections ? { results: [], domains: [] } : webContext,
-    clientContext,
+    clientContext: effectiveClientContext,
     jointRows,
     question,
-    races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : (racesData.races || []),
+    races: hasDraggedSelections ? liveRaces.filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : venueScopedRaces,
     meetingProfiles: loadMeetingProfiles('today'),
-    maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral
+    maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
+    venueNote
   });
 
   const customInstructions = loadText(AI_INSTRUCTIONS_FILE, '').trim();
@@ -3083,7 +3416,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
           return await runOllamaOnce(baseUrl, modelName);
         } catch (err) {
           lastErr = err;
-          console.warn('ollama_attempt_failed', baseUrl, modelName, `attempt ${attempt}/${maxAttempts}`, err?.message || err);
+          console.error('ollama_attempt_failed', baseUrl, modelName, `attempt ${attempt}/${maxAttempts}`, err?.message || err);
           if (attempt < maxAttempts) {
             await new Promise(res => setTimeout(res, attempt * 200));
           }
@@ -3104,12 +3437,12 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         response = await runOllamaWithRetry(base, modelForBase);
       } catch (err) {
         lastError = err;
-        console.warn('ollama_request_failed', base, err?.message || err);
+        console.error('ollama_request_failed', base, err?.message || err);
         continue;
       }
 
       if (!response.ok && response.status === 404) {
-        console.warn('ollama_model_missing', modelForBase, 'base', base);
+        console.error('ollama_model_missing', modelForBase, 'base', base);
       }
 
       if (!response.ok) {
@@ -3121,7 +3454,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         const out = await response.json();
         const txt = out?.message?.content;
         if (!txt) {
-          console.warn('ollama_no_text', JSON.stringify(out || {}));
+          console.error('ollama_no_text', JSON.stringify(out || {}));
           lastError = new Error('ollama_no_text');
           continue;
         }
@@ -3131,7 +3464,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         break;
       } catch (err) {
         lastError = err;
-        console.warn('ollama_response_parse_error', err?.message || err);
+        console.error('ollama_response_parse_error', err?.message || err);
       }
     }
 
@@ -3169,7 +3502,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         } catch (err) {
           errorDetail = `read_error:${err?.message || err}`;
         }
-        console.warn('openai_response_error', r.status, errorDetail.slice(0, 400));
+        console.error('openai_response_error', r.status, errorDetail.slice(0, 400));
         throw new Error(`openai_${r.status}`);
       }
       const out = await r.json();
@@ -3185,7 +3518,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       }
       const txt = textParts.join('\n').trim();
       if (!txt) {
-        console.warn('openai_no_text', JSON.stringify(out || {}));
+        console.error('openai_no_text_responses_api', JSON.stringify(out || {}));
         return null;
       }
       answer = String(txt).trim();
@@ -3217,13 +3550,13 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         } catch (err) {
           errorDetail = `read_error:${err?.message || err}`;
         }
-        console.warn('openai_error_response', r.status, errorDetail.slice(0, 400));
+        console.error('openai_error_response', r.status, errorDetail.slice(0, 400));
         throw new Error(`openai_${r.status}`);
       }
       const out = await r.json();
       const txt = out?.choices?.[0]?.message?.content;
       if (!txt) {
-        console.warn('openai_no_text', JSON.stringify(out || {}));
+        console.error('openai_no_text', JSON.stringify(out || {}));
         return null;
       }
       answer = String(txt).trim();
@@ -3251,8 +3584,33 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   };
 }
 
+/* ── BETMAN Commercial API v1 handler ──────────────────────────────── */
+const betmanApiHandler = createApiHandler({
+  getAuthState: () => authState,
+  saveAuthState: (next) => saveAuthState(next),
+  loadJson,
+  resolveTenantPath,
+  dataDir: path.join(process.cwd(), 'frontend', 'data'),
+  rootDir: process.cwd()
+});
+
 const server = http.createServer(async (req, res)=>{
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  // BETMAN Commercial API v1
+  if (url.pathname.startsWith('/api/v1/')) {
+    try {
+      const handled = await betmanApiHandler(req, res, url);
+      if (handled) return;
+    } catch (e) {
+      console.error('API v1 error:', e);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'internal_error', message: 'An unexpected error occurred.' }));
+      }
+      return;
+    }
+  }
 
   // Public login/landing routes
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/landing' || url.pathname === '/landing.html' || url.pathname === '/login')) {
@@ -3284,6 +3642,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const username = String(payload.username || '').trim();
@@ -3361,6 +3720,10 @@ const server = http.createServer(async (req, res)=>{
         tenantId: principal.tenantId || 'default',
         effectiveTenantId: principal.effectiveTenantId || (principal.tenantId || 'default')
       });
+      } catch (err) {
+        console.error('login_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3379,6 +3742,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const email = normalizeEmail(payload.email || '');
@@ -3390,7 +3754,7 @@ const server = http.createServer(async (req, res)=>{
       if (!user) {
         try {
           const lookup = await checkSubscriptionByUser({ email });
-          if (!lookup?.active || !lookup?.customerId) {
+          if (!lookup?.customerId) {
             return okJson(res, { ok: false, error: 'user_not_found' }, 404);
           }
           const planType = lookup.planType || 'single';
@@ -3415,19 +3779,27 @@ const server = http.createServer(async (req, res)=>{
       }
 
       if (!user) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
-      if (!sub) sub = await checkSubscriptionByUser(user);
-      if (sub.enforceable && !sub.active) {
+      // Existing local accounts (live accounts) can always reset their password;
+      // subscription enforcement happens at login. Only gate new-to-system users.
+      if (!sub) sub = await checkSubscriptionByUser(user).catch(() => ({ enforceable: false, active: false }));
+      const isLiveAccount = idx >= 0;
+      if (!isLiveAccount && sub.enforceable && !sub.active) {
         return okJson(res, { ok: false, error: 'subscription_required', paymentLink: paymentLinkForPlan(user.planType), planType: user.planType || 'single' }, 402);
       }
       const token = makeSetupToken();
       const setupExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
       const users = [...(authState.users || [])];
       if (idx >= 0) {
-        users[idx] = { ...users[idx], setupToken: token, setupExpiresAt, subscriptionActive: true, subscriptionStatus: 'active', stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
+        const subUpdate = sub.active ? { subscriptionActive: true, subscriptionStatus: 'active' } : {};
+        users[idx] = { ...users[idx], ...subUpdate, setupToken: token, setupExpiresAt, stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
         saveAuthState({ username: authState.username, password: authState.password, users });
       }
       const setupLink = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}/set-password?token=${encodeURIComponent(token)}`;
       return okJson(res, { ok: true, setupLink });
+      } catch (err) {
+        console.error('password_setup_link_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3436,6 +3808,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const token = String(payload.token || '').trim();
@@ -3450,6 +3823,10 @@ const server = http.createServer(async (req, res)=>{
       users[idx] = { ...users[idx], password, setupToken: null, setupExpiresAt: null, updatedAt: new Date().toISOString() };
       saveAuthState({ username: authState.username, password: authState.password, users });
       return okJson(res, { ok: true, user: users[idx].username });
+      } catch (err) {
+        console.error('set_password_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3480,7 +3857,9 @@ const server = http.createServer(async (req, res)=>{
             try {
               const c = await stripe.customers.retrieve(customerId);
               email = normalizeEmail(c?.email || '');
-            } catch {}
+            } catch (stripeErr) {
+              console.error('webhook_stripe_customer_retrieve_failed', customerId, stripeErr?.message || stripeErr);
+            }
           }
           if (email) {
             const planType = inferPlanTypeFromStripe(obj);
@@ -3516,6 +3895,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const planTypeInput = String(payload.planType || 'single').toLowerCase();
@@ -3573,11 +3953,17 @@ const server = http.createServer(async (req, res)=>{
         verifiedBy: 'self-signup',
         createdAt: new Date().toISOString()
       };
-      try { newUser = await ensureStripeCustomerForUser(newUser); } catch {}
+      try { newUser = await ensureStripeCustomerForUser(newUser); } catch (stripeErr) {
+        console.error('signup_stripe_customer_failed', email, stripeErr?.message || stripeErr);
+      }
 
       const users = [...(authState.users || []), newUser];
       saveAuthState({ username: authState.username, password: authState.password, users });
       return okJson(res, { ok: true, user: email, paymentLink: paymentLinkForPlan(planType) || null });
+      } catch (err) {
+        console.error('signup_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3679,7 +4065,10 @@ const server = http.createServer(async (req, res)=>{
       if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
       syncProvisioningFromStripe()
         .then(r => okJson(res, r))
-        .catch(e => okJson(res, { ok: false, error: 'stripe_sync_failed', detail: e.message }, 500));
+        .catch(e => {
+          console.error('stripe_sync_failed', e?.message || e);
+          okJson(res, { ok: false, error: 'stripe_sync_failed', detail: e.message }, 500);
+        });
       return;
     }
 
@@ -4178,6 +4567,7 @@ if (url.pathname === '/api/ask-selection') {
   let body='';
   req.on('data', c=>body+=c);
   req.on('end', async ()=>{
+    try {
     let payload = {};
     try { payload = body ? JSON.parse(body) : {}; } catch {}
     const question = String(payload.question || '').trim();
@@ -4216,7 +4606,11 @@ if (url.pathname === '/api/ask-selection') {
       selections.map(s => `${String(s.meeting || '').trim().toLowerCase()}|${String(s.race || '').trim()}`).filter(Boolean)
     );
     const isMultiRaceContext = !!payload?.multiRaceContext?.enabled || uniqueRaces.size > 1;
-    if (asksMulti && !hasMode && selectionCount !== 1 && !isMultiRaceContext) {
+    // Only ask for H2H/SRM clarification when the user has dragged same-race
+    // selections. When no selections are present (e.g., "pick me a multi"),
+    // let the request proceed so the AI can recommend the best available multi.
+    const hasDraggedSameRace = selections.length >= 2 && uniqueRaces.size === 1;
+    if (asksMulti && !hasMode && hasDraggedSameRace && selectionCount !== 1 && !isMultiRaceContext) {
       return okJson(res, {
         ok: true,
         mode: 'clarify',
@@ -4303,7 +4697,9 @@ if (url.pathname === '/api/ask-selection') {
     let aiMeta = null;
     try {
       const ai = await buildSelectionAiAnswer(question, payload, tenantId, aiProvider);
-      if (ai && ai.answer && isRaceAnalysis) {
+      if (ai && ai.answer && String(ai.answer).trim().length < MIN_AI_ANSWER_LENGTH) {
+        fallbackReason = 'answer_too_short';
+      } else if (ai && ai.answer && isRaceAnalysis) {
         const aiSelectionSafe = aiAnswerRespectsSelections(ai.answer, payload);
         const aiRaceSafe = raceAnalysisMatchesContext(ai.answer, payload);
         const aiJsonSafe = !isMalformedJsonLikeAnswer(ai.answer);
@@ -4456,6 +4852,10 @@ if (url.pathname === '/api/ask-selection') {
       historyCharsUsed: aiMeta?.historyCharsUsed ?? fallbackCharsMeta,
       fallbackReason: mode === 'fallback' ? fallbackReason : null
     });
+    } catch (err) {
+      console.error('ask_selection_error', err?.message || err);
+      return okJson(res, { ok: false, error: 'internal_error', detail: err?.message || 'unexpected_error' }, 500);
+    }
   });
   return;
 }
@@ -4498,6 +4898,7 @@ if (url.pathname === '/api/ask-selection') {
       let body='';
       req.on('data', c=>body+=c);
       req.on('end', async ()=>{
+        try {
         let payload = {};
         try { payload = body ? JSON.parse(body) : {}; } catch {}
 
@@ -4566,11 +4967,17 @@ if (url.pathname === '/api/ask-selection') {
           apiKeyCreatedAt: null,
           apiKeyPreview: null
         };
-        try { newUser = await ensureStripeCustomerForUser(newUser); } catch {}
+        try { newUser = await ensureStripeCustomerForUser(newUser); } catch (stripeErr) {
+          console.error('admin_create_user_stripe_failed', email, stripeErr?.message || stripeErr);
+        }
 
         const users = [...(authState.users || []), newUser];
         saveAuthState({ username: authState.username, password: authState.password, users });
         return okJson(res, { ok: true, user: email, tenantId, paymentLink: paymentLinkForPlan(planType) || null, count: users.length });
+        } catch (err) {
+          console.error('auth_users_create_error', err?.message || err);
+          return okJson(res, { ok: false, error: 'internal_error' }, 500);
+        }
       });
       return;
     }
@@ -4760,6 +5167,118 @@ if (url.pathname === '/api/ask-selection') {
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
     return okJson(res, { ok: true, service: 'betman-api', ts: new Date().toISOString() });
+  }
+
+  /* ── API key management (session-auth) ─────────────────────────── */
+  if (req.method === 'GET' && url.pathname === '/api/api-keys') {
+    if (!requireAuth(req, res)) return;
+    const principal = req.authPrincipal;
+    if (principal.isAdmin) {
+      const allKeys = [];
+      (authState.adminApiKeys || []).forEach(k => {
+        allKeys.push({ username: authState.username, role: 'admin', label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null });
+      });
+      (authState.users || []).forEach(u => {
+        (u.apiKeys || []).forEach(k => {
+          allKeys.push({ username: u.username, role: u.role || 'user', label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null });
+        });
+      });
+      return okJson(res, { ok: true, keys: allKeys });
+    }
+    const userRec = (authState.users || []).find(u => normalizeUsername(u.username) === normalizeUsername(principal.username));
+    const keys = (userRec?.apiKeys || []).map(k => ({
+      label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null
+    }));
+    return okJson(res, { ok: true, keys });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/api-keys') {
+    if (!requireAuth(req, res)) return;
+    let body='';
+    req.on('data', c=>body+=c);
+    req.on('end', ()=>{
+      let payload = {};
+      try { payload = body ? JSON.parse(body) : {}; } catch {}
+      const principal = req.authPrincipal;
+      const label = String(payload.label || 'API Key').trim().slice(0, 100);
+      const targetUser = principal.isAdmin ? String(payload.username || principal.username).trim() : principal.username;
+
+      const newKey = {
+        key: genApiKey(),
+        label,
+        rateLimit: Number(payload.rateLimit) || 60,
+        rateWindow: Number(payload.rateWindow) || 60,
+        active: true,
+        createdAt: new Date().toISOString()
+      };
+
+      const isAdminUser = normalizeUsername(targetUser) === normalizeUsername(authState.username);
+      if (isAdminUser) {
+        if (!principal.isAdmin) return okJson(res, { ok: false, error: 'forbidden' }, 403);
+        const adminKeys = authState.adminApiKeys || [];
+        adminKeys.push(newKey);
+        saveAuthState({ ...authState, adminApiKeys: adminKeys });
+      } else {
+        const users = [...(authState.users || [])];
+        const idx = users.findIndex(u => normalizeUsername(u.username) === normalizeUsername(targetUser));
+        if (idx < 0) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
+        if (!principal.isAdmin && normalizeUsername(principal.username) !== normalizeUsername(targetUser)) {
+          return okJson(res, { ok: false, error: 'forbidden' }, 403);
+        }
+        const userKeys = users[idx].apiKeys || [];
+        userKeys.push(newKey);
+        users[idx] = { ...users[idx], apiKeys: userKeys };
+        saveAuthState({ ...authState, users });
+      }
+
+      return okJson(res, { ok: true, key: newKey.key, label: newKey.label, message: 'Store this key securely — it cannot be retrieved again.' }, 201);
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/api-keys/revoke') {
+    if (!requireAuth(req, res)) return;
+    let body='';
+    req.on('data', c=>body+=c);
+    req.on('end', ()=>{
+      let payload = {};
+      try { payload = body ? JSON.parse(body) : {}; } catch {}
+      const principal = req.authPrincipal;
+      const keyPrefix = String(payload.keyPrefix || '').trim().replace(/…$/, '');
+      if (!keyPrefix) return okJson(res, { ok: false, error: 'missing_keyPrefix' }, 400);
+
+      let found = false;
+      if (principal.isAdmin && authState.adminApiKeys) {
+        const idx = authState.adminApiKeys.findIndex(k => k.key.startsWith(keyPrefix));
+        if (idx >= 0) {
+          authState.adminApiKeys[idx].active = false;
+          authState.adminApiKeys[idx].revokedAt = new Date().toISOString();
+          saveAuthState(authState);
+          found = true;
+        }
+      }
+      if (!found) {
+        const users = [...(authState.users || [])];
+        for (let i = 0; i < users.length; i++) {
+          const ukeys = users[i].apiKeys || [];
+          const kidx = ukeys.findIndex(k => k.key.startsWith(keyPrefix));
+          if (kidx >= 0) {
+            if (!principal.isAdmin && normalizeUsername(users[i].username) !== normalizeUsername(principal.username)) {
+              return okJson(res, { ok: false, error: 'forbidden' }, 403);
+            }
+            ukeys[kidx].active = false;
+            ukeys[kidx].revokedAt = new Date().toISOString();
+            users[i] = { ...users[i], apiKeys: ukeys };
+            saveAuthState({ ...authState, users });
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) return okJson(res, { ok: false, error: 'key_not_found' }, 404);
+      return okJson(res, { ok: true, message: 'API key revoked.' });
+    });
+    return;
   }
 
   if (req.method === 'GET' && url.pathname === '/api/runtime-health') {
@@ -5076,5 +5595,11 @@ module.exports = {
   aiAnswerRespectsSelections,
   normalizeRunnerName,
   buildAiContextSummary,
-  isSmallModel
+  isSmallModel,
+  inferMeetingFromQuestion,
+  inferNextRaceAtVenue,
+  inferTemporalRaceAtVenue,
+  formatStatsCompact,
+  isLiveRaceEntry,
+  FINISHED_RACE_STATUSES
 };

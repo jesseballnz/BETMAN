@@ -23,7 +23,25 @@ function scoreAnswer(answer, prompt) {
   for (const k of req) if (lc.includes(String(k).toLowerCase())) hits++;
   const keywordScore = req.length ? (hits / req.length) * 100 : 100;
   const lengthPenalty = prompt.maxChars && txt.length > prompt.maxChars ? Math.min(30, ((txt.length - prompt.maxChars) / prompt.maxChars) * 100) : 0;
-  return Math.max(0, Math.round(keywordScore - lengthPenalty));
+
+  // Format-compliance gate: structured prompts that require pipe-delimited output
+  let formatPenalty = 0;
+  if (prompt.requirePipeFormat) {
+    const pipePattern = /\w[^|]+\|[^|]+\|[^|]+\|[^|]+/;
+    if (!pipePattern.test(txt)) formatPenalty = 25;
+  }
+  // Runner-profile gate: must mention individual runner names from context
+  if (prompt.requireRunnerMentions && Array.isArray(prompt.requireRunnerMentions)) {
+    const mentionedCount = prompt.requireRunnerMentions.filter(name =>
+      lc.includes(String(name).toLowerCase())
+    ).length;
+    const mentionRate = prompt.requireRunnerMentions.length
+      ? mentionedCount / prompt.requireRunnerMentions.length
+      : 1;
+    if (mentionRate < 0.5) formatPenalty = Math.max(formatPenalty, 20);
+  }
+
+  return Math.max(0, Math.round(keywordScore - lengthPenalty - formatPenalty));
 }
 
 function isTrueFallback(row) {
@@ -40,8 +58,8 @@ function isTrueFallback(row) {
 
 async function run() {
   const baseUrl = arg('url', process.env.BAKEOFF_URL || 'http://127.0.0.1:8080');
-  let user = arg('user', process.env.BAKEOFF_USER || process.env.BETMAN_USERNAME || '');
-  let pass = arg('pass', process.env.BAKEOFF_PASS || process.env.BETMAN_PASSWORD || '');
+  let user = arg('user', process.env.BAKEOFF_USER || process.env.BETMAN_USERNAME || process.env.BETMAN_USER || '');
+  let pass = arg('pass', process.env.BAKEOFF_PASS || process.env.BETMAN_PASSWORD || process.env.BETMAN_PASS || '');
   if (!user || !pass) {
     try {
       const authState = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'memory', 'betman-auth.json'), 'utf8'));
@@ -82,7 +100,7 @@ async function run() {
         try {
           context = fs.readFileSync(contextPath, 'utf8').trim();
         } catch (e) {
-          console.warn('context_read_failed', contextPath, e?.message || e);
+          console.error('context_read_failed', contextPath, e?.message || e);
         }
       }
       return { ...p, context } ;
@@ -100,7 +118,7 @@ async function run() {
     for (const p of prompts) {
       for (let i = 0; i < runs; i++) {
         const started = Date.now();
-        let ok = false, status = 0, body = null, err = null;
+        let ok = false, status = 0, body = null, err = null, jsonParseError = false;
         try {
           const questionParts = [p.context?.trim(), p.question].filter(Boolean);
           const fullQuestion = questionParts.join('\n\n');
@@ -118,8 +136,20 @@ async function run() {
           });
           clearTimeout(t);
           status = res.status;
-          body = await res.json().catch(() => ({}));
+          let jsonParseErr = false;
+          body = await res.json().catch((e) => {
+            jsonParseErr = true;
+            process.stderr.write(`json_parse_error model=${model} prompt=${p.id} status=${res.status} :: ${e?.message || e}\n`);
+            return {};
+          });
+          if (jsonParseErr) err = `json_parse_error_status_${res.status}`;
           ok = !!(res.ok && body && body.ok);
+          if (!ok && !jsonParseErr && res.ok && body && !body.ok) {
+            // HTTP 200 but API returned ok:false — capture the API-level error
+            const apiErr = body?.error || body?.fallbackReason || 'api_ok_false';
+            process.stderr.write(`api_ok_false model=${model} prompt=${p.id} :: ${apiErr}\n`);
+          }
+          jsonParseError = jsonParseErr;
         } catch (e) {
           err = String(e && e.message || e);
         }
@@ -141,22 +171,24 @@ async function run() {
           fallbackReason: body?.fallbackReason || null,
           scoreQuality: ok ? scoreAnswer(answer, p) : 0,
           answerChars: String(answer).length,
-          answer: answer ? String(answer).slice(0, 2000) : '',
+          answer: answer ? String(answer).slice(0, 4000) : '',
+          jsonParseError,
           error: err
         });
-        process.stdout.write(`run model=${model} prompt=${p.id} #${i + 1} ok=${ok} latency=${latencyMs}ms\n`);
+        process.stdout.write(`run model=${model} prompt=${p.id} #${i + 1} ok=${ok} jsonParseError=${jsonParseError} latency=${latencyMs}ms\n`);
       }
     }
   }
 
   const byModel = new Map();
   for (const r of rawRows) {
-    const a = byModel.get(r.model) || { n: 0, ok: 0, q: 0, lat: [], fallback: 0 };
+    const a = byModel.get(r.model) || { n: 0, ok: 0, q: 0, lat: [], fallback: 0, parseErrors: 0 };
     a.n++;
     if (r.ok) a.ok++;
     a.q += Number(r.scoreQuality || 0);
     a.lat.push(Number(r.latencyMs || 0));
     if (isTrueFallback(r)) a.fallback++;
+    if (r.jsonParseError) a.parseErrors++;
     byModel.set(r.model, a);
   }
 
@@ -167,6 +199,7 @@ async function run() {
     const p50 = latSorted[Math.floor((latSorted.length - 1) * 0.5)] || 0;
     const p95 = latSorted[Math.floor((latSorted.length - 1) * 0.95)] || 0;
     const fallbackRate = a.n ? (a.fallback / a.n) : 0;
+    const parseErrorRate = a.n ? (a.parseErrors / a.n) : 0;
 
     const score = (
       qualityAvg * 0.4 +
@@ -183,6 +216,7 @@ async function run() {
       latencyP50Ms: p50,
       latencyP95Ms: p95,
       fallbackRate: Number((fallbackRate * 100).toFixed(1)),
+      parseErrorRate: Number((parseErrorRate * 100).toFixed(1)),
       composite: Number(score.toFixed(1)),
       aiScore: Number(qualityAvg.toFixed(1))
     };
@@ -210,9 +244,9 @@ async function run() {
     `- URL: ${baseUrl}`,
     `- Runs per prompt: ${runs}`,
     ``,
-    `| Rank | Model | Composite | Success % | Quality | P50 ms | AI Score | P95 ms | Fallback % |`,
-    `|---:|---|---:|---:|---:|---:|---:|---:|---:|`,
-    ...leaderboard.map((r, i) => `| ${i + 1} | ${r.model} | ${r.composite} | ${r.successRate} | ${r.qualityAvg} | ${r.latencyP50Ms} | ${r.aiScore} | ${r.latencyP95Ms} | ${r.fallbackRate} |`),
+    `| Rank | Model | Composite | Success % | Quality | P50 ms | AI Score | P95 ms | Fallback % | Parse Err % |`,
+    `|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|`,
+    ...leaderboard.map((r, i) => `| ${i + 1} | ${r.model} | ${r.composite} | ${r.successRate} | ${r.qualityAvg} | ${r.latencyP50Ms} | ${r.aiScore} | ${r.latencyP95Ms} | ${r.fallbackRate} | ${r.parseErrorRate} |`),
     ``,
     `Raw: ${path.basename(rawPath)}`,
     `JSON: ${path.basename(sumPath)}`
@@ -223,7 +257,11 @@ async function run() {
   if (leaderboard[0]) console.log(`Winner: ${leaderboard[0].model} (score ${leaderboard[0].composite})`);
 }
 
-run().catch((e) => {
-  console.error('bakeoff_failed', e);
-  process.exit(1);
-});
+if (require.main === module) {
+  run().catch((e) => {
+    console.error('bakeoff_failed', e);
+    process.exit(1);
+  });
+}
+
+module.exports = { scoreAnswer, isTrueFallback };
