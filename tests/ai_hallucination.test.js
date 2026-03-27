@@ -244,6 +244,7 @@ async function askSelection(question, extra = {}) {
   const server = spawn('node', ['scripts/frontend_server.js'], { env, cwd: ROOT, stdio: 'ignore' });
 
   try {
+    // Wait for the BETMAN frontend server to start accepting connections
     await sleep(2000);
 
     // ── Test 1: Truncated response (done_reason: "length") falls back ──

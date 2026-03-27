@@ -1311,7 +1311,7 @@ const RACING_ANCHOR_PATTERNS = [
 ];
 
 const HALLUCINATION_SIGNALS = [
-  /\b(?:stock|stocks|equity|equities|ETF|index fund|mutual fund)s?\b/i,
+  /\b(?:stocks?|equit(?:y|ies)|ETFs?|index funds?|mutual funds?)\b/i,
   /\b(?:cryptocurrency|bitcoin|ethereum|blockchain|token sale|ICO)\b/i,
   /\b(?:dollar.cost.averaging|portfolio allocation|asset class)\b/i,
   /\b(?:S&P\s?500|NASDAQ|NYSE|Dow\sJones|ASX\s(?:200|300))\b/i,
@@ -1339,14 +1339,17 @@ function isHallucinatedAnswer(answer){
     if (rx.test(txt)) hallucinationHits++;
   }
 
-  // If multiple hallucination signals fire AND few/no racing terms ⇒ hallucinated
-  if (hallucinationHits >= 2 && racingHits < 5) return true;
+  // Multiple hallucination signals with few racing terms ⇒ clearly off-topic
+  const MULTI_SIGNAL_RACING_FLOOR = 5;
+  if (hallucinationHits >= 2 && racingHits < MULTI_SIGNAL_RACING_FLOOR) return true;
 
   // Even a single hallucination signal with almost no racing terms ⇒ off-topic
-  if (hallucinationHits >= 1 && racingHits < 3) return true;
+  const SINGLE_SIGNAL_RACING_FLOOR = 3;
+  if (hallucinationHits >= 1 && racingHits < SINGLE_SIGNAL_RACING_FLOOR) return true;
 
-  // If substantial answer but zero racing anchor terms ⇒ likely off-topic
-  if (txt.length >= 200 && racingHits === 0) return true;
+  // Substantial answer length with zero racing anchor terms ⇒ likely off-topic
+  const MIN_LENGTH_FOR_ZERO_RACING_CHECK = 200;
+  if (txt.length >= MIN_LENGTH_FOR_ZERO_RACING_CHECK && racingHits === 0) return true;
 
   return false;
 }
