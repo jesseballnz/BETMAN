@@ -374,11 +374,12 @@ asyncTests.push((async () => {
   assert.ok(names.includes('cache-writer'), 'should have cache-writer');
   assert.ok(names.includes('meeting-profile-aus'), 'should have meeting-profile-aus');
   assert.ok(names.includes('meeting-profile-nz'), 'should have meeting-profile-nz');
+  assert.ok(names.includes('meeting-profile-hk'), 'should have meeting-profile-hk');
   assert.ok(names.includes('loveracing-enrich'), 'should have loveracing-enrich');
   assert.ok(names.includes('success-tracker'), 'should have success-tracker');
   assert.ok(names.includes('fringe-report'), 'should have fringe-report');
-  assert.strictEqual(mgr.services.size, 8, 'should have 8 services total');
-  console.log('✓ createDefaultManager registers all 8 services');
+  assert.strictEqual(mgr.services.size, 9, 'should have 9 services total');
+  console.log('✓ createDefaultManager registers all 9 services');
 }
 
 // 24. Default intervals match previous jobs_runner.sh values
@@ -395,6 +396,7 @@ asyncTests.push((async () => {
   assert.strictEqual(mgr.services.get('fringe-report').intervalMs, pollMs);
   assert.strictEqual(mgr.services.get('meeting-profile-aus').intervalMs, profileMs);
   assert.strictEqual(mgr.services.get('meeting-profile-nz').intervalMs, profileMs);
+  assert.strictEqual(mgr.services.get('meeting-profile-hk').intervalMs, profileMs);
   assert.strictEqual(mgr.services.get('loveracing-enrich').intervalMs, profileMs);
   console.log('✓ Default intervals match jobs_runner.sh values (60s poll, 30m profile)');
 }

@@ -266,6 +266,14 @@ function createDefaultManager(overrides = {}) {
   });
 
   manager.register({
+    name: 'meeting-profile-hk',
+    command: 'node',
+    args: ['scripts/meeting_profile.js', '--date=today', '--country=HK'],
+    intervalMs: profileMs,
+    log: overrides.log
+  });
+
+  manager.register({
     name: 'loveracing-enrich',
     command: 'python3',
     args: ['scripts/loveracing_enrich.py'],
