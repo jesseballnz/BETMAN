@@ -1059,6 +1059,54 @@ function inferSelectionsFromQuestion(question, suggested = [], races = []){
   return results.slice(0, 4);
 }
 
+// Well-known NZ and Australian racecourses for detecting venue mentions
+// when the venue is not in today's available races.
+const KNOWN_VENUES = [
+  'riccarton','ellerslie','trentham','wingatui','matamata','pukekohe',
+  'tauranga','tauherenikau','whanganui','ashburton','te aroha','te rapa',
+  'hastings','ruakaka','otaki','awapuni','new plymouth','rotorua',
+  'cambridge','addington','forbury park','alexandra park',
+  'randwick','caulfield','flemington','rosehill','eagle farm','doomben',
+  'moonee valley','morphettville','ascot','warwick farm','canterbury',
+  'sandown','cranbourne','pakenham','geelong','ballarat','bendigo',
+  'gold coast','sunshine coast','kembla grange','newcastle','hawkesbury',
+  'gosford','wyong','scone','launceston','hobart'
+];
+
+function inferMeetingFromQuestion(question, races = []) {
+  const q = String(question || '').toLowerCase();
+  if (!q) return { mentioned: null, matched: [], available: [] };
+
+  const available = [...new Set(
+    (races || []).map(r => String(r.meeting || '').trim()).filter(Boolean)
+  )];
+  const availableLower = available.map(m => m.toLowerCase());
+
+  // Check if any available meeting name appears in the question (word-boundary match)
+  const matched = available.filter((_m, i) => {
+    const lower = availableLower[i];
+    if (!lower) return false;
+    const escaped = lower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`, 'i').test(q);
+  });
+
+  if (matched.length) {
+    return { mentioned: matched[0], matched, available };
+  }
+
+  // Check known venues not in today's races
+  for (const venue of KNOWN_VENUES) {
+    if (availableLower.some(a => a === venue || a.startsWith(venue + ' ') || a.startsWith(venue + '-'))) continue;
+    const escaped = venue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`\\b${escaped}\\b`, 'i').test(q)) {
+      const titleCase = venue.replace(/\b\w/g, c => c.toUpperCase());
+      return { mentioned: titleCase, matched: [], available };
+    }
+  }
+
+  return { mentioned: null, matched: [], available: [] };
+}
+
 function mergeSelections(explicit = [], inferred = []){
   const merged = [];
   const seen = new Set();
@@ -2015,6 +2063,22 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
 📈 Confidence %
 - ${confidence === 'n/a' ? 'n/a' : `${confidence}%`}`;
   }
+
+  // Venue-aware scoping: if the question mentions a specific venue, constrain answers
+  const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
+  // Include venues from suggested bets so venue detection works even when races.json
+  // is loaded from a different path (e.g. tenant data with separate status/races).
+  const suggestedVenues = [...new Set(suggested.map(x => String(x.meeting || '').trim()).filter(Boolean))]
+    .filter(m => !allRaces.some(r => String(r.meeting || '').trim().toLowerCase() === m.toLowerCase()))
+    .map(m => ({ meeting: m }));
+  const venueInf = inferMeetingFromQuestion(question, allRaces.concat(suggestedVenues));
+  if (venueInf.mentioned && venueInf.matched.length === 0) {
+    const availableList = venueInf.available.length
+      ? venueInf.available.join(', ')
+      : 'none currently loaded';
+    return `There are no races at ${venueInf.mentioned} in today's data. Venues racing today: ${availableList}. Ask me about one of those instead.`;
+  }
+
   const auditSnapshot = buildDecisionAudit(status || {});
   const stakeProfile = {
     stakePerRace: status.stakePerRace ?? null,
@@ -2397,10 +2461,12 @@ function buildAiContextSummary({
   question = '',
   races = [],
   meetingProfiles = {},
-  maxLength = 1200
+  maxLength = 1200,
+  venueNote = ''
 } = {}) {
   const lines = [];
   const selectionLines = [];
+  if (venueNote) lines.push(venueNote);
   const snapshotLine = `Snapshot: updated ${status.updatedAt || 'n/a'} | API ${status.apiStatus || 'n/a'}`;
   lines.push(snapshotLine.trim());
 
@@ -2626,6 +2692,8 @@ Hard rules:
 12) Never output placeholder tokens (e.g., [Jockey Name], [Trainer Name], [Weight]); if unknown, write "n/a".
 13) If meetingProfile data is present in MANDATORY_RACE_VALUES, use it to weight your analysis: pace-bias stats (e.g., "Midfield 4/8") indicate which running styles are winning at the venue today; barrier-bias stats indicate which barrier ranges are favoured. Factor these into your race map, runner assessments, and final tips.
 14) If "User meeting notes" are provided in context, treat them as first-hand observations from the punter. Incorporate them into your analysis and reference specific notes where relevant.
+15) If the context states there are no races at a specific venue, do NOT fabricate analysis for that venue. Clearly state there are no races there and suggest the available alternatives listed in context.
+16) If race data is scoped to a specific venue the user mentioned, anchor your analysis to that venue only. Do not discuss races from other venues unless asked.
 
 Response format:
 - Verdict (1-2 lines)
@@ -2654,6 +2722,8 @@ Rules:
 8) For broad "ask me anything racing" questions, provide depth: map/tempo, form cycle, trainer/jockey patterns, market/price dynamics, and risk management implications.
 9) If meeting profile data is available (pace/barrier bias from completed races), factor it into your assessment of which running styles and barrier positions suit the venue.
 10) If the user has added meeting notes (labelled "User meeting notes" in context), incorporate those observations into your answer.
+11) If the context states there are no races at a specific venue, do NOT fabricate analysis for that venue. Clearly state there are no races there and suggest the available alternatives listed in context.
+12) If race data is scoped to a specific venue the user mentioned, anchor your answer to that venue only. Do not discuss races from other venues unless asked.
 
 Style: expert punter, plain English, no fluff.`;
 
@@ -2840,6 +2910,31 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   const jointRows = sameRaceJointLikelihoods();
 
+  // Venue-aware context scoping for general chat (no dragged selections, no raceContext)
+  const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
+  const venueInference = (!hasDraggedSelections && !isRaceAnalysis)
+    ? inferMeetingFromQuestion(question, allRaces)
+    : { mentioned: null, matched: [], available: [] };
+
+  let venueNote = '';
+  let venueScopedRaces = allRaces;
+  let venueScopedSuggested = suggested;
+  let venueScopedInteresting = status.interestingRunners || [];
+  let venueScopedMovers = status.marketMovers || [];
+
+  if (venueInference.mentioned && venueInference.matched.length > 0) {
+    const matchedLower = new Set(venueInference.matched.map(m => m.toLowerCase()));
+    venueScopedRaces = allRaces.filter(r => matchedLower.has(String(r.meeting || '').trim().toLowerCase()));
+    venueScopedSuggested = suggested.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+    venueScopedInteresting = (status.interestingRunners || []).filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+    venueScopedMovers = (status.marketMovers || []).filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+  } else if (venueInference.mentioned && venueInference.matched.length === 0) {
+    const availableList = venueInference.available.length
+      ? venueInference.available.join(', ')
+      : 'none currently loaded';
+    venueNote = `IMPORTANT: There are no races at ${venueInference.mentioned} in today's data. Do NOT provide analysis for ${venueInference.mentioned}. Available venues racing today: ${availableList}. Clearly state that ${venueInference.mentioned} has no races today and suggest alternatives from the available venues.`;
+  }
+
   const analysisSource = String(clientContext?.source || '').toLowerCase();
   const rcMeeting = String(clientContext?.raceContext?.meeting || '').trim().toLowerCase();
   const rcRace = String(clientContext?.raceContext?.raceNumber || '').replace(/^R/i, '').trim();
@@ -2848,7 +2943,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         String(x.meeting || '').trim().toLowerCase() === rcMeeting &&
         String(x.race || '').replace(/^R/i, '').trim() === rcRace
       )
-    : suggested;
+    : venueScopedSuggested;
 
   const requestedModel = String(clientContext?.model || '').trim();
   const defaultModel = process.env.BETMAN_CHAT_MODEL || (provider === 'ollama' ? 'qwen2.5:1.5b' : 'gpt-4o-mini');
@@ -2892,17 +2987,18 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     status: { updatedAt: status.updatedAt, apiStatus: status.apiStatusPublic || status.apiStatus },
     stakeProfile,
     suggested: hasDraggedSelections ? scopedSuggested.filter(x => scopedSelections.some(s => String(x.meeting||'').trim() === s.meeting && String(x.race||'').trim() === s.race && String(x.selection||'').trim() === s.selection)) : scopedSuggested,
-    interesting: hasDraggedSelections ? [] : (status.interestingRunners || []),
-    marketMovers: hasDraggedSelections ? [] : (status.marketMovers || []),
+    interesting: hasDraggedSelections ? [] : venueScopedInteresting,
+    marketMovers: hasDraggedSelections ? [] : venueScopedMovers,
     upcoming: hasDraggedSelections ? [] : (status.upcomingRaces || []),
     activity: hasDraggedSelections ? [] : (status.activity || []),
     webContext: hasDraggedSelections ? { results: [], domains: [] } : webContext,
     clientContext,
     jointRows,
     question,
-    races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : (racesData.races || []),
+    races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : venueScopedRaces,
     meetingProfiles: loadMeetingProfiles('today'),
-    maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral
+    maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
+    venueNote
   });
 
   const customInstructions = loadText(AI_INSTRUCTIONS_FILE, '').trim();
@@ -5082,5 +5178,6 @@ module.exports = {
   aiAnswerRespectsSelections,
   normalizeRunnerName,
   buildAiContextSummary,
-  isSmallModel
+  isSmallModel,
+  inferMeetingFromQuestion
 };
