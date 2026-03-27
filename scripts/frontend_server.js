@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const dns = require('dns');
 const { mergePublicStatusLists } = require('./status_snapshot_merge');
+const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -3187,8 +3188,33 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   };
 }
 
+/* ── BETMAN Commercial API v1 handler ──────────────────────────────── */
+const betmanApiHandler = createApiHandler({
+  getAuthState: () => authState,
+  saveAuthState: (next) => saveAuthState(next),
+  loadJson,
+  resolveTenantPath,
+  dataDir: path.join(process.cwd(), 'frontend', 'data'),
+  rootDir: process.cwd()
+});
+
 const server = http.createServer(async (req, res)=>{
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  // BETMAN Commercial API v1
+  if (url.pathname.startsWith('/api/v1/')) {
+    try {
+      const handled = await betmanApiHandler(req, res, url);
+      if (handled) return;
+    } catch (e) {
+      console.error('API v1 error:', e);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'internal_error', message: 'An unexpected error occurred.' }));
+      }
+      return;
+    }
+  }
 
   // Public login/landing routes
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/landing' || url.pathname === '/landing.html' || url.pathname === '/login')) {
@@ -4652,6 +4678,118 @@ if (url.pathname === '/api/ask-selection') {
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
     return okJson(res, { ok: true, service: 'betman-api', ts: new Date().toISOString() });
+  }
+
+  /* ── API key management (session-auth) ─────────────────────────── */
+  if (req.method === 'GET' && url.pathname === '/api/api-keys') {
+    if (!requireAuth(req, res)) return;
+    const principal = req.authPrincipal;
+    if (principal.isAdmin) {
+      const allKeys = [];
+      (authState.adminApiKeys || []).forEach(k => {
+        allKeys.push({ username: authState.username, role: 'admin', label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null });
+      });
+      (authState.users || []).forEach(u => {
+        (u.apiKeys || []).forEach(k => {
+          allKeys.push({ username: u.username, role: u.role || 'user', label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null });
+        });
+      });
+      return okJson(res, { ok: true, keys: allKeys });
+    }
+    const userRec = (authState.users || []).find(u => normalizeUsername(u.username) === normalizeUsername(principal.username));
+    const keys = (userRec?.apiKeys || []).map(k => ({
+      label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null
+    }));
+    return okJson(res, { ok: true, keys });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/api-keys') {
+    if (!requireAuth(req, res)) return;
+    let body='';
+    req.on('data', c=>body+=c);
+    req.on('end', ()=>{
+      let payload = {};
+      try { payload = body ? JSON.parse(body) : {}; } catch {}
+      const principal = req.authPrincipal;
+      const label = String(payload.label || 'API Key').trim().slice(0, 100);
+      const targetUser = principal.isAdmin ? String(payload.username || principal.username).trim() : principal.username;
+
+      const newKey = {
+        key: genApiKey(),
+        label,
+        rateLimit: Number(payload.rateLimit) || 60,
+        rateWindow: Number(payload.rateWindow) || 60,
+        active: true,
+        createdAt: new Date().toISOString()
+      };
+
+      const isAdminUser = normalizeUsername(targetUser) === normalizeUsername(authState.username);
+      if (isAdminUser) {
+        if (!principal.isAdmin) return okJson(res, { ok: false, error: 'forbidden' }, 403);
+        const adminKeys = authState.adminApiKeys || [];
+        adminKeys.push(newKey);
+        saveAuthState({ ...authState, adminApiKeys: adminKeys });
+      } else {
+        const users = [...(authState.users || [])];
+        const idx = users.findIndex(u => normalizeUsername(u.username) === normalizeUsername(targetUser));
+        if (idx < 0) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
+        if (!principal.isAdmin && normalizeUsername(principal.username) !== normalizeUsername(targetUser)) {
+          return okJson(res, { ok: false, error: 'forbidden' }, 403);
+        }
+        const userKeys = users[idx].apiKeys || [];
+        userKeys.push(newKey);
+        users[idx] = { ...users[idx], apiKeys: userKeys };
+        saveAuthState({ ...authState, users });
+      }
+
+      return okJson(res, { ok: true, key: newKey.key, label: newKey.label, message: 'Store this key securely — it cannot be retrieved again.' }, 201);
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/api-keys/revoke') {
+    if (!requireAuth(req, res)) return;
+    let body='';
+    req.on('data', c=>body+=c);
+    req.on('end', ()=>{
+      let payload = {};
+      try { payload = body ? JSON.parse(body) : {}; } catch {}
+      const principal = req.authPrincipal;
+      const keyPrefix = String(payload.keyPrefix || '').trim().replace(/…$/, '');
+      if (!keyPrefix) return okJson(res, { ok: false, error: 'missing_keyPrefix' }, 400);
+
+      let found = false;
+      if (principal.isAdmin && authState.adminApiKeys) {
+        const idx = authState.adminApiKeys.findIndex(k => k.key.startsWith(keyPrefix));
+        if (idx >= 0) {
+          authState.adminApiKeys[idx].active = false;
+          authState.adminApiKeys[idx].revokedAt = new Date().toISOString();
+          saveAuthState(authState);
+          found = true;
+        }
+      }
+      if (!found) {
+        const users = [...(authState.users || [])];
+        for (let i = 0; i < users.length; i++) {
+          const ukeys = users[i].apiKeys || [];
+          const kidx = ukeys.findIndex(k => k.key.startsWith(keyPrefix));
+          if (kidx >= 0) {
+            if (!principal.isAdmin && normalizeUsername(users[i].username) !== normalizeUsername(principal.username)) {
+              return okJson(res, { ok: false, error: 'forbidden' }, 403);
+            }
+            ukeys[kidx].active = false;
+            ukeys[kidx].revokedAt = new Date().toISOString();
+            users[i] = { ...users[i], apiKeys: ukeys };
+            saveAuthState({ ...authState, users });
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) return okJson(res, { ok: false, error: 'key_not_found' }, 404);
+      return okJson(res, { ok: true, message: 'API key revoked.' });
+    });
+    return;
   }
 
   if (req.method === 'GET' && url.pathname === '/api/runtime-health') {
