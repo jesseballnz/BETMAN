@@ -1016,15 +1016,24 @@ function formatSelectionDetails(sel, raceLookup, races = []){
   if (race?.distance) bits.push(`${race.distance}m`);
   if (race?.track_condition) bits.push(`Track ${race.track_condition}`);
   if (race?.rail_position) bits.push(`Rail ${race.rail_position}`);
-  if (runner?.barrier) bits.push(`Barrier ${runner.barrier}`);
+  if (runner?.runner_number) bits.push(`#${runner.runner_number}`);
+  if (runner?.barrier) bits.push(`Gate ${runner.barrier}`);
   if (runner?.jockey) bits.push(`Jockey ${runner.jockey}`);
+  if (runner?.apprentice_indicator) bits.push('(A)');
   if (runner?.trainer) bits.push(`Trainer ${runner.trainer}`);
-  if (runner?.weight) bits.push(`Weight ${runner.weight}kg`);
+  if (runner?.trainer_location) bits.push(`(${runner.trainer_location})`);
+  if (runner?.weight || runner?.weight_total) bits.push(`Weight ${runner.weight || runner.weight_total}kg`);
+  if (runner?.age) bits.push(`Age ${runner.age}`);
+  if (runner?.sex) bits.push(runner.sex);
+  if (runner?.gear) bits.push(`Gear ${runner.gear}`);
   if (runner?.last_twenty_starts) bits.push(`Form ${runner.last_twenty_starts}`);
+  if (runner?.form_comment) bits.push(`Comment ${runner.form_comment}`);
   if (runner?.speedmap) bits.push(`Speedmap ${runner.speedmap}`);
   if (runner?.sire) bits.push(`Sire ${runner.sire}`);
   if (runner?.dam) bits.push(`Dam ${runner.dam}`);
   if (runner?.dam_sire) bits.push(`Dam Sire ${runner.dam_sire}`);
+  const statsStr = formatStatsCompact(runner?.stats);
+  if (statsStr) bits.push(`Stats ${statsStr}`);
   return bits.filter(Boolean).join(' · ');
 }
 
@@ -1105,6 +1114,58 @@ function inferMeetingFromQuestion(question, races = []) {
   }
 
   return { mentioned: null, matched: [], available: [] };
+}
+
+/**
+ * When the user asks about "the next race" at a specific venue, determine
+ * which race is next by filtering out completed races and sorting by race number.
+ * Returns the race object or null if no upcoming race is found.
+ */
+function inferNextRaceAtVenue(question, races, venueMeeting) {
+  const q = String(question || '').toLowerCase();
+  if (!venueMeeting) return null;
+  const wantsNext = /\bnext\b/.test(q);
+  if (!wantsNext) return null;
+  const meetingLower = String(venueMeeting).trim().toLowerCase();
+  const finishedStatuses = new Set(['final', 'closed', 'abandoned', 'resulted']);
+  const venueRaces = (races || [])
+    .filter(r => String(r.meeting || '').trim().toLowerCase() === meetingLower)
+    .filter(r => !finishedStatuses.has(String(r.race_status || '').toLowerCase()))
+    .sort((a, b) => {
+      const na = Number(a.race_number) || 0;
+      const nb = Number(b.race_number) || 0;
+      return na - nb;
+    });
+  return venueRaces[0] || null;
+}
+
+/**
+ * Format a runner's stats object into a compact summary suitable for AI context.
+ * e.g. "track 3:1-0-1, distance 5:2-1-0, good 8:3-2-1"
+ */
+function formatStatsCompact(stats) {
+  if (!stats || typeof stats !== 'object') return null;
+  const parts = [];
+  const fmt = (label, s) => {
+    if (!s || typeof s !== 'object') return;
+    const starts = Number(s.number_of_starts || 0);
+    if (starts <= 0) return;
+    const w = Number(s.number_of_wins || 0);
+    const p2 = Number(s.number_of_seconds || 0);
+    const p3 = Number(s.number_of_thirds || 0);
+    parts.push(`${label} ${starts}:${w}-${p2}-${p3}`);
+  };
+  fmt('track', stats.track);
+  fmt('dist', stats.distance);
+  fmt('trk+dist', stats.track_distance);
+  fmt('good', stats.good);
+  fmt('soft', stats.soft);
+  fmt('heavy', stats.heavy);
+  fmt('firm', stats.firm);
+  fmt('synthetic', stats.synthetic);
+  fmt('1st-up', stats.first_up);
+  fmt('2nd-up', stats.second_up);
+  return parts.length ? parts.join(', ') : null;
 }
 
 function mergeSelections(explicit = [], inferred = []){
@@ -2086,8 +2147,22 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
     earlyWindowMin: status.earlyWindowMin ?? null,
     aiWindowMin: status.aiWindowMin ?? null
   };
-  const nonMulti = suggested.filter(x => !['multi','top2','top3','top4','trifecta'].includes(String(x.type || '').toLowerCase()));
-  const multis = suggested.filter(x => ['multi','top2','top3','top4','trifecta'].includes(String(x.type || '').toLowerCase()));
+
+  // When a venue is matched, scope suggested bets to that venue.
+  // When "next race" is detected, further scope to the next upcoming race.
+  let scopedSuggested = suggested;
+  if (venueInf.matched.length > 0) {
+    const matchedLower = new Set(venueInf.matched.map(m => m.toLowerCase()));
+    scopedSuggested = suggested.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+    const nextRace = inferNextRaceAtVenue(question, allRaces, venueInf.matched[0]);
+    if (nextRace) {
+      const nrNum = String(nextRace.race_number);
+      scopedSuggested = scopedSuggested.filter(x => String(x.race || '').replace(/^R/i, '').trim() === nrNum);
+    }
+  }
+
+  const nonMulti = scopedSuggested.filter(x => !['multi','top2','top3','top4','trifecta'].includes(String(x.type || '').toLowerCase()));
+  const multis = scopedSuggested.filter(x => ['multi','top2','top3','top4','trifecta'].includes(String(x.type || '').toLowerCase()));
 
   if (!suggested.length) {
     return 'I do not have any current selections loaded yet. Please run a refresh, then ask again and I will explain the picks in detail.';
@@ -2566,16 +2641,26 @@ function buildAiContextSummary({
         trackCondition: race.track_condition,
         railPosition: race.rail_position,
         runner: runner.name,
+        runnerNumber: runner.runner_number ?? null,
         barrier: runner.barrier,
         jockey: runner.jockey,
         trainer: runner.trainer,
-        weight: runner.weight,
+        trainerLocation: runner.trainer_location || null,
+        apprentice: runner.apprentice_indicator || null,
+        weight: runner.weight || runner.weight_total || null,
+        age: runner.age || null,
+        sex: runner.sex || null,
+        gear: runner.gear || null,
         form: runner.last_twenty_starts,
+        lastStarts: runner.last_starts || null,
+        formComment: runner.form_comment || null,
+        formIndicators: runner.form_indicators || null,
         speedmap: runner.speedmap,
         sire: runner.sire,
         dam: runner.dam,
         damSire: runner.dam_sire,
-        odds: runner.odds || runner.fixed_win || runner.tote_win || null
+        odds: runner.odds || runner.fixed_win || runner.tote_win || null,
+        stats: formatStatsCompact(runner.stats) || null
       };
       selectionLines.push(`SELECTION_DATA: ${JSON.stringify(selectionJson)}`);
     });
@@ -2625,17 +2710,27 @@ function buildAiContextSummary({
       };
       const fieldRows = (rc.runners || []).map(rr => ({
         runner: rr.name || rr.runner_name || 'n/a',
+        runnerNumber: rr.runner_number ?? 'n/a',
         barrier: rr.barrier ?? 'n/a',
         jockey: rr.jockey || 'n/a',
         trainer: rr.trainer || 'n/a',
+        trainerLocation: rr.trainer_location || null,
+        apprentice: rr.apprentice_indicator || null,
         weight: rr.weight || rr.weight_total || 'n/a',
+        age: rr.age || null,
+        sex: rr.sex || null,
+        gear: rr.gear || null,
         form: rr.last_twenty_starts || 'n/a',
+        lastStarts: rr.last_starts || null,
+        formComment: rr.form_comment || null,
+        formIndicators: rr.form_indicators || null,
         odds: rr.odds || rr.fixed_win || rr.tote_win || 'n/a',
         sire: rr.sire || 'n/a',
         dam: rr.dam || 'n/a',
         damSire: rr.dam_sire || 'n/a',
         speedmap: rr.speedmap || 'n/a',
-        loveracingNote: rr.loveracing_note || 'n/a'
+        stats: formatStatsCompact(rr.stats) || null,
+        loveracingNote: rr.loveracing_note || null
       }));
       selectionLines.push(`MANDATORY_RACE_VALUES: ${JSON.stringify(raceJson)}`);
       selectionLines.push(`RACE_FIELD_DATA: ${JSON.stringify(fieldRows)}`);
@@ -2688,7 +2783,7 @@ Hard rules:
 8) If the user names a runner (or drags it into context), call that runner out by name with its map role, strengths/risks, and why it is or isn’t the play.
 9) Use ONLY the race + runner data provided in context (selection profiles, race context, odds tables). If something is missing, write "n/a" instead of inventing it. Mirror the template defined in instructions.md without skipping sections.
 10) The JSON blocks labeled MANDATORY_RACE_VALUES and SELECTION_DATA are ground truth. Copy their values exactly when filling headers, tables, and horse profiles.
-11) If RACE_FIELD_DATA is provided, use it to populate full-field horse profiles (barrier/jockey/trainer/weight/form/odds/pedigree/speedmap) before writing any narrative.
+11) If RACE_FIELD_DATA is provided, use it to populate full-field horse profiles (runner name/number/barrier/jockey/trainer/weight/age/sex/gear/form/formComment/formIndicators/odds/pedigree/speedmap/stats) before writing any narrative. The "stats" field contains track/distance/condition-specific starts:wins-seconds-thirds records — use them to assess each runner's suitability to today's race conditions. The "form" field is a concise recent-starts string (e.g. "12x34" where digits are finishing positions and x means unplaced beyond 9th) — count actual wins (1s) and places (1-3) to assess true form.
 12) Never output placeholder tokens (e.g., [Jockey Name], [Trainer Name], [Weight]); if unknown, write "n/a".
 13) If meetingProfile data is present in MANDATORY_RACE_VALUES, use it to weight your analysis: pace-bias stats (e.g., "Midfield 4/8") indicate which running styles are winning at the venue today; barrier-bias stats indicate which barrier ranges are favoured. Factor these into your race map, runner assessments, and final tips.
 14) If "User meeting notes" are provided in context, treat them as first-hand observations from the punter. Incorporate them into your analysis and reference specific notes where relevant.
@@ -2983,6 +3078,22 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     };
   })();
 
+  // "Next race" detection: when venue is matched and user asks about "the next race",
+  // find the next upcoming race at that venue and inject raceContext so full field data is included.
+  let effectiveClientContext = clientContext;
+  if (!hasDraggedSelections && !isRaceAnalysis && !clientContext?.raceContext && venueInference.matched.length > 0) {
+    const nextRace = inferNextRaceAtVenue(question, allRaces, venueInference.matched[0]);
+    if (nextRace) {
+      effectiveClientContext = Object.assign({}, clientContext, {
+        raceContext: {
+          meeting: nextRace.meeting,
+          raceNumber: String(nextRace.race_number),
+          raceName: nextRace.description || ''
+        }
+      });
+    }
+  }
+
   const contextSummary = buildAiContextSummary({
     status: { updatedAt: status.updatedAt, apiStatus: status.apiStatusPublic || status.apiStatus },
     stakeProfile,
@@ -2992,7 +3103,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     upcoming: hasDraggedSelections ? [] : (status.upcomingRaces || []),
     activity: hasDraggedSelections ? [] : (status.activity || []),
     webContext: hasDraggedSelections ? { results: [], domains: [] } : webContext,
-    clientContext,
+    clientContext: effectiveClientContext,
     jointRows,
     question,
     races: hasDraggedSelections ? (racesData.races || []).filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : venueScopedRaces,
@@ -5179,5 +5290,7 @@ module.exports = {
   normalizeRunnerName,
   buildAiContextSummary,
   isSmallModel,
-  inferMeetingFromQuestion
+  inferMeetingFromQuestion,
+  inferNextRaceAtVenue,
+  formatStatsCompact
 };

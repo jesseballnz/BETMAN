@@ -190,6 +190,7 @@ function extractRunnerRow(r, race) {
     favourite: !!r.favourite,
     mover: r.mover || null,
     form_comment: r.form_comment || null,
+    form_indicators: r.form_indicators || null,
     allowance_weight: r.allowance_weight || null,
     apprentice_indicator: r.apprentice_indicator || null,
     weight_allocated: weight.allocated,
