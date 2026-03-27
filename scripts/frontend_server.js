@@ -2692,7 +2692,9 @@ function buildAiContextSummary({
   };
 
   const formatJoint = (row) => {
-    const base = `${row.meeting || '—'} R${row.race || '—'} ${row.runnerA || ''}+${row.runnerB || ''}`.trim();
+    const base = row.meetingB
+      ? `${row.meeting || '—'} R${row.race || '—'} ${row.runnerA || ''} + ${row.meetingB || '—'} R${row.raceB || '—'} ${row.runnerB || ''}`.trim()
+      : `${row.meeting || '—'} R${row.race || '—'} ${row.runnerA || ''}+${row.runnerB || ''}`.trim();
     const joint = Number(row.jointLikelihood);
     const winA = Number(row.winA);
     const winB = Number(row.winB);
@@ -3013,6 +3015,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const sourceTag = String(clientContext?.source || '').toLowerCase();
   const isRaceAnalysis = sourceTag === 'race-analysis';
   const isStrategy = sourceTag === 'strategy' || /\bstrategy\b/i.test(String(question || ''));
+  const isMultiRequest = !isRaceAnalysis && /\b(?:multi|h2h|head[\s-]?to[\s-]?head)\b/i.test(String(question || ''));
   const selections = Array.isArray(clientContext.selections) ? clientContext.selections : [];
   const hasDraggedSelections = selections.length > 0;
   const scopedSelections = hasDraggedSelections
@@ -3105,13 +3108,50 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     aiWindowMin: status.aiWindowMin ?? null
   };
 
-  const jointRows = sameRaceJointLikelihoods();
+  let jointRows = sameRaceJointLikelihoods();
 
   // Venue-aware context scoping for general chat (no dragged selections, no raceContext)
   const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
   const liveRaces = allRaces.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
   // Filter suggested bets to exclude picks for races that have already finished
   suggested = suggested.filter(s => isLiveRaceEntry(s, allRaces));
+
+  // Pre-compute cross-race multi pairs from live suggested win bets when the
+  // user asks for a multi/H2H without dragging selections.
+  if (isMultiRequest && !hasDraggedSelections && !jointRows.length) {
+    const winBets = suggested.filter(s => String(s.type || '').toLowerCase() === 'win');
+    const byRace = new Map();
+    for (const s of winBets) {
+      const k = `${String(s.meeting||'').trim().toLowerCase()}|${String(s.race||'').trim()}`;
+      if (!byRace.has(k)) byRace.set(k, []);
+      byRace.get(k).push(s);
+    }
+    const topPicks = [];
+    for (const [, picks] of byRace.entries()) {
+      const sorted = picks.slice().sort((a, b) => Number(b.aiWinProb || 0) - Number(a.aiWinProb || 0));
+      if (sorted.length && Number.isFinite(Number(sorted[0].aiWinProb)) && Number(sorted[0].aiWinProb) > 0) {
+        topPicks.push(sorted[0]);
+      }
+    }
+    const multiPairs = [];
+    for (let i = 0; i < topPicks.length && multiPairs.length < 8; i++) {
+      for (let j = i + 1; j < topPicks.length && multiPairs.length < 8; j++) {
+        const a = topPicks[i], b = topPicks[j];
+        const pA = Number(a.aiWinProb), pB = Number(b.aiWinProb);
+        const joint = Math.max(0, Math.min(100, pA * pB / 100));
+        multiPairs.push({
+          meeting: a.meeting, race: a.race, runnerA: a.selection,
+          meetingB: b.meeting, raceB: b.race, runnerB: b.selection,
+          winA: Math.round(pA * 10) / 10, winB: Math.round(pB * 10) / 10,
+          jointLikelihood: Math.round(joint * 10) / 10,
+          method: 'cross-race≈pA*pB/100'
+        });
+      }
+    }
+    multiPairs.sort((a, b) => b.jointLikelihood - a.jointLikelihood);
+    jointRows = multiPairs.slice(0, 8);
+  }
+
   const venueInference = (!hasDraggedSelections && !isRaceAnalysis)
     ? inferMeetingFromQuestion(question, liveRaces)
     : { mentioned: null, matched: [], available: [] };
@@ -3220,7 +3260,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   });
 
   const customInstructions = loadText(AI_INSTRUCTIONS_FILE, '').trim();
-  const systemPrompt = (isRaceAnalysis || isStrategy) ? BETMAN_ANALYST_SYSTEM_PROMPT : BETMAN_CHAT_SYSTEM_PROMPT;
+  const systemPrompt = (isRaceAnalysis || isStrategy || isMultiRequest) ? BETMAN_ANALYST_SYSTEM_PROMPT : BETMAN_CHAT_SYSTEM_PROMPT;
   const messages = [
     {
       role: 'system',
@@ -3246,6 +3286,11 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     messages.push({
       role: 'system',
       content: `Selection lock: answer ONLY using the explicitly dragged selections below unless the user clearly asks to broaden scope. Do not switch to other meetings, races, or generic NZ angles.\n${draggedScope}`
+    });
+  } else if (isMultiRequest) {
+    messages.push({
+      role: 'system',
+      content: 'Multi bet construction: the user wants a multi/H2H bet built from live races. Pick legs ONLY from the Suggested bets listed in the Context Summary (these are already filtered to live races). For each leg state the runner, meeting, race, odds, and win probability EXACTLY as they appear in context. Compute the combined multi odds by multiplying individual leg odds and the joint win likelihood by multiplying individual win probabilities. If the Context Summary includes Joint likelihoods, use those figures. Do NOT invent odds, probabilities, or confidence percentages that are not in context — write "n/a" if missing.'
     });
   }
   if (customInstructions) {
@@ -3484,10 +3529,13 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const sameRaceAsked = ql.includes('same-race') || ql.includes('same race') || ql.includes('h2h') || ql.includes('head to head');
   const hasJointInAnswer = /joint\s+likelihood|both\s+come\s+in|pair\s+likelihood/i.test(answer);
 
-  if (sameRaceAsked && jointRows.length && !hasJointInAnswer) {
-    const lines = jointRows.map((x, i) =>
-      `${i+1}) ${x.meeting} R${x.race} ${x.runnerA} + ${x.runnerB} -> joint likelihood ${x.jointLikelihood}% (winA ${x.winA}%, winB ${x.winB}%; ${x.method})`
-    ).join('\n');
+  if ((sameRaceAsked || isMultiRequest) && jointRows.length && !hasJointInAnswer) {
+    const lines = jointRows.map((x, i) => {
+      if (x.meetingB) {
+        return `${i+1}) Leg A: ${x.meeting} R${x.race} ${x.runnerA} + Leg B: ${x.meetingB} R${x.raceB} ${x.runnerB} -> joint likelihood ${x.jointLikelihood}% (winA ${x.winA}%, winB ${x.winB}%; ${x.method})`;
+      }
+      return `${i+1}) ${x.meeting} R${x.race} ${x.runnerA} + ${x.runnerB} -> joint likelihood ${x.jointLikelihood}% (winA ${x.winA}%, winB ${x.winB}%; ${x.method})`;
+    }).join('\n');
     answer += `\n\nJoint likelihood (both runners in):\n${lines}`;
   }
 
