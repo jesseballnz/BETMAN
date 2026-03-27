@@ -36,7 +36,11 @@ else
 fi
 
 # ── Run schema ───────────────────────────────────────────────────────────────
-psql -U "${DB_USER}" -d "${DB_NAME}" -f "${SCHEMA_FILE}"
-echo "[setup_postgres] schema applied"
+  if psql -U "${DB_USER}" -d "${DB_NAME}" -f "${SCHEMA_FILE}" 2>&1; then
+    echo "[setup_postgres] schema applied"
+  else
+    echo "[setup_postgres] schema application failed — review errors above" >&2
+    exit 1
+  fi
 
 echo "[setup_postgres] done"

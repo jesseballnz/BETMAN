@@ -31,9 +31,11 @@ echo "[backup] target  ${DAY_DIR}"
 # ── 1. PostgreSQL dump ──────────────────────────────────────────────────────
 DB_FILE="${DAY_DIR}/betman-db-${STAMP}.sql.gz"
 if command -v pg_dump >/dev/null 2>&1; then
-  pg_dump -U "${DB_USER}" "${DB_NAME}" | gzip > "${DB_FILE}" && \
-    echo "[backup] pg_dump → ${DB_FILE}" || \
-    echo "[backup] pg_dump failed (non-fatal)"
+  if pg_dump -U "${DB_USER}" "${DB_NAME}" | gzip > "${DB_FILE}"; then
+    echo "[backup] pg_dump → ${DB_FILE}"
+  else
+    echo "[backup] pg_dump failed — check credentials (${DB_USER}@${DB_NAME}) and that the database exists" >&2
+  fi
 else
   echo "[backup] pg_dump not found — skipping database backup"
 fi

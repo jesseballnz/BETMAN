@@ -69,8 +69,12 @@ echo ""
 
 # ── 2. Node.js dependencies ────────────────────────────────────────────────
 echo "Installing Node.js dependencies…"
-npm install --production 2>&1 | tail -3
-ok "npm install complete"
+if npm install --production 2>&1 | tail -5; then
+  ok "npm install complete"
+else
+  fail "npm install failed — run manually to see full output"
+  exit 1
+fi
 echo ""
 
 # ── 3. Directories ─────────────────────────────────────────────────────────

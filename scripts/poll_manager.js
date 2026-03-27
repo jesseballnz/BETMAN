@@ -36,7 +36,7 @@ class PollService {
   constructor(opts = {}) {
     if (!opts.name) throw new Error('PollService requires a name');
     if (!opts.run && !opts.command) throw new Error('PollService requires a command or run function');
-    if (!Number.isFinite(opts.intervalMs) || opts.intervalMs < 0) {
+    if (!Number.isFinite(opts.intervalMs) || opts.intervalMs <= 0) {
       throw new Error('PollService requires a positive intervalMs');
     }
 
@@ -97,6 +97,9 @@ class PollService {
     this._running = false;
 
     if (!this._stopped) {
+      // For production intervals (≥1 s) enforce a 1 s floor between ticks to
+      // avoid busy-looping when a task consumes most of its interval.  Short
+      // intervals (used in tests) skip the floor.
       const floor = this.intervalMs < 1000 ? 0 : 1000;
       const wait = Math.max(floor, this.intervalMs - this.lastRunDurationMs);
       this._timer = setTimeout(() => this._tick(), wait);

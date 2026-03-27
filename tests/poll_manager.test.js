@@ -64,7 +64,12 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   try { new PollService({ name: 'x', command: 'echo', intervalMs: -1 }); }
   catch { threw = true; }
   assert.ok(threw);
-  console.log('✓ PollService constructor rejects negative intervalMs');
+
+  let threwZero = false;
+  try { new PollService({ name: 'x', command: 'echo', intervalMs: 0 }); }
+  catch { threwZero = true; }
+  assert.ok(threwZero);
+  console.log('✓ PollService constructor rejects zero and negative intervalMs');
 }
 
 // 5. Constructor — enabled=false is respected

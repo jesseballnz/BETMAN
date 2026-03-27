@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS betman_audit (
   PRIMARY KEY (tenant_id, ts)
 );
 
--- Singleton auth state (id is always 1)
+-- Singleton auth state — only one row (id = 1) is allowed.
+-- The CHECK constraint enforces this at the database level so all
+-- reads/writes target the single canonical row.
 CREATE TABLE IF NOT EXISTS betman_auth_state (
   id         INTEGER PRIMARY KEY CHECK (id = 1),
   username   TEXT    NOT NULL,
