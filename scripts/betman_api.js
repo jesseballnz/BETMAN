@@ -259,6 +259,65 @@ function createApiHandler(deps) {
       }, 200, rateInfo), true;
     }
 
+    /* ── GET /api/v1/models ─────────────────────────────────────── */
+    if (req.method === 'GET' && route === '/models') {
+      const defaultProvider = String(process.env.BETMAN_CHAT_PROVIDER || '').trim().toLowerCase()
+        || ((process.env.OLLAMA_BASE_URL || process.env.BETMAN_OLLAMA_BASE_URL || process.env.BETMAN_CHAT_BASE_URL) ? 'ollama' : '')
+        || ((process.env.OPENAI_API_KEY || process.env.BETMAN_OPENAI_API_KEY) ? 'openai' : '')
+        || 'ollama';
+
+      const ollamaFallbacks = ['qwen2.5:1.5b', 'llama3.2:3b', 'deepseek-r1:8b', 'llama3.1:8b'];
+      const openaiModels = ['gpt-4o-mini', 'gpt-5.2'];
+      const defaultModel = process.env.BETMAN_CHAT_MODEL
+        || (defaultProvider === 'ollama' ? 'qwen2.5:1.5b' : 'gpt-4o-mini');
+
+      // Attempt live Ollama tag fetch
+      let ollamaModels = ollamaFallbacks;
+      let ollamaLive = false;
+      const ollamaBase = String(
+        process.env.BETMAN_OLLAMA_BASE_URL || process.env.OLLAMA_BASE_URL
+        || process.env.BETMAN_CHAT_BASE_URL || ''
+      ).replace(/\/+$/, '');
+      if (ollamaBase) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 5000);
+          const resp = await fetch(`${ollamaBase}/api/tags`, { signal: ctrl.signal });
+          clearTimeout(timer);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (Array.isArray(data.models) && data.models.length) {
+              ollamaModels = data.models.map(m => m.name || m.model).filter(Boolean);
+              ollamaLive = true;
+            }
+          }
+        } catch { /* live fetch optional */ }
+      }
+
+      const smallModels = new Set(['deepseek-r1:8b', 'llama3.1:8b', 'llama3.2:3b', 'qwen2.5:1.5b', 'qwen2.5:3b']);
+      const allModels = [
+        ...ollamaModels.map(m => ({
+          name: m,
+          provider: 'ollama',
+          profile: smallModels.has(m) ? 'small' : 'large'
+        })),
+        ...openaiModels.map(m => ({
+          name: m,
+          provider: 'openai',
+          profile: 'large'
+        }))
+      ];
+
+      return apiJson(res, {
+        ok: true,
+        api_version: API_VERSION,
+        defaultProvider,
+        defaultModel,
+        ollamaLive,
+        models: allModels
+      }, 200, rateInfo), true;
+    }
+
     /* ── GET /api/v1/races ────────────────────────────────────────── */
     if (req.method === 'GET' && route === '/races') {
       const races = readDataFile('races.json', { races: [] });
@@ -282,9 +341,11 @@ function createApiHandler(deps) {
           description: r.description || null,
           distance: r.distance || null,
           track_condition: r.track_condition || r.trackCondition || null,
+          rail_position: r.rail_position || null,
+          race_status: r.race_status || null,
           weather: r.weather || null,
           country: r.country || null,
-          start_time: r.start_time || r.startTime || null,
+          start_time: r.start_time || r.start_time_nz || r.startTime || null,
           runner_count: Array.isArray(r.runners) ? r.runners.length : 0
         }))
       }, 200, rateInfo), true;
@@ -313,19 +374,35 @@ function createApiHandler(deps) {
           description: race.description || null,
           distance: race.distance || null,
           track_condition: race.track_condition || race.trackCondition || null,
+          rail_position: race.rail_position || null,
+          race_status: race.race_status || null,
           weather: race.weather || null,
           country: race.country || null,
-          start_time: race.start_time || race.startTime || null,
+          start_time: race.start_time || race.start_time_nz || race.startTime || null,
           runners: (race.runners || []).map(r => ({
             number: r.runner_number || r.number,
-            name: r.name,
+            name: r.name || r.runner_name,
             barrier: r.barrier || null,
-            weight: r.weight || null,
             jockey: r.jockey || null,
             trainer: r.trainer || null,
-            odds: r.odds || null,
+            trainerLocation: r.trainer_location || null,
+            apprentice: r.apprentice_indicator || null,
+            weight: r.weight || r.weight_total || null,
+            age: r.age || null,
+            sex: r.sex || null,
+            gear: r.gear || null,
             form: r.last_twenty_starts || r.form || null,
-            speedmap: r.speedmap || null
+            lastStarts: r.last_starts || null,
+            formComment: r.form_comment || null,
+            formIndicators: r.form_indicators || null,
+            speedmap: r.speedmap || null,
+            odds: r.odds || r.fixed_win || null,
+            fixedWin: r.fixed_win || null,
+            fixedPlace: r.fixed_place || null,
+            sire: r.sire || null,
+            dam: r.dam || null,
+            damSire: r.dam_sire || null,
+            stats: r.stats || null
           }))
         }
       }, 200, rateInfo), true;
@@ -335,21 +412,45 @@ function createApiHandler(deps) {
     if (req.method === 'GET' && route === '/suggested-bets') {
       const status = readDataFile('status.json', {});
       const bets = status.suggestedBets || [];
+      const meeting = String(url.searchParams.get('meeting') || '').toLowerCase();
+      const raceParam = String(url.searchParams.get('race') || '').replace(/^R/i, '').trim();
+      let filtered = bets;
+      if (meeting) {
+        filtered = filtered.filter(b => String(b.meeting || '').toLowerCase().includes(meeting));
+      }
+      if (raceParam) {
+        filtered = filtered.filter(b => String(b.race || '').replace(/^R/i, '').trim() === raceParam);
+      }
+
+      const exoticTypes = new Set(['multi', 'top2', 'top3', 'top4', 'trifecta']);
+      const formatBet = (b) => ({
+        meeting: b.meeting,
+        race: b.race,
+        selection: b.selection,
+        type: b.type || 'Win',
+        aiWinProb: b.aiWinProb || null,
+        signalScore: b.signal_score || null,
+        stake: b.stake || null,
+        odds: b.odds || null,
+        placeOdds: b.place_odds || null,
+        jumpsIn: b.jumpsIn || null,
+        reason: b.reason || null,
+        tags: b.tags || [],
+        pedigreeTag: b.pedigreeTag || null,
+        interesting: b.interesting || false
+      });
+
+      const wins = filtered.filter(b => !exoticTypes.has(String(b.type || '').toLowerCase())).map(formatBet);
+      const exotics = filtered.filter(b => exoticTypes.has(String(b.type || '').toLowerCase())).map(formatBet);
+
       return apiJson(res, {
         ok: true,
         api_version: API_VERSION,
-        count: bets.length,
+        count: filtered.length,
         updatedAt: status.updatedAt || null,
-        suggestedBets: bets.map(b => ({
-          meeting: b.meeting,
-          race: b.race,
-          selection: b.selection,
-          type: b.type || 'Win',
-          aiWinProb: b.aiWinProb || null,
-          stake: b.stake || null,
-          odds: b.odds || null,
-          signal: b.signal || null
-        }))
+        wins,
+        exotics,
+        all: filtered.map(formatBet)
       }, 200, rateInfo), true;
     }
 
@@ -367,7 +468,8 @@ function createApiHandler(deps) {
           runner: r.runner || r.selection,
           reason: r.reason || null,
           odds: r.odds || null,
-          probability: r.aiWinProb || r.probability || null
+          probability: r.aiWinProb || r.probability || null,
+          eta: r.eta || null
         }))
       }, 200, rateInfo), true;
     }
@@ -389,10 +491,11 @@ function createApiHandler(deps) {
           meeting: m.meeting,
           race: m.race,
           runner: m.runner || m.selection || m.name,
-          previousOdds: m.previousOdds || m.prevOdds || null,
-          currentOdds: m.currentOdds || m.odds || null,
+          previousOdds: m.previousOdds || m.prevOdds || m.fromOdds || null,
+          currentOdds: m.currentOdds || m.odds || m.toOdds || null,
           direction: m.direction || null,
-          magnitude: m.magnitude || null
+          magnitude: m.magnitude || m.pctMove || null,
+          pctSource: m.pctSource || null
         }))
       }, 200, rateInfo), true;
     }
@@ -469,10 +572,9 @@ function createApiHandler(deps) {
           const status = readDataFile('status.json', {});
           const raceList = Array.isArray(races.races) ? races.races : (Array.isArray(races) ? races : []);
 
-          // Try to match question to a specific race
+          // Try to match question to a specific race via explicit hints
           const meetingHint = String(payload.meeting || '').trim().toLowerCase();
           const raceHint = String(payload.race || '').trim();
-          const selectionHint = String(payload.selection || '').trim();
 
           let matchedRace = null;
           if (meetingHint && raceHint) {
@@ -481,6 +583,70 @@ function createApiHandler(deps) {
               String(r.race_number || r.raceNumber || '') === raceHint
             );
           }
+
+          // Venue-aware temporal race detection from the question text
+          if (!matchedRace) {
+            const q = question.toLowerCase();
+            const finishedStatuses = new Set(['final', 'closed', 'abandoned', 'resulted']);
+            // Detect venue from question
+            const availableMeetings = [...new Set(raceList.map(r => String(r.meeting || '').trim()).filter(Boolean))];
+            let detectedMeeting = meetingHint
+              ? availableMeetings.find(m => m.toLowerCase().includes(meetingHint))
+              : availableMeetings.find(m => new RegExp(`\\b${m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(q));
+
+            if (detectedMeeting) {
+              const venueRaces = raceList.filter(r =>
+                String(r.meeting || '').trim().toLowerCase() === detectedMeeting.toLowerCase()
+              );
+              const wantsLast = /\b(last|previous|latest|most recent|just ran|just run)\b/i.test(q);
+              const wantsNext = /\b(next|upcoming|coming up)\b/i.test(q);
+
+              if (wantsLast) {
+                // Pick the most recently finished race
+                const finished = venueRaces
+                  .filter(r => finishedStatuses.has(String(r.race_status || '').toLowerCase()))
+                  .sort((a, b) => (Number(b.race_number) || 0) - (Number(a.race_number) || 0));
+                if (finished.length) matchedRace = finished[0];
+              } else if (wantsNext) {
+                // Pick the next upcoming race
+                const upcoming = venueRaces
+                  .filter(r => !finishedStatuses.has(String(r.race_status || '').toLowerCase()))
+                  .sort((a, b) => (Number(a.race_number) || 0) - (Number(b.race_number) || 0));
+                if (upcoming.length) matchedRace = upcoming[0];
+              }
+              // If still no match but venue was mentioned, pick the first open race
+              if (!matchedRace && venueRaces.length) {
+                const open = venueRaces
+                  .filter(r => !finishedStatuses.has(String(r.race_status || '').toLowerCase()))
+                  .sort((a, b) => (Number(a.race_number) || 0) - (Number(b.race_number) || 0));
+                if (open.length) matchedRace = open[0];
+              }
+            }
+          }
+
+          const formatRunner = (r) => ({
+            number: r.runner_number || r.number,
+            name: r.name || r.runner_name,
+            barrier: r.barrier || null,
+            jockey: r.jockey || null,
+            trainer: r.trainer || null,
+            trainerLocation: r.trainer_location || null,
+            apprentice: r.apprentice_indicator || null,
+            weight: r.weight || r.weight_total || null,
+            age: r.age || null,
+            sex: r.sex || null,
+            gear: r.gear || null,
+            form: r.last_twenty_starts || r.form || null,
+            lastStarts: r.last_starts || null,
+            formComment: r.form_comment || null,
+            formIndicators: r.form_indicators || null,
+            speedmap: r.speedmap || null,
+            odds: r.odds || r.fixed_win || null,
+            sire: r.sire || null,
+            dam: r.dam || null,
+            damSire: r.dam_sire || null,
+            stats: r.stats || null
+          });
 
           // Construct an informational answer using available data
           const suggestedBets = status.suggestedBets || [];
@@ -494,16 +660,30 @@ function createApiHandler(deps) {
             matchedRace: matchedRace ? {
               meeting: matchedRace.meeting,
               race: matchedRace.race_number || matchedRace.raceNumber,
+              distance: matchedRace.distance || null,
               runners: (matchedRace.runners || []).length,
-              trackCondition: matchedRace.track_condition || matchedRace.trackCondition || null
+              trackCondition: matchedRace.track_condition || matchedRace.trackCondition || null,
+              railPosition: matchedRace.rail_position || null,
+              raceStatus: matchedRace.race_status || null
             } : null
           };
 
-          // Find relevant suggested bets
+          // Find relevant suggested bets (scoped to matched race when available)
           let relevantBets = suggestedBets;
-          if (meetingHint) {
-            const meetingBets = suggestedBets.filter(b => String(b.meeting || '').toLowerCase().includes(meetingHint));
-            if (meetingBets.length > 0) relevantBets = meetingBets;
+          const scopeMeeting = matchedRace
+            ? String(matchedRace.meeting || '').toLowerCase()
+            : (meetingHint || '');
+          if (scopeMeeting) {
+            const meetingBets = suggestedBets.filter(b => String(b.meeting || '').toLowerCase().includes(scopeMeeting));
+            if (meetingBets.length > 0) {
+              relevantBets = meetingBets;
+              // Further scope to matched race number if available
+              if (matchedRace) {
+                const raceNum = String(matchedRace.race_number || matchedRace.raceNumber || '');
+                const raceBets = relevantBets.filter(b => String(b.race || '').replace(/^R/i, '').trim() === raceNum);
+                if (raceBets.length > 0) relevantBets = raceBets;
+              }
+            }
           }
 
           // Build response
@@ -519,14 +699,8 @@ function createApiHandler(deps) {
                 description: matchedRace.description || null,
                 distance: matchedRace.distance || null,
                 trackCondition: matchedRace.track_condition || matchedRace.trackCondition || null,
-                runners: (matchedRace.runners || []).map(r => ({
-                  number: r.runner_number || r.number,
-                  name: r.name,
-                  odds: r.odds || null,
-                  barrier: r.barrier || null,
-                  jockey: r.jockey || null,
-                  trainer: r.trainer || null
-                }))
+                railPosition: matchedRace.rail_position || null,
+                runners: (matchedRace.runners || []).map(formatRunner)
               } : null,
               suggestedBets: relevantBets.slice(0, 10).map(b => ({
                 meeting: b.meeting,
@@ -536,23 +710,28 @@ function createApiHandler(deps) {
                 aiWinProb: b.aiWinProb || null,
                 stake: b.stake || null
               })),
-              marketMovers: (meetingHint
-                ? marketMovers.filter(m => String(m.meeting || '').toLowerCase().includes(meetingHint))
+              marketMovers: (scopeMeeting
+                ? marketMovers.filter(m => String(m.meeting || '').toLowerCase().includes(scopeMeeting))
                 : marketMovers
               ).slice(0, 10).map(m => ({
                 meeting: m.meeting,
                 race: m.race,
                 runner: m.runner || m.selection || m.name,
-                direction: m.direction || null
+                previousOdds: m.previousOdds || m.prevOdds || m.fromOdds || null,
+                currentOdds: m.currentOdds || m.odds || m.toOdds || null,
+                direction: m.direction || (Number(m.pctMove) < 0 ? 'firmed' : 'drifted') || null,
+                magnitude: m.magnitude || m.pctMove || null
               })),
-              interestingRunners: (meetingHint
-                ? interestingRunners.filter(r => String(r.meeting || '').toLowerCase().includes(meetingHint))
+              interestingRunners: (scopeMeeting
+                ? interestingRunners.filter(r => String(r.meeting || '').toLowerCase().includes(scopeMeeting))
                 : interestingRunners
               ).slice(0, 10).map(r => ({
                 meeting: r.meeting,
                 race: r.race,
                 runner: r.runner || r.selection,
-                reason: r.reason || null
+                reason: r.reason || null,
+                odds: r.odds || null,
+                probability: r.aiWinProb || r.probability || null
               }))
             }
           };
