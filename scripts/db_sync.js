@@ -26,14 +26,19 @@ function readJsonlTail(filePath, tailCount){
   return slice.map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
 }
 
+function sanitizeTenantId(v) {
+  return String(v || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
 async function syncTenant({ root, tenantId, keys, auditMode, auditTail }){
+  const safeTenant = sanitizeTenantId(tenantId);
   const pg = getPool();
   if (!pg) return;
   await ensureSchema(pg);
 
-  const dataDir = tenantId === 'default'
+  const dataDir = safeTenant === 'default'
     ? path.join(root, 'frontend', 'data')
-    : path.join(root, 'memory', 'tenants', tenantId, 'frontend-data');
+    : path.join(root, 'memory', 'tenants', safeTenant, 'frontend-data');
 
   for (const key of keys) {
     const p = path.join(dataDir, key);
@@ -41,18 +46,18 @@ async function syncTenant({ root, tenantId, keys, auditMode, auditTail }){
     const payload = loadJson(p);
     if (payload == null) continue;
     const updatedAt = payload.updatedAt || payload.updated_at || null;
-    await upsertData(pg, { tenantId, key, payload, updatedAt });
+    await upsertData(pg, { tenantId: safeTenant, key, payload, updatedAt });
   }
 
   if (auditMode !== 'none') {
-    const auditPath = tenantId === 'default'
+    const auditPath = safeTenant === 'default'
       ? path.join(root, 'memory', 'bet-plan-audit.jsonl')
-      : path.join(root, 'memory', 'tenants', tenantId, 'bet-plan-audit.jsonl');
+      : path.join(root, 'memory', 'tenants', safeTenant, 'bet-plan-audit.jsonl');
     const rows = auditMode === 'tail'
       ? readJsonlTail(auditPath, auditTail)
       : readJsonlTail(auditPath, null);
     for (const row of rows) {
-      await appendAudit(pg, { tenantId, row });
+      await appendAudit(pg, { tenantId: safeTenant, row });
     }
   }
 }

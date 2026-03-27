@@ -97,7 +97,12 @@ async function tabFetch(endpoint, params) {
 /* ── JSON response helpers ─────────────────────────────────────────── */
 
 function apiJson(res, payload, code = 200, rateInfo) {
-  const headers = { 'Content-Type': 'application/json; charset=utf-8' };
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Cache-Control': 'no-store'
+  };
   if (rateInfo) {
     headers['X-RateLimit-Limit'] = String(rateInfo.limit || DEFAULT_RATE_LIMIT);
     headers['X-RateLimit-Remaining'] = String(rateInfo.remaining ?? '');
@@ -110,6 +115,22 @@ function apiJson(res, payload, code = 200, rateInfo) {
 
 function apiError(res, code, error, message, rateInfo) {
   apiJson(res, { ok: false, error, message, api_version: API_VERSION }, code, rateInfo);
+}
+
+const API_MAX_BODY_BYTES = 1024 * 100; // 100 KB
+
+function collectApiBody(req, res, rateInfo, cb) {
+  let body = '';
+  let overflow = false;
+  req.on('data', c => {
+    if (overflow) return;
+    body += c;
+    if (body.length > API_MAX_BODY_BYTES) {
+      overflow = true;
+      apiError(res, 413, 'payload_too_large', 'Request body exceeds size limit.', rateInfo);
+    }
+  });
+  req.on('end', () => { if (!overflow) cb(body); });
 }
 
 /* ── Route handler factory ─────────────────────────────────────────── */
@@ -156,7 +177,16 @@ function createApiHandler(deps) {
     ];
     for (const user of allUsers) {
       const keys = user.apiKeys || [];
-      const match = keys.find(k => k.key === apiKey && k.active !== false);
+      const match = keys.find(k => {
+        if (k.active === false) return false;
+        try {
+          // Use HMAC to produce fixed-length digests so timingSafeEqual is constant-time
+          // regardless of the original key lengths.
+          const hmacA = crypto.createHmac('sha256', 'betman-key-cmp').update(k.key).digest();
+          const hmacB = crypto.createHmac('sha256', 'betman-key-cmp').update(apiKey).digest();
+          return crypto.timingSafeEqual(hmacA, hmacB);
+        } catch { return false; }
+      });
       if (match) {
         return {
           keyRecord: match,
@@ -549,9 +579,7 @@ function createApiHandler(deps) {
     /* ── POST /api/v1/ask-betman ──────────────────────────────────── */
     if (req.method === 'POST' && route === '/ask-betman') {
       return new Promise((resolve) => {
-        let body = '';
-        req.on('data', c => body += c);
-        req.on('end', () => {
+        collectApiBody(req, res, rateInfo, (body) => {
           let payload;
           try { payload = body ? JSON.parse(body) : {}; } catch {
             apiError(res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);
@@ -853,9 +881,7 @@ function createApiHandler(deps) {
     /* POST /api/v1/keys — create new API key (admin can create for any user) */
     if (req.method === 'POST' && route === '/keys') {
       return new Promise((resolve) => {
-        let body = '';
-        req.on('data', c => body += c);
-        req.on('end', () => {
+        collectApiBody(req, res, rateInfo, (body) => {
           let payload;
           try { payload = body ? JSON.parse(body) : {}; } catch {
             apiError(res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);
@@ -918,9 +944,7 @@ function createApiHandler(deps) {
     /* DELETE /api/v1/keys — revoke an API key */
     if (req.method === 'DELETE' && route === '/keys') {
       return new Promise((resolve) => {
-        let body = '';
-        req.on('data', c => body += c);
-        req.on('end', () => {
+        collectApiBody(req, res, rateInfo, (body) => {
           let payload;
           try { payload = body ? JSON.parse(body) : {}; } catch {
             apiError(res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);

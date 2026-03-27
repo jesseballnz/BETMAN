@@ -293,8 +293,56 @@ async function initAuthPersistence(){
   }
 }
 
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()'
+};
+
+const MAX_BODY_BYTES = 1024 * 512; // 512 KB
+
+/** Per-IP sliding-window rate limiter for auth endpoints.
+ *  Assumes the server runs behind a trusted reverse proxy that sets x-forwarded-for. */
+const authRateBuckets = new Map();
+const AUTH_RATE_LIMIT = 15;       // max attempts per window
+const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+// Clean up expired entries every 5 minutes; retain 2× window to avoid premature eviction
+setInterval(() => {
+  const cutoff = Date.now() - AUTH_RATE_WINDOW_MS * 2;
+  for (const [ip, bucket] of authRateBuckets) {
+    bucket.hits = bucket.hits.filter(ts => ts > cutoff);
+    if (bucket.hits.length === 0) authRateBuckets.delete(ip);
+  }
+}, 5 * 60 * 1000).unref();
+
+function checkAuthRate(req) {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+  let bucket = authRateBuckets.get(ip);
+  if (!bucket) { bucket = { hits: [] }; authRateBuckets.set(ip, bucket); }
+  bucket.hits = bucket.hits.filter(ts => (now - ts) < AUTH_RATE_WINDOW_MS);
+  if (bucket.hits.length >= AUTH_RATE_LIMIT) return false;
+  bucket.hits.push(now);
+  return true;
+}
+
+function collectBody(req, res, cb) {
+  let body = '';
+  let overflow = false;
+  req.on('data', c => {
+    if (overflow) return;
+    body += c;
+    if (body.length > MAX_BODY_BYTES) {
+      overflow = true;
+      send(res, 413, JSON.stringify({ ok: false, error: 'payload_too_large' }), 'application/json');
+    }
+  });
+  req.on('end', () => { if (!overflow) cb(body); });
+}
+
 function send(res, code, body, type='text/plain'){
-  res.writeHead(code, {'Content-Type': type});
+  res.writeHead(code, { 'Content-Type': type, ...SECURITY_HEADERS });
   res.end(body);
 }
 
@@ -665,6 +713,16 @@ function okJson(res, payload, code = 200){
   send(res, code, JSON.stringify(payload, null, 2), 'application/json');
 }
 
+function sessionCookie(req, sid, maxAge) {
+  const secure = (req.headers['x-forwarded-proto'] === 'https') ? '; Secure' : '';
+  return `betman_session=${encodeURIComponent(sid)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+}
+
+function clearSessionCookie(req) {
+  const secure = (req.headers['x-forwarded-proto'] === 'https') ? '; Secure' : '';
+  return `betman_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+}
+
 function normalizeUsername(u){
   const v = String(u || '').trim();
   // Email-style usernames are matched case-insensitively.
@@ -813,7 +871,7 @@ function requireAuth(req, res){
   };
   if (HTTP_BASIC_PROMPT) headers['WWW-Authenticate'] = 'Basic realm="BETMAN", charset="UTF-8"';
   const cookies = parseCookies(req);
-  if (cookies.betman_session) headers['Set-Cookie'] = 'betman_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+  if (cookies.betman_session) headers['Set-Cookie'] = clearSessionCookie(req);
   res.writeHead(401, headers);
   res.end(JSON.stringify({ ok: false, error: 'auth_required' }));
   return false;
@@ -3584,35 +3642,34 @@ const server = http.createServer(async (req, res)=>{
     const principal = forceLanding ? null : getAuthPrincipal(req);
     if (principal) {
       const appPath = safePath('/index.html');
-      res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
+      res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate', ...SECURITY_HEADERS });
       return res.end(fs.readFileSync(appPath));
     }
     const landingPath = safePath('/landing.html');
-    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate', ...SECURITY_HEADERS });
     return res.end(fs.readFileSync(landingPath));
   }
 
   if (req.method === 'GET' && (url.pathname === '/set-password' || url.pathname === '/set-password.html')) {
     const p = safePath('/set-password.html');
-    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate', ...SECURITY_HEADERS });
     return res.end(fs.readFileSync(p));
   }
 
   if (req.method === 'GET' && (url.pathname === '/why' || url.pathname === '/why.html')) {
     const p = safePath('/why.html');
-    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate', ...SECURITY_HEADERS });
     return res.end(fs.readFileSync(p));
   }
 
   if (req.method === 'POST' && url.pathname === '/api/login') {
-    let body='';
-    req.on('data', c=>body+=c);
-    req.on('end', async ()=>{
+    if (!checkAuthRate(req)) return okJson(res, { ok: false, error: 'rate_limited' }, 429);
+    collectBody(req, res, async (body) => {
       try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
-      const username = String(payload.username || '').trim();
-      const password = String(payload.password || '');
+      const username = String(payload.username || '').trim().slice(0, 254);
+      const password = String(payload.password || '').slice(0, 128);
       const principal = validateCredentials(username, password);
       if (!principal) {
         const idx = (authState.users || []).findIndex(u => normalizeUsername(u.username) === normalizeUsername(username));
@@ -3679,7 +3736,7 @@ const server = http.createServer(async (req, res)=>{
       }
 
       const sid = createSession(principal);
-      res.setHeader('Set-Cookie', `betman_session=${encodeURIComponent(sid)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}`);
+      res.setHeader('Set-Cookie', sessionCookie(req, sid, Math.floor(SESSION_TTL_MS/1000)));
       return okJson(res, {
         ok: true,
         user: principal.username,
@@ -3705,9 +3762,8 @@ const server = http.createServer(async (req, res)=>{
   }
 
   if (req.method === 'POST' && url.pathname === '/api/password-setup-link') {
-    let body='';
-    req.on('data', c=>body+=c);
-    req.on('end', async ()=>{
+    if (!checkAuthRate(req)) return okJson(res, { ok: false, error: 'rate_limited' }, 429);
+    collectBody(req, res, async (body) => {
       try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
@@ -3771,14 +3827,13 @@ const server = http.createServer(async (req, res)=>{
   }
 
   if (req.method === 'POST' && url.pathname === '/api/set-password') {
-    let body='';
-    req.on('data', c=>body+=c);
-    req.on('end', ()=>{
+    if (!checkAuthRate(req)) return okJson(res, { ok: false, error: 'rate_limited' }, 429);
+    collectBody(req, res, (body) => {
       try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const token = String(payload.token || '').trim();
-      const password = String(payload.password || '');
+      const password = String(payload.password || '').slice(0, 128);
       if (!token) return okJson(res, { ok: false, error: 'token_required' }, 400);
       if (!password || password.length < 8) return okJson(res, { ok: false, error: 'password_too_short' }, 400);
       const users = [...(authState.users || [])];
@@ -3798,9 +3853,7 @@ const server = http.createServer(async (req, res)=>{
   }
 
   if (req.method === 'POST' && url.pathname === '/api/stripe-webhook') {
-    let body='';
-    req.on('data', c=>body+=c);
-    req.on('end', async ()=>{
+    collectBody(req, res, async (body) => {
       try {
         const stripe = getStripe();
         if (!stripe) return okJson(res, { ok: false, error: 'stripe_not_configured' }, 503);
@@ -3810,6 +3863,7 @@ const server = http.createServer(async (req, res)=>{
         if (STRIPE_WEBHOOK_SECRET && sig) {
           event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
         } else {
+          console.warn('stripe_webhook: processing without signature verification — set STRIPE_WEBHOOK_SECRET for production');
           event = JSON.parse(body || '{}');
         }
 
@@ -3843,7 +3897,8 @@ const server = http.createServer(async (req, res)=>{
 
         return okJson(res, { ok: true });
       } catch (e) {
-        return okJson(res, { ok: false, error: 'webhook_failed', detail: e.message }, 400);
+        console.error('webhook_failed', e?.message || e);
+        return okJson(res, { ok: false, error: 'webhook_failed' }, 400);
       }
     });
     return;
@@ -3858,22 +3913,21 @@ const server = http.createServer(async (req, res)=>{
   }
 
   if (req.method === 'POST' && url.pathname === '/api/signup') {
-    let body='';
-    req.on('data', c=>body+=c);
-    req.on('end', async ()=>{
+    if (!checkAuthRate(req)) return okJson(res, { ok: false, error: 'rate_limited' }, 429);
+    collectBody(req, res, async (body) => {
       try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const planTypeInput = String(payload.planType || 'single').toLowerCase();
       const planType = planTypeInput === 'commercial' ? 'commercial' : (planTypeInput === 'single_day' || planTypeInput === 'single-day' || planTypeInput === 'day' ? 'single_day' : 'single');
-      const firstNameInput = String(payload.firstName || '');
-      const lastNameInput = String(payload.lastName || '');
-      const companyNameInput = String(payload.companyName || '');
+      const firstNameInput = String(payload.firstName || '').slice(0, 100);
+      const lastNameInput = String(payload.lastName || '').slice(0, 100);
+      const companyNameInput = String(payload.companyName || '').slice(0, 200);
       const firstName = firstNameInput;
       const lastName = lastNameInput;
       const companyName = companyNameInput;
-      const email = normalizeEmail(payload.email || '');
-      const password = String(payload.password || '');
+      const email = normalizeEmail(payload.email || '').slice(0, 254);
+      const password = String(payload.password || '').slice(0, 128);
       const token = String(payload.challengeToken || '');
       const answerInput = String(payload.challengeAnswer || '');
       const answer = answerInput;
@@ -4033,7 +4087,7 @@ const server = http.createServer(async (req, res)=>{
         .then(r => okJson(res, r))
         .catch(e => {
           console.error('stripe_sync_failed', e?.message || e);
-          okJson(res, { ok: false, error: 'stripe_sync_failed', detail: e.message }, 500);
+          okJson(res, { ok: false, error: 'stripe_sync_failed' }, 500);
         });
       return;
     }
@@ -4528,13 +4582,11 @@ if (req.method === 'GET' && url.pathname === '/api/race-analysis') {
 }
 
 if (url.pathname === '/api/ask-selection') {
-  let body='';
-  req.on('data', c=>body+=c);
-  req.on('end', async ()=>{
+  collectBody(req, res, async (body) => {
     try {
     let payload = {};
     try { payload = body ? JSON.parse(body) : {}; } catch {}
-    const question = String(payload.question || '').trim();
+    const question = String(payload.question || '').trim().slice(0, 4000);
     if (!question) return okJson(res, { ok: false, error: 'missing_question' }, 400);
 
     const q = question.toLowerCase();
@@ -5285,7 +5337,7 @@ if (url.pathname === '/api/ask-selection') {
       const raw = latest.replace(/^leaderboard-/i, 'bakeoff-').replace(/\.json$/i, '.jsonl');
       return okJson(res, { ok: true, ...payload, file: latest, markdown: fs.existsSync(path.join(dir, markdown)) ? markdown : null, raw: fs.existsSync(path.join(dir, raw)) ? raw : null });
     } catch (e) {
-      return okJson(res, { ok: false, error: 'read_failed', detail: String(e.message || e) }, 500);
+      return okJson(res, { ok: false, error: 'read_failed' }, 500);
     }
   }
 
@@ -5346,7 +5398,7 @@ if (url.pathname === '/api/ask-selection') {
     if (cookies.betman_session) sessions.delete(cookies.betman_session);
     const headers = {
       'Content-Type': 'application/json',
-      'Set-Cookie': 'betman_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'Set-Cookie': clearSessionCookie(req),
       'X-Auth-Reason': 'logout'
     };
     if (HTTP_BASIC_PROMPT) headers['WWW-Authenticate'] = 'Basic realm="BETMAN-LOGOUT", charset="UTF-8"';

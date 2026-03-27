@@ -2512,6 +2512,7 @@ function renderSuggested(rows){
   if (!mainRows.length) {
     const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
     mainRows = orderRowsAroundSelectedRace((latestSuggestedBets || suggestedSource)
+      .filter(r => meetingMatches(r.meeting))
       .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase())));
   }
 
@@ -3926,6 +3927,7 @@ function renderNextPlanned(rows){
   }
   if (!scoped.length) {
     scoped = (rows || [])
+      .filter(r => meetingMatches(r.meeting))
       .slice()
       .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn))
       .slice(0, 5);
