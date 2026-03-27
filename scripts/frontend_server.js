@@ -1286,6 +1286,71 @@ function isLiveRaceEntry(entry, allRaces) {
 const MIN_AI_ANSWER_LENGTH = 60;
 const MIN_RACE_ANALYSIS_ANSWER_LENGTH = 80;
 
+/* ── deepseek-r1 <think> tag handling ── */
+function stripThinkingTags(text){
+  const s = String(text || '');
+  // Remove <think>…</think> blocks (greedy across newlines)
+  return s.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+/* ── Hallucination / off-topic detector ── */
+const RACING_ANCHOR_PATTERNS = [
+  /\brace\b/i, /\brunner\b/i, /\bhorse\b/i, /\bjockey\b/i, /\btrainer\b/i,
+  /\bodds\b/i, /\bbarrier\b/i, /\bform\b/i, /\bwin\b/i, /\bplace\b/i,
+  /\bmulti\b/i, /\bbet\b/i, /\bpunter\b/i, /\btrack\b/i, /\bmeeting\b/i,
+  /\bgallop/i, /\bharness\b/i, /\bgreyhound\b/i, /\btrot\b/i, /\bpace\b/i,
+  /\bfield\b/i, /\bstake\b/i, /\bhandicap\b/i, /\bsteward\b/i, /\bweight\b/i,
+  /\bdistance\b/i, /\bfurlong\b/i, /\bmaiden\b/i, /\bhurdle\b/i, /\bsteeple/i,
+  /\bbookmaker\b/i, /\btote\b/i, /\bfixed odds\b/i, /\bexotic\b/i,
+  /\btrifecta\b/i, /\bquinella\b/i, /\bexacta\b/i, /\bquaddie\b/i,
+  /\bsire\b/i, /\bdam\b/i, /\bpedigree\b/i, /\bspeed map\b/i,
+  /\bsectional\b/i, /\bmargin\b/i, /\brun home\b/i, /\blast start/i,
+  /\btrial\b/i, /\bfavourite\b/i, /\bfavorite\b/i, /\bscratching\b/i,
+  /\bnomination\b/i, /\bacceptor\b/i, /\bdividend\b/i, /\bplunge\b/i,
+  /\bracing\b/i, /\bthoroughbred\b/i
+];
+
+const HALLUCINATION_SIGNALS = [
+  /\b(?:stock|stocks|equity|equities|ETF|index fund|mutual fund)s?\b/i,
+  /\b(?:cryptocurrency|bitcoin|ethereum|blockchain|token sale|ICO)\b/i,
+  /\b(?:dollar.cost.averaging|portfolio allocation|asset class)\b/i,
+  /\b(?:S&P\s?500|NASDAQ|NYSE|Dow\sJones|ASX\s(?:200|300))\b/i,
+  /\b(?:forex|foreign exchange|currency pair|pip|spread trading)\b/i,
+  /\b(?:real estate investment|REIT|property market|mortgage rate)\b/i,
+  /\b(?:bond yield|treasury|coupon rate|credit default)\b/i,
+  /\b(?:machine learning model|neural network|deep learning)\b/i,
+  /\b(?:recipe|cooking|baking|ingredients|tablespoon)\b/i,
+  /\b(?:diagnosis|symptom|medication|prescription|dosage)\b/i
+];
+
+function isHallucinatedAnswer(answer){
+  const txt = String(answer || '').toLowerCase();
+  if (txt.length < MIN_AI_ANSWER_LENGTH) return false; // too short to judge
+
+  // Count how many racing-related anchor terms appear (word-boundary matched)
+  let racingHits = 0;
+  for (const rx of RACING_ANCHOR_PATTERNS){
+    if (rx.test(txt)) racingHits++;
+  }
+
+  // Check for off-topic hallucination signals
+  let hallucinationHits = 0;
+  for (const rx of HALLUCINATION_SIGNALS){
+    if (rx.test(txt)) hallucinationHits++;
+  }
+
+  // If multiple hallucination signals fire AND few/no racing terms ⇒ hallucinated
+  if (hallucinationHits >= 2 && racingHits < 5) return true;
+
+  // Even a single hallucination signal with almost no racing terms ⇒ off-topic
+  if (hallucinationHits >= 1 && racingHits < 3) return true;
+
+  // If substantial answer but zero racing anchor terms ⇒ likely off-topic
+  if (txt.length >= 200 && racingHits === 0) return true;
+
+  return false;
+}
+
 function aiAnswerRespectsSelections(answer, payload){
   const sels = Array.isArray(payload?.selections) ? payload.selections : [];
   if (!sels.length) return true;
@@ -3473,13 +3538,25 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
       try {
         const out = await response.json();
-        const txt = out?.message?.content;
+
+        // deepseek-r1 models may return content inside <think> tags — strip them
+        let txt = String(out?.message?.content || '');
+        txt = stripThinkingTags(txt);
+
         if (!txt) {
-          console.error('ollama_no_text', JSON.stringify(out || {}));
+          console.error('ollama_no_text', JSON.stringify({ done_reason: out?.done_reason, model: out?.model }));
           lastError = new Error('ollama_no_text');
           continue;
         }
-        answer = String(txt).trim();
+
+        // Reject truncated responses (model ran out of tokens before finishing)
+        if (out?.done_reason === 'length') {
+          console.error('ollama_truncated', modelForBase, 'answer_chars', txt.length);
+          lastError = new Error('ollama_truncated');
+          continue;
+        }
+
+        answer = txt.trim();
         effectiveModel = modelForBase;
         lastError = null;
         break;
@@ -4715,6 +4792,8 @@ if (url.pathname === '/api/ask-selection') {
       const ai = await buildSelectionAiAnswer(question, payload, tenantId, aiProvider);
       if (ai && ai.answer && String(ai.answer).trim().length < MIN_AI_ANSWER_LENGTH) {
         fallbackReason = 'answer_too_short';
+      } else if (ai && ai.answer && isHallucinatedAnswer(ai.answer)) {
+        fallbackReason = 'hallucination_guard';
       } else if (ai && ai.answer && isRaceAnalysis) {
         const aiSelectionSafe = aiAnswerRespectsSelections(ai.answer, payload);
         const aiRaceSafe = raceAnalysisMatchesContext(ai.answer, payload);
@@ -5551,5 +5630,7 @@ module.exports = {
   inferTemporalRaceAtVenue,
   formatStatsCompact,
   isLiveRaceEntry,
-  FINISHED_RACE_STATUSES
+  FINISHED_RACE_STATUSES,
+  stripThinkingTags,
+  isHallucinatedAnswer
 };
