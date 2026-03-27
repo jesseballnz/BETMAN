@@ -2269,7 +2269,7 @@ const describeRunner = (runner, raceInfo, impliedPct) => {
   if (runner) {
     const tags = [];
     if (runner.runner_number != null) tags.push(`#${runner.runner_number}`);
-    if (runner.barrier != null) tags.push(`gate ${runner.barrier}`);
+    if (runner.barrier != null) tags.push(`Gate ${runner.barrier}`);
     if (runner.age) tags.push(`${runner.age}yo`);
     if (runner.sex) tags.push(runner.sex);
     const tagStr = tags.length ? ` (${tags.join(', ')})` : '';

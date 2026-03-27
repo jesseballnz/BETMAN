@@ -8,8 +8,7 @@ const {
   inferNextRaceAtVenue,
   formatStatsCompact,
   buildAiContextSummary,
-  buildSelectionFactAnswer,
-  inferMeetingFromQuestion
+  buildSelectionFactAnswer
 } = require(path.join(ROOT, 'scripts', 'frontend_server.js'));
 
 // ─── inferNextRaceAtVenue ───────────────────────────────────────────────────
