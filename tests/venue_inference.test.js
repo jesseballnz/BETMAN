@@ -201,6 +201,13 @@ assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui', race_number: '6' }, al
 // 20) Case-insensitive meeting matching
 assert.strictEqual(isLiveRaceEntry({ meeting: 'WINGATUI', race: '1' }, allRacesForFilter), false, 'Case-insensitive meeting should match');
 
+// 21) Edge cases: missing/malformed fields treated as live (safe default)
+assert.strictEqual(isLiveRaceEntry({}, allRacesForFilter), true, 'Empty entry should be treated as live');
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui' }, allRacesForFilter), true, 'Entry with no race field should be treated as live');
+assert.strictEqual(isLiveRaceEntry({ race: '1' }, allRacesForFilter), true, 'Entry with no meeting field should be treated as live');
+assert.strictEqual(isLiveRaceEntry({ meeting: null, race: null }, allRacesForFilter), true, 'Null fields should be treated as live');
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui', race: '1' }, []), true, 'Empty allRaces should treat entry as live');
+
 // 21) buildAiContextSummary should not include interesting runners or movers from finished races
 const summaryWithFinished = buildAiContextSummary({
   status: { updatedAt: 'now', apiStatus: 'ok' },
