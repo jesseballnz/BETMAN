@@ -100,7 +100,7 @@ assert(a6.includes('Not So Unusual'));
 assert(/Next in line:/i.test(a6));
 
 const formatted = enforceDecisionAnswerFormat('Raw output without structure');
-['Verdict:', 'Market edge:', 'Risk:', 'Invalidation points:'].forEach(token => {
+['Verdict:', 'Market edge:', 'Risk:', 'Pass conditions:'].forEach(token => {
   assert(formatted.includes(token));
 });
 

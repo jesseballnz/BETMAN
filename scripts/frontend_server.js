@@ -920,6 +920,7 @@ async function fetchOllamaModelsForBase(base){
       models = DEFAULT_OLLAMA_FALLBACK_MODELS.slice();
     }
   } catch (err) {
+    console.error('ollama_models_fetch_error', normalized, err?.message || err);
     if (cached && Array.isArray(cached.models) && cached.models.length) {
       clearTimeout(timer);
       return { base: normalized, models: cached.models.slice(), ok: !!cached.ok };
@@ -1210,6 +1211,9 @@ function mergeSelections(explicit = [], inferred = []){
   return merged;
 }
 
+const MIN_AI_ANSWER_LENGTH = 60;
+const MIN_RACE_ANALYSIS_ANSWER_LENGTH = 80;
+
 function aiAnswerRespectsSelections(answer, payload){
   const sels = Array.isArray(payload?.selections) ? payload.selections : [];
   if (!sels.length) return true;
@@ -1288,10 +1292,10 @@ function enforceDecisionAnswerFormat(answer){
   const hasRisk = /\brisk\b/i.test(out);
   const hasInvalidation = /invalidation|pass\s+conditions?/i.test(out);
 
-  if (!hasVerdict) out += `\n\nVerdict: Use only if edge remains positive versus current market.`;
-  if (!hasEdge) out += `\nMarket edge: unavailable from current response text.`;
-  if (!hasRisk) out += `\nRisk: medium (variance and pace-shape uncertainty).`;
-  if (!hasInvalidation) out += `\nInvalidation points: pass if market drifts materially or race shape changes against setup.`;
+  if (!hasVerdict) out += `\n\nVerdict: Refer to the analysis above — verify edge is positive before acting.`;
+  if (!hasEdge) out += `\nMarket edge: not calculated in this response — check odds table above.`;
+  if (!hasRisk) out += `\nRisk: assess based on field size and pace-shape uncertainty.`;
+  if (!hasInvalidation) out += `\nPass conditions: pass if market drifts beyond edge or race shape changes against setup.`;
   return out;
 }
 
@@ -1313,6 +1317,7 @@ function isMalformedJsonLikeAnswer(answer){
 
 function raceAnalysisMatchesContext(answer, clientContext = {}){
   const txt = String(answer || '');
+  if (txt.length < MIN_RACE_ANALYSIS_ANSWER_LENGTH) return false;
   const rc = clientContext?.raceContext || {};
   const meeting = String(rc.meeting || '').trim();
   const raceNo = String(rc.raceNumber || '').replace(/^R/i, '').trim();
@@ -1321,8 +1326,6 @@ function raceAnalysisMatchesContext(answer, clientContext = {}){
   const hasMeeting = new RegExp(meeting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(txt);
   const raceMentions = [...txt.matchAll(/\bR(?:ace)?\s*([0-9]{1,2})\b/gi)].map(m => String(m[1]));
   if (raceMentions.length && !raceMentions.includes(raceNo)) return false;
-  // Meeting name is preferred but not mandatory; avoid false fallback when model omits header text.
-  if (!hasMeeting && !raceMentions.length) return true;
   return true;
 }
 
@@ -1944,8 +1947,13 @@ function enforceRaceAnalysisAnswerFormat(answer, clientContext = {}, tenantId = 
   // Remove low-value generic boilerplate carried over from decision-format enforcement.
   out = out
     .replace(/\n?Verdict:\s*Use only if edge remains positive versus current market\.?/ig, '')
+    .replace(/\n?Verdict:\s*Refer to the analysis above.*?before acting\.?/ig, '')
     .replace(/\n?Risk:\s*medium\s*\(variance and pace-shape uncertainty\)\.?/ig, '')
+    .replace(/\n?Risk:\s*assess based on field size and pace-shape uncertainty\.?/ig, '')
     .replace(/\n?Invalidation points:\s*pass if market drifts materially or race shape changes against setup\.?/ig, '')
+    .replace(/\n?Pass conditions:\s*pass if market drifts beyond edge or race shape changes against setup\.?/ig, '')
+    .replace(/\n?Market edge:\s*not calculated in this response.*?above\.?/ig, '')
+    .replace(/\n?Market edge:\s*unavailable from current response text\.?/ig, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   const rc = clientContext?.raceContext || {};
@@ -2521,10 +2529,10 @@ async function searchWebSnippets(query, maxResults = 5){
         })).filter(x => x.url);
         if (rows.length) return rows;
       } else {
-        console.warn('brave_search_failed', r.status);
+        console.error('brave_search_failed', r.status);
       }
     } catch (err) {
-      console.warn('brave_search_error', err?.message || err);
+      console.error('brave_search_error', err?.message || err);
     }
   }
 
@@ -2534,7 +2542,7 @@ async function searchWebSnippets(query, maxResults = 5){
       headers: { 'User-Agent': 'Mozilla/5.0 BETMAN/1.0' }
     }, searchTimeout);
     if (!r.ok) {
-      console.warn('ddg_search_failed', r.status);
+      console.error('ddg_search_failed', r.status);
       return [];
     }
     const html = await r.text();
@@ -2549,7 +2557,7 @@ async function searchWebSnippets(query, maxResults = 5){
     }
     return out;
   } catch (err) {
-    console.warn('ddg_search_error', err?.message || err);
+    console.error('ddg_search_error', err?.message || err);
     return [];
   }
 }
@@ -2835,7 +2843,14 @@ function buildAiContextSummary({
 
   const summary = lines.filter(Boolean).join('\n');
   if (summary.length <= maxLength) return summary;
-  return `${summary.slice(0, maxLength - 1)}…`;
+  // Truncate lower-priority sections first (from end) instead of slicing mid-content.
+  const trimmed = lines.filter(Boolean);
+  while (trimmed.join('\n').length > maxLength && trimmed.length > 1) {
+    trimmed.pop();
+  }
+  const result = trimmed.join('\n');
+  if (result.length <= maxLength) return result;
+  return `${result.slice(0, maxLength - 1)}…`;
 }
 
 const BETMAN_ANALYST_SYSTEM_PROMPT = `You are BETMAN's senior racing analyst. Be direct, structured, and evidence-first.
@@ -3009,7 +3024,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   } catch (e) {
     // For race-analysis/strategy, internet context is optional; keep going with local race context.
     if (!webOptional) throw e;
-    console.warn('optional_web_context_unavailable', String(e?.message || e));
+    console.error('optional_web_context_unavailable', String(e?.message || e));
   }
   if (!webOptional && !webContext?.results?.length) throw new Error('web_context_unavailable');
 
@@ -3298,7 +3313,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
           return await runOllamaOnce(baseUrl, modelName);
         } catch (err) {
           lastErr = err;
-          console.warn('ollama_attempt_failed', baseUrl, modelName, `attempt ${attempt}/${maxAttempts}`, err?.message || err);
+          console.error('ollama_attempt_failed', baseUrl, modelName, `attempt ${attempt}/${maxAttempts}`, err?.message || err);
           if (attempt < maxAttempts) {
             await new Promise(res => setTimeout(res, attempt * 200));
           }
@@ -3319,12 +3334,12 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         response = await runOllamaWithRetry(base, modelForBase);
       } catch (err) {
         lastError = err;
-        console.warn('ollama_request_failed', base, err?.message || err);
+        console.error('ollama_request_failed', base, err?.message || err);
         continue;
       }
 
       if (!response.ok && response.status === 404) {
-        console.warn('ollama_model_missing', modelForBase, 'base', base);
+        console.error('ollama_model_missing', modelForBase, 'base', base);
       }
 
       if (!response.ok) {
@@ -3336,7 +3351,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         const out = await response.json();
         const txt = out?.message?.content;
         if (!txt) {
-          console.warn('ollama_no_text', JSON.stringify(out || {}));
+          console.error('ollama_no_text', JSON.stringify(out || {}));
           lastError = new Error('ollama_no_text');
           continue;
         }
@@ -3346,7 +3361,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         break;
       } catch (err) {
         lastError = err;
-        console.warn('ollama_response_parse_error', err?.message || err);
+        console.error('ollama_response_parse_error', err?.message || err);
       }
     }
 
@@ -3384,7 +3399,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         } catch (err) {
           errorDetail = `read_error:${err?.message || err}`;
         }
-        console.warn('openai_response_error', r.status, errorDetail.slice(0, 400));
+        console.error('openai_response_error', r.status, errorDetail.slice(0, 400));
         throw new Error(`openai_${r.status}`);
       }
       const out = await r.json();
@@ -3400,7 +3415,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       }
       const txt = textParts.join('\n').trim();
       if (!txt) {
-        console.warn('openai_no_text', JSON.stringify(out || {}));
+        console.error('openai_no_text_responses_api', JSON.stringify(out || {}));
         return null;
       }
       answer = String(txt).trim();
@@ -3432,13 +3447,13 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         } catch (err) {
           errorDetail = `read_error:${err?.message || err}`;
         }
-        console.warn('openai_error_response', r.status, errorDetail.slice(0, 400));
+        console.error('openai_error_response', r.status, errorDetail.slice(0, 400));
         throw new Error(`openai_${r.status}`);
       }
       const out = await r.json();
       const txt = out?.choices?.[0]?.message?.content;
       if (!txt) {
-        console.warn('openai_no_text', JSON.stringify(out || {}));
+        console.error('openai_no_text', JSON.stringify(out || {}));
         return null;
       }
       answer = String(txt).trim();
@@ -3524,6 +3539,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const username = String(payload.username || '').trim();
@@ -3601,6 +3617,10 @@ const server = http.createServer(async (req, res)=>{
         tenantId: principal.tenantId || 'default',
         effectiveTenantId: principal.effectiveTenantId || (principal.tenantId || 'default')
       });
+      } catch (err) {
+        console.error('login_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3619,6 +3639,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const email = normalizeEmail(payload.email || '');
@@ -3655,19 +3676,27 @@ const server = http.createServer(async (req, res)=>{
       }
 
       if (!user) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
-      if (!sub) sub = await checkSubscriptionByUser(user);
-      if (sub.enforceable && !sub.active) {
+      // Existing local accounts (live accounts) can always reset their password;
+      // subscription enforcement happens at login. Only gate new-to-system users.
+      if (!sub) sub = await checkSubscriptionByUser(user).catch(() => ({ enforceable: false, active: false }));
+      const isLiveAccount = idx >= 0;
+      if (!isLiveAccount && sub.enforceable && !sub.active) {
         return okJson(res, { ok: false, error: 'subscription_required', paymentLink: paymentLinkForPlan(user.planType), planType: user.planType || 'single' }, 402);
       }
       const token = makeSetupToken();
       const setupExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
       const users = [...(authState.users || [])];
       if (idx >= 0) {
-        users[idx] = { ...users[idx], setupToken: token, setupExpiresAt, subscriptionActive: true, subscriptionStatus: 'active', stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
+        const subUpdate = sub.active ? { subscriptionActive: true, subscriptionStatus: 'active' } : {};
+        users[idx] = { ...users[idx], ...subUpdate, setupToken: token, setupExpiresAt, stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
         saveAuthState({ username: authState.username, password: authState.password, users });
       }
       const setupLink = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}/set-password?token=${encodeURIComponent(token)}`;
       return okJson(res, { ok: true, setupLink });
+      } catch (err) {
+        console.error('password_setup_link_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3676,6 +3705,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const token = String(payload.token || '').trim();
@@ -3690,6 +3720,10 @@ const server = http.createServer(async (req, res)=>{
       users[idx] = { ...users[idx], password, setupToken: null, setupExpiresAt: null, updatedAt: new Date().toISOString() };
       saveAuthState({ username: authState.username, password: authState.password, users });
       return okJson(res, { ok: true, user: users[idx].username });
+      } catch (err) {
+        console.error('set_password_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3720,7 +3754,9 @@ const server = http.createServer(async (req, res)=>{
             try {
               const c = await stripe.customers.retrieve(customerId);
               email = normalizeEmail(c?.email || '');
-            } catch {}
+            } catch (stripeErr) {
+              console.error('webhook_stripe_customer_retrieve_failed', customerId, stripeErr?.message || stripeErr);
+            }
           }
           if (email) {
             const planType = inferPlanTypeFromStripe(obj);
@@ -3756,6 +3792,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const planTypeInput = String(payload.planType || 'single').toLowerCase();
@@ -3813,11 +3850,17 @@ const server = http.createServer(async (req, res)=>{
         verifiedBy: 'self-signup',
         createdAt: new Date().toISOString()
       };
-      try { newUser = await ensureStripeCustomerForUser(newUser); } catch {}
+      try { newUser = await ensureStripeCustomerForUser(newUser); } catch (stripeErr) {
+        console.error('signup_stripe_customer_failed', email, stripeErr?.message || stripeErr);
+      }
 
       const users = [...(authState.users || []), newUser];
       saveAuthState({ username: authState.username, password: authState.password, users });
       return okJson(res, { ok: true, user: email, paymentLink: paymentLinkForPlan(planType) || null });
+      } catch (err) {
+        console.error('signup_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3919,7 +3962,10 @@ const server = http.createServer(async (req, res)=>{
       if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
       syncProvisioningFromStripe()
         .then(r => okJson(res, r))
-        .catch(e => okJson(res, { ok: false, error: 'stripe_sync_failed', detail: e.message }, 500));
+        .catch(e => {
+          console.error('stripe_sync_failed', e?.message || e);
+          okJson(res, { ok: false, error: 'stripe_sync_failed', detail: e.message }, 500);
+        });
       return;
     }
 
@@ -4416,6 +4462,7 @@ if (url.pathname === '/api/ask-selection') {
   let body='';
   req.on('data', c=>body+=c);
   req.on('end', async ()=>{
+    try {
     let payload = {};
     try { payload = body ? JSON.parse(body) : {}; } catch {}
     const question = String(payload.question || '').trim();
@@ -4545,7 +4592,9 @@ if (url.pathname === '/api/ask-selection') {
     let aiMeta = null;
     try {
       const ai = await buildSelectionAiAnswer(question, payload, tenantId, aiProvider);
-      if (ai && ai.answer && isRaceAnalysis) {
+      if (ai && ai.answer && String(ai.answer).trim().length < MIN_AI_ANSWER_LENGTH) {
+        fallbackReason = 'answer_too_short';
+      } else if (ai && ai.answer && isRaceAnalysis) {
         const aiSelectionSafe = aiAnswerRespectsSelections(ai.answer, payload);
         const aiRaceSafe = raceAnalysisMatchesContext(ai.answer, payload);
         const aiJsonSafe = !isMalformedJsonLikeAnswer(ai.answer);
@@ -4698,6 +4747,10 @@ if (url.pathname === '/api/ask-selection') {
       historyCharsUsed: aiMeta?.historyCharsUsed ?? fallbackCharsMeta,
       fallbackReason: mode === 'fallback' ? fallbackReason : null
     });
+    } catch (err) {
+      console.error('ask_selection_error', err?.message || err);
+      return okJson(res, { ok: false, error: 'internal_error', detail: err?.message || 'unexpected_error' }, 500);
+    }
   });
   return;
 }
@@ -4740,6 +4793,7 @@ if (url.pathname === '/api/ask-selection') {
       let body='';
       req.on('data', c=>body+=c);
       req.on('end', async ()=>{
+        try {
         let payload = {};
         try { payload = body ? JSON.parse(body) : {}; } catch {}
 
@@ -4805,11 +4859,17 @@ if (url.pathname === '/api/ask-selection') {
           verifiedBy: principal?.username || 'admin',
           createdAt: new Date().toISOString()
         };
-        try { newUser = await ensureStripeCustomerForUser(newUser); } catch {}
+        try { newUser = await ensureStripeCustomerForUser(newUser); } catch (stripeErr) {
+          console.error('admin_create_user_stripe_failed', email, stripeErr?.message || stripeErr);
+        }
 
         const users = [...(authState.users || []), newUser];
         saveAuthState({ username: authState.username, password: authState.password, users });
         return okJson(res, { ok: true, user: email, tenantId, paymentLink: paymentLinkForPlan(planType) || null, count: users.length });
+        } catch (err) {
+          console.error('auth_users_create_error', err?.message || err);
+          return okJson(res, { ok: false, error: 'internal_error' }, 500);
+        }
       });
       return;
     }

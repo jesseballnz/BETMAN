@@ -50,7 +50,9 @@ async function captureDebugSnapshot(page, tag = 'debug', extras = {}) {
     fs.writeFileSync(path.join(DEBUG_DIR, `tab_debug_${tag}_last.json`), JSON.stringify(payload, null, 2));
     fs.writeFileSync(path.join(DEBUG_DIR, 'tab_debug_last.json'), JSON.stringify(payload, null, 2));
     await page.screenshot({ path: path.join(DEBUG_DIR, `tab_debug_${tag}.png`), fullPage: true }).catch(() => {});
-  } catch {}
+  } catch (err) {
+    console.error('tab_debug_snapshot_failed', tag, err?.message || err);
+  }
 }
 
 function resolveChromiumPath(){
@@ -102,7 +104,9 @@ async function run(payload){
     try {
       fs.mkdirSync(path.dirname(storageStatePath), { recursive: true });
       await context.storageState({ path: storageStatePath });
-    } catch {}
+    } catch (err) {
+      console.error('tab_persist_state_failed', err?.message || err);
+    }
   };
 
   try {

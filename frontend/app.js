@@ -11362,22 +11362,26 @@ loadStake().then(async ()=>{
     setActivePage('bakeoff');
     loadBakeoffLeaderboard();
   }
-});
+}).catch(err => console.error('app_init_error', err));
 loadRaces().then(()=>{
   renderRaces(racesCache);
   if (applyDerivedMovers()) {
     renderMarketMovers(latestMarketMovers);
   }
   restoreLastRaceSelection();
-});
+}).catch(err => console.error('app_races_init_error', err));
 setInterval(async ()=>{
+  try {
   if (document.hidden) return;
   await loadStake();
   await loadStatus();
+  } catch (err) { console.error('status_poll_error', err); }
 }, 60000);
 setInterval(()=>{
   if (document.hidden) return;
-  if (isAdminUser) { triggerPerformancePoll(false); loadPerformance(); }
+  if (isAdminUser) {
+    try { triggerPerformancePoll(false); loadPerformance(); } catch (err) { console.error('perf_poll_error', err); }
+  }
 }, 5 * 60 * 1000);
 setInterval(()=>{
   if (document.hidden) return;
