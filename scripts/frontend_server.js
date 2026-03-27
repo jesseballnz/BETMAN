@@ -1381,6 +1381,7 @@ function enrichDecisionRow(row){
   const odds = parseReasonOdds(row?.reason);
   const impliedProb = (Number.isFinite(odds) && odds > 0) ? (100 / odds) : NaN;
   const edgePts = (Number.isFinite(p) && Number.isFinite(impliedProb)) ? (p - impliedProb) : NaN;
+  const pedContrib = Number(row?.pedigreeEdgeContribution);
   const riskLabel = !Number.isFinite(p) ? 'medium' : (p >= 30 ? 'low' : (p >= 20 ? 'medium' : 'high'));
   const invalidation = Number.isFinite(edgePts) && edgePts > 0
     ? 'Invalidate if odds drift weakens edge materially or pace setup changes.'
@@ -1392,6 +1393,7 @@ function enrichDecisionRow(row){
       modelProb: Number.isFinite(p) ? Math.round(p * 10) / 10 : null,
       impliedProb: Number.isFinite(impliedProb) ? Math.round(impliedProb * 10) / 10 : null,
       edgePts: Number.isFinite(edgePts) ? Math.round(edgePts * 10) / 10 : null,
+      pedigreeEdgeContribution: Number.isFinite(pedContrib) ? Math.round(pedContrib * 10) / 10 : null,
       riskLabel,
       invalidation
     }
@@ -1618,7 +1620,9 @@ function buildRaceValueAnalysis(clientContext = {}, tenantId = 'default'){
     if (!name || !Number.isFinite(pModel) || !Number.isFinite(o) || o <= 0) continue;
     const implied = 100 / o;
     const edge = pModel - implied;
-    const line = `${name}: model ${pModel.toFixed(1)}% vs implied ${implied.toFixed(1)}% (edge ${edge >= 0 ? '+' : ''}${edge.toFixed(1)} pts)`;
+    const pedContrib = Number(s.pedigreeEdgeContribution);
+    const pedNote = Number.isFinite(pedContrib) && pedContrib > 0 ? `, pedigree +${pedContrib.toFixed(1)} pts` : '';
+    const line = `${name}: model ${pModel.toFixed(1)}% vs implied ${implied.toFixed(1)}% (edge ${edge >= 0 ? '+' : ''}${edge.toFixed(1)} pts${pedNote})`;
     if (edge >= 1.0) overlays.push(line);
     else if (edge <= -1.0) underlays.push(line);
   }

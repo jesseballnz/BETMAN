@@ -193,6 +193,317 @@
         "AUS:OPEN_MILE": 1.1,
         "AUS:OPEN_STAYING": 1.05
       }
+    },
+    "proisir": {
+      "traits": {
+        "juvenile": 6,
+        "sprint": 5,
+        "staying": 3,
+        "slipper": 0,
+        "wet": 6,
+        "elite": 5,
+        "precocity": 6
+      },
+      "priors": {
+        "NZ:WET_SPRINT": 1.15,
+        "NZ:WET_MIDDLE_DISTANCE": 1.1,
+        "NZ:OPEN_SPRINT": 1.05,
+        "AUS:OPEN_SPRINT": 0.85
+      }
+    },
+    "per incanto": {
+      "traits": {
+        "juvenile": 3,
+        "sprint": 6,
+        "staying": 1,
+        "slipper": 0,
+        "wet": 4,
+        "elite": 3,
+        "precocity": 3
+      },
+      "priors": {
+        "NZ:OPEN_SPRINT": 1.1,
+        "NZ:WET_SPRINT": 1.05,
+        "NZ:OPEN_MILE": 0.95,
+        "AUS:OPEN_SPRINT": 0.8
+      }
+    },
+    "tivaci": {
+      "traits": {
+        "juvenile": 5,
+        "sprint": 5,
+        "staying": 2,
+        "slipper": 0,
+        "wet": 5,
+        "elite": 4,
+        "precocity": 5
+      },
+      "priors": {
+        "NZ:OPEN_SPRINT": 1.1,
+        "NZ:WET_SPRINT": 1.05,
+        "NZ:WET_MIDDLE_DISTANCE": 1.0,
+        "AUS:2YO_SPRINT": 0.9
+      }
+    },
+    "almanzor": {
+      "traits": {
+        "juvenile": 2,
+        "sprint": 2,
+        "staying": 7,
+        "slipper": 0,
+        "wet": 6,
+        "elite": 7,
+        "precocity": 2
+      },
+      "priors": {
+        "NZ:OPEN_STAYING": 1.15,
+        "NZ:WET_STAYING": 1.1,
+        "NZ:WET_MIDDLE_DISTANCE": 1.05,
+        "AUS:OPEN_STAYING": 1.0
+      }
+    },
+    "territories": {
+      "traits": {
+        "juvenile": 4,
+        "sprint": 4,
+        "staying": 4,
+        "slipper": 0,
+        "wet": 5,
+        "elite": 5,
+        "precocity": 4
+      },
+      "priors": {
+        "NZ:OPEN_MILE": 1.1,
+        "NZ:WET_MIDDLE_DISTANCE": 1.05,
+        "NZ:OPEN_SPRINT": 1.0,
+        "AUS:OPEN_MILE": 0.95
+      }
+    },
+    "turn me loose": {
+      "traits": {
+        "juvenile": 3,
+        "sprint": 5,
+        "staying": 3,
+        "slipper": 0,
+        "wet": 5,
+        "elite": 4,
+        "precocity": 3
+      },
+      "priors": {
+        "NZ:OPEN_SPRINT": 1.1,
+        "NZ:WET_SPRINT": 1.05,
+        "NZ:OPEN_MILE": 1.0
+      }
+    },
+    "vadamos": {
+      "traits": {
+        "juvenile": 2,
+        "sprint": 3,
+        "staying": 6,
+        "slipper": 0,
+        "wet": 5,
+        "elite": 5,
+        "precocity": 2
+      },
+      "priors": {
+        "NZ:OPEN_STAYING": 1.1,
+        "NZ:WET_MIDDLE_DISTANCE": 1.05,
+        "NZ:WET_STAYING": 1.05
+      }
+    },
+    "iffraaj": {
+      "traits": {
+        "juvenile": 3,
+        "sprint": 6,
+        "staying": 2,
+        "slipper": 0,
+        "wet": 4,
+        "elite": 4,
+        "precocity": 3
+      },
+      "priors": {
+        "NZ:OPEN_SPRINT": 1.1,
+        "NZ:WET_SPRINT": 1.05,
+        "AUS:OPEN_SPRINT": 0.9
+      }
+    },
+    "charm spirit": {
+      "traits": {
+        "juvenile": 3,
+        "sprint": 5,
+        "staying": 3,
+        "slipper": 0,
+        "wet": 4,
+        "elite": 4,
+        "precocity": 3
+      },
+      "priors": {
+        "NZ:OPEN_SPRINT": 1.05,
+        "NZ:OPEN_MILE": 1.05,
+        "NZ:WET_SPRINT": 1.0
+      }
+    },
+    "lonhro": {
+      "traits": {
+        "juvenile": 3,
+        "sprint": 5,
+        "staying": 4,
+        "slipper": 0,
+        "wet": 3,
+        "elite": 7,
+        "precocity": 3
+      },
+      "priors": {
+        "AUS:OPEN_MILE": 1.1,
+        "AUS:OPEN_SPRINT": 1.0,
+        "NZ:OPEN_MILE": 1.0
+      }
+    },
+    "more than ready": {
+      "traits": {
+        "juvenile": 6,
+        "sprint": 6,
+        "staying": 0,
+        "slipper": 5,
+        "wet": 2,
+        "elite": 5,
+        "precocity": 6
+      },
+      "priors": {
+        "AUS:2YO_SPRINT_G1": 1.05,
+        "AUS:2YO_SPRINT": 1.05,
+        "AUS:OPEN_SPRINT": 1.0,
+        "NZ:WET_STAYING": 0.5
+      }
+    },
+    "not a single doubt": {
+      "traits": {
+        "juvenile": 5,
+        "sprint": 7,
+        "staying": 0,
+        "slipper": 3,
+        "wet": 2,
+        "elite": 4,
+        "precocity": 5
+      },
+      "priors": {
+        "AUS:2YO_SPRINT": 1.05,
+        "AUS:OPEN_SPRINT": 1.05,
+        "NZ:WET_STAYING": 0.5
+      }
+    },
+    "exceed and excel": {
+      "traits": {
+        "juvenile": 5,
+        "sprint": 8,
+        "staying": 0,
+        "slipper": 3,
+        "wet": 2,
+        "elite": 6,
+        "precocity": 5
+      },
+      "priors": {
+        "AUS:2YO_SPRINT": 1.05,
+        "AUS:OPEN_SPRINT": 1.1,
+        "AUS:2YO_SPRINT_G1": 1.0,
+        "NZ:WET_STAYING": 0.4
+      }
+    },
+    "hellbent": {
+      "traits": {
+        "juvenile": 4,
+        "sprint": 6,
+        "staying": 0,
+        "slipper": 2,
+        "wet": 2,
+        "elite": 3,
+        "precocity": 4
+      },
+      "priors": {
+        "AUS:OPEN_SPRINT": 1.05,
+        "AUS:2YO_SPRINT": 1.0
+      }
+    },
+    "capitalist": {
+      "traits": {
+        "juvenile": 7,
+        "sprint": 6,
+        "staying": 0,
+        "slipper": 7,
+        "wet": 2,
+        "elite": 5,
+        "precocity": 7
+      },
+      "priors": {
+        "AUS:2YO_SPRINT_G1": 1.1,
+        "AUS:2YO_SPRINT": 1.1,
+        "AUS:OPEN_SPRINT": 0.95,
+        "NZ:WET_STAYING": 0.4
+      }
+    },
+    "super seth": {
+      "traits": {
+        "juvenile": 4,
+        "sprint": 5,
+        "staying": 3,
+        "slipper": 2,
+        "wet": 3,
+        "elite": 4,
+        "precocity": 4
+      },
+      "priors": {
+        "AUS:2YO_SPRINT": 1.05,
+        "AUS:OPEN_SPRINT": 1.0,
+        "AUS:OPEN_MILE": 1.0
+      }
+    },
+    "rip van winkle": {
+      "traits": {
+        "juvenile": 2,
+        "sprint": 3,
+        "staying": 5,
+        "slipper": 0,
+        "wet": 5,
+        "elite": 5,
+        "precocity": 2
+      },
+      "priors": {
+        "NZ:OPEN_STAYING": 1.1,
+        "NZ:WET_STAYING": 1.05,
+        "NZ:WET_MIDDLE_DISTANCE": 1.05
+      }
+    },
+    "tavistock": {
+      "traits": {
+        "juvenile": 0,
+        "sprint": 1,
+        "staying": 8,
+        "slipper": 0,
+        "wet": 7,
+        "elite": 5,
+        "precocity": 0
+      },
+      "priors": {
+        "NZ:WET_STAYING": 1.2,
+        "NZ:OPEN_STAYING": 1.15,
+        "NZ:WET_MIDDLE_DISTANCE": 1.05,
+        "AUS:OPEN_STAYING": 1.0
+      }
+    },
+    "jakkalberry": {
+      "traits": {
+        "juvenile": 1,
+        "sprint": 1,
+        "staying": 7,
+        "slipper": 0,
+        "wet": 6,
+        "elite": 3,
+        "precocity": 1
+      },
+      "priors": {
+        "NZ:WET_STAYING": 1.1,
+        "NZ:OPEN_STAYING": 1.05
+      }
     }
   },
   "femaleFamilies": {
@@ -226,6 +537,26 @@
     "pierro|fastnet rock": {
       "boost": 1.1,
       "contexts": ["AUS:2YO_SPRINT_G1", "AUS:2YO_SPRINT"]
+    },
+    "proisir|savabeel": {
+      "boost": 1.15,
+      "contexts": ["NZ:WET_SPRINT", "NZ:WET_MIDDLE_DISTANCE"]
+    },
+    "savabeel|pins": {
+      "boost": 1.1,
+      "contexts": ["NZ:WET_STAYING", "NZ:OPEN_STAYING"]
+    },
+    "capitalist|snitzel": {
+      "boost": 1.15,
+      "contexts": ["AUS:2YO_SPRINT_G1", "AUS:2YO_SPRINT"]
+    },
+    "tivaci|savabeel": {
+      "boost": 1.1,
+      "contexts": ["NZ:OPEN_SPRINT", "NZ:WET_SPRINT"]
+    },
+    "almanzor|savabeel": {
+      "boost": 1.15,
+      "contexts": ["NZ:OPEN_STAYING", "NZ:WET_STAYING"]
     }
   }
 }

@@ -2,7 +2,7 @@
 /* TAB affiliates racing poller — pulls open races, tracks odds diffs, writes state */
 const fs = require('fs');
 const path = require('path');
-const { runnerPedigreeSignal, computeRacePedigreeAdvantageMap } = require('./pedigree_advantage');
+const { runnerPedigreeSignal, computeRacePedigreeAdvantageMap, pedigreeAdjFactor } = require('./pedigree_advantage');
 
 const BASE = 'https://api.tab.co.nz/affiliates/v1';
 const RUNNER_HISTORY_CACHE_PATH = path.join(process.cwd(), 'memory', 'runner-history-cache.json');
@@ -328,7 +328,7 @@ const applyCalibration = (p) => {
   return p * safeMultiplier;
 };
 
-function computeAdjProbs(runners, profileBias=null) {
+function computeAdjProbs(runners, profileBias=null, pedigreeMap=null) {
   const base = [];
   for (const r of runners) {
     const winOdds = bestWinOdds(r);
@@ -336,7 +336,7 @@ function computeAdjProbs(runners, profileBias=null) {
     base.push({ r, p: 1 / winOdds });
   }
   const sum = base.reduce((a,b)=>a+b.p,0) || 1;
-  let adj = base.map(x => ({ r: x.r, p: (x.p / sum) * (1 + adjFactor(x.r, profileBias)) }));
+  let adj = base.map(x => ({ r: x.r, p: (x.p / sum) * (1 + adjFactor(x.r, profileBias) + pedigreeAdjFactor(x.r, pedigreeMap)) }));
   let asum = adj.reduce((a,b)=>a+b.p,0) || 1;
   adj = adj.map(x => ({ r: x.r, p: x.p / asum }));
   if (probCalibration && Array.isArray(probCalibration.bins)) {
@@ -532,7 +532,7 @@ async function main() {
           } catch {}
 
           const pedigreeMap = computeRacePedigreeAdvantageMap(summary.races[raceKey], summary.races[raceKey].runners || []);
-          const adj = computeAdjProbs(summary.races[raceKey].runners, profileBias);
+          const adj = computeAdjProbs(summary.races[raceKey].runners, profileBias, pedigreeMap);
           if (adj.length >= 1) {
             const top1 = adj[0];
             const top2 = adj[1];
@@ -597,6 +597,7 @@ async function main() {
                 const tags = [];
                 if (pedigree?.qualifies) tags.push('Pedigree Advantage');
                 const confidence = Number.isFinite(pedigree?.confidence) ? (pedigree.confidence * 100) : 60;
+                const pedAdj = pedigreeAdjFactor(top1.r, pedigreeMap);
                 const formStatus = recentFormOK(top1.r.last_twenty_starts, recentWindow, recentTop3) ? 'SOLID' : 'MIXED';
                 const blockedReason = blockedSignalBucket({ prob: top1.p, edge, odds, confidence, formStatus, trackLabel: 'NEUTRAL' });
                 if (blockedReason || confidence < minConfidence || edge < (standout ? strongEdge : minEdge)) {
@@ -610,6 +611,7 @@ async function main() {
                   odds,
                   place_odds: Number.isFinite(place) ? place : null,
                   edge_pct: Math.round(edge * 1000) / 10,
+                  pedigreeEdgeContribution: Math.round(pedAdj * 1000) / 10,
                   mins_to_start: Math.round(minsToStart*10)/10,
                   standout: Boolean(standout),
                   tags,
@@ -638,6 +640,7 @@ async function main() {
                 const tags = [];
                 if (pedigree?.qualifies) tags.push('Pedigree Advantage');
                 const confidence1 = Number.isFinite(pedigree?.confidence) ? (pedigree.confidence * 100) : 60;
+                const pedAdj1 = pedigreeAdjFactor(top1.r, pedigreeMap);
                 const formStatus1 = recentFormOK(top1.r.last_twenty_starts, recentWindow, recentTop3) ? 'SOLID' : 'MIXED';
                 const blockedReason1 = blockedSignalBucket({ prob: top1.p, edge: edge1, odds: odds1, confidence: confidence1, formStatus: formStatus1, trackLabel: 'NEUTRAL' });
                 if (blockedReason1 || confidence1 < minConfidence || edge1 < strongEdge) {
@@ -651,6 +654,7 @@ async function main() {
                   odds: odds1,
                   place_odds: Number.isFinite(place1) ? place1 : null,
                   edge_pct: Math.round(edge1 * 1000) / 10,
+                  pedigreeEdgeContribution: Math.round(pedAdj1 * 1000) / 10,
                   mins_to_start: Math.round(minsToStart*10)/10,
                   tags,
                   pedigreeTag: pedigree?.qualifies ? 'Pedigree Advantage' : null,
@@ -665,6 +669,7 @@ async function main() {
                 const tags = [];
                 if (pedigree?.qualifies) tags.push('Pedigree Advantage');
                 const confidence2 = Number.isFinite(pedigree?.confidence) ? (pedigree.confidence * 100) : 60;
+                const pedAdj2 = pedigreeAdjFactor(top2.r, pedigreeMap);
                 const formStatus2 = recentFormOK(top2.r.last_twenty_starts, recentWindow, recentTop3) ? 'SOLID' : 'MIXED';
                 const blockedReason2 = blockedSignalBucket({ prob: top2.p, edge: edge2, odds: odds2, confidence: confidence2, formStatus: formStatus2, trackLabel: 'NEUTRAL' });
                 if (blockedReason2 || confidence2 < minConfidence || edge2 < strongEdge) {
@@ -678,6 +683,7 @@ async function main() {
                   odds: odds2,
                   place_odds: Number.isFinite(place2) ? place2 : null,
                   edge_pct: Math.round(edge2 * 1000) / 10,
+                  pedigreeEdgeContribution: Math.round(pedAdj2 * 1000) / 10,
                   mins_to_start: Math.round(minsToStart*10)/10,
                   tags,
                   pedigreeTag: pedigree?.qualifies ? 'Pedigree Advantage' : null,
