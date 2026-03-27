@@ -584,7 +584,7 @@ function createApiHandler(deps) {
             );
           }
 
-          // Venue-aware "next race" detection from the question text
+          // Venue-aware temporal race detection from the question text
           if (!matchedRace) {
             const q = question.toLowerCase();
             const finishedStatuses = new Set(['final', 'closed', 'abandoned', 'resulted']);
@@ -598,8 +598,17 @@ function createApiHandler(deps) {
               const venueRaces = raceList.filter(r =>
                 String(r.meeting || '').trim().toLowerCase() === detectedMeeting.toLowerCase()
               );
-              // If "next" is mentioned, pick the next upcoming race
-              if (/\bnext\b/i.test(q)) {
+              const wantsLast = /\b(last|previous|latest|most recent|just ran|just run)\b/i.test(q);
+              const wantsNext = /\b(next|upcoming|coming up)\b/i.test(q);
+
+              if (wantsLast) {
+                // Pick the most recently finished race
+                const finished = venueRaces
+                  .filter(r => finishedStatuses.has(String(r.race_status || '').toLowerCase()))
+                  .sort((a, b) => (Number(b.race_number) || 0) - (Number(a.race_number) || 0));
+                if (finished.length) matchedRace = finished[0];
+              } else if (wantsNext) {
+                // Pick the next upcoming race
                 const upcoming = venueRaces
                   .filter(r => !finishedStatuses.has(String(r.race_status || '').toLowerCase()))
                   .sort((a, b) => (Number(a.race_number) || 0) - (Number(b.race_number) || 0));

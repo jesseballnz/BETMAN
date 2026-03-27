@@ -1117,26 +1117,50 @@ function inferMeetingFromQuestion(question, races = []) {
 }
 
 /**
- * When the user asks about "the next race" at a specific venue, determine
- * which race is next by filtering out completed races and sorting by race number.
- * Returns the race object or null if no upcoming race is found.
+ * Detect temporal race intent ("next race", "last race", "previous race", etc.)
+ * at a specific venue. Returns { race, direction } or null.
+ *
+ * "next" / "upcoming" / "coming" → first non-finished race (ascending race number)
+ * "last" / "previous" / "latest" / "most recent" / "just ran" → most recently
+ *   finished race (descending race number among finished)
  */
-function inferNextRaceAtVenue(question, races, venueMeeting) {
+function inferTemporalRaceAtVenue(question, races, venueMeeting) {
   const q = String(question || '').toLowerCase();
   if (!venueMeeting) return null;
-  const wantsNext = /\bnext\b/.test(q);
-  if (!wantsNext) return null;
+
+  const wantsNext = /\b(next|upcoming|coming up)\b/.test(q);
+  const wantsLast = /\b(last|previous|latest|most recent|just ran|just run)\b/.test(q);
+  if (!wantsNext && !wantsLast) return null;
+
   const meetingLower = String(venueMeeting).trim().toLowerCase();
   const finishedStatuses = new Set(['final', 'closed', 'abandoned', 'resulted']);
   const venueRaces = (races || [])
-    .filter(r => String(r.meeting || '').trim().toLowerCase() === meetingLower)
-    .filter(r => !finishedStatuses.has(String(r.race_status || '').toLowerCase()))
-    .sort((a, b) => {
-      const na = Number(a.race_number) || 0;
-      const nb = Number(b.race_number) || 0;
-      return na - nb;
-    });
-  return venueRaces[0] || null;
+    .filter(r => String(r.meeting || '').trim().toLowerCase() === meetingLower);
+
+  if (wantsLast) {
+    const finished = venueRaces
+      .filter(r => finishedStatuses.has(String(r.race_status || '').toLowerCase()))
+      .sort((a, b) => (Number(b.race_number) || 0) - (Number(a.race_number) || 0));
+    if (finished.length) return { race: finished[0], direction: 'last' };
+  }
+
+  // Default to "next" if both keywords appear or only "next"
+  if (wantsNext || !wantsLast) {
+    const upcoming = venueRaces
+      .filter(r => !finishedStatuses.has(String(r.race_status || '').toLowerCase()))
+      .sort((a, b) => (Number(a.race_number) || 0) - (Number(b.race_number) || 0));
+    if (upcoming.length) return { race: upcoming[0], direction: 'next' };
+  }
+
+  return null;
+}
+
+/**
+ * Backwards-compatible wrapper: returns just the race object or null.
+ */
+function inferNextRaceAtVenue(question, races, venueMeeting) {
+  const result = inferTemporalRaceAtVenue(question, races, venueMeeting);
+  return result ? result.race : null;
 }
 
 /**
@@ -2157,15 +2181,15 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
   };
 
   // When a venue is matched, scope suggested bets to that venue.
-  // When "next race" is detected, further scope to the next upcoming race.
+  // When "next race" or "last race" is detected, further scope to that race.
   let scopedSuggested = suggested;
   if (venueInf.matched.length > 0) {
     const matchedLower = new Set(venueInf.matched.map(m => m.toLowerCase()));
     scopedSuggested = suggested.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
-    const nextRace = inferNextRaceAtVenue(question, allRaces, venueInf.matched[0]);
-    if (nextRace) {
-      const nrNum = String(nextRace.race_number);
-      scopedSuggested = scopedSuggested.filter(x => String(x.race || '').replace(/^R/i, '').trim() === nrNum);
+    const temporal = inferTemporalRaceAtVenue(question, allRaces, venueInf.matched[0]);
+    if (temporal) {
+      const rNum = String(temporal.race.race_number);
+      scopedSuggested = scopedSuggested.filter(x => String(x.race || '').replace(/^R/i, '').trim() === rNum);
     }
   }
 
@@ -3124,17 +3148,18 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     };
   })();
 
-  // "Next race" detection: when venue is matched and user asks about "the next race",
-  // find the next upcoming race at that venue and inject raceContext so full field data is included.
+  // Temporal race detection: when venue is matched and user asks about "the next race"
+  // or "the last race", find the matching race and inject raceContext so full field data is included.
   let effectiveClientContext = clientContext;
   if (!hasDraggedSelections && !isRaceAnalysis && !clientContext?.raceContext && venueInference.matched.length > 0) {
-    const nextRace = inferNextRaceAtVenue(question, allRaces, venueInference.matched[0]);
-    if (nextRace) {
+    const temporal = inferTemporalRaceAtVenue(question, allRaces, venueInference.matched[0]);
+    if (temporal) {
       effectiveClientContext = Object.assign({}, clientContext, {
         raceContext: {
-          meeting: nextRace.meeting,
-          raceNumber: String(nextRace.race_number),
-          raceName: nextRace.description || ''
+          meeting: temporal.race.meeting,
+          raceNumber: String(temporal.race.race_number),
+          raceName: temporal.race.description || '',
+          direction: temporal.direction
         }
       });
     }
@@ -5342,5 +5367,6 @@ module.exports = {
   isSmallModel,
   inferMeetingFromQuestion,
   inferNextRaceAtVenue,
+  inferTemporalRaceAtVenue,
   formatStatsCompact
 };

@@ -6,6 +6,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const {
   inferNextRaceAtVenue,
+  inferTemporalRaceAtVenue,
   formatStatsCompact,
   buildAiContextSummary,
   buildSelectionFactAnswer
@@ -60,6 +61,64 @@ assert.ok(next6);
 assert.strictEqual(next6.race_number, 3, 'closed/abandoned excluded, R3 is next');
 
 console.log('inferNextRaceAtVenue tests passed');
+
+// ─── inferTemporalRaceAtVenue (last/previous/latest) ────────────────────────
+
+// 7a) "last race" at Wingatui should return R4 (highest finished)
+const lastResult = inferTemporalRaceAtVenue('What happened in the last Wingatui race?', races, 'Wingatui');
+assert.ok(lastResult, 'should find last race');
+assert.strictEqual(lastResult.direction, 'last');
+assert.strictEqual(lastResult.race.race_number, 4, 'last Wingatui race should be R4');
+
+// 7b) "previous race" at Wingatui should also return R4
+const prevResult = inferTemporalRaceAtVenue('How did the previous Wingatui race go?', races, 'Wingatui');
+assert.ok(prevResult);
+assert.strictEqual(prevResult.direction, 'last');
+assert.strictEqual(prevResult.race.race_number, 4);
+
+// 7c) "latest race" at Wingatui should return R4
+const latestResult = inferTemporalRaceAtVenue('Show me the latest Wingatui race', races, 'Wingatui');
+assert.ok(latestResult);
+assert.strictEqual(latestResult.direction, 'last');
+assert.strictEqual(latestResult.race.race_number, 4);
+
+// 7d) "most recent race" at Wingatui should return R4
+const recentResult = inferTemporalRaceAtVenue('Tell me about the most recent Wingatui race', races, 'Wingatui');
+assert.ok(recentResult);
+assert.strictEqual(recentResult.direction, 'last');
+assert.strictEqual(recentResult.race.race_number, 4);
+
+// 7e) "next" still works via inferTemporalRaceAtVenue
+const nextTemporal = inferTemporalRaceAtVenue('Give me the next Wingatui race', races, 'Wingatui');
+assert.ok(nextTemporal);
+assert.strictEqual(nextTemporal.direction, 'next');
+assert.strictEqual(nextTemporal.race.race_number, 5);
+
+// 7f) No temporal keyword → null
+const noTemporal = inferTemporalRaceAtVenue('Give me Wingatui tips', races, 'Wingatui');
+assert.strictEqual(noTemporal, null, 'no temporal keyword → null');
+
+// 7g) "last race" when no races are finished → null
+const allOpenRaces = [
+  { meeting: 'Wingatui', race_number: 1, race_status: 'Open' },
+  { meeting: 'Wingatui', race_number: 2, race_status: 'Open' }
+];
+const noFinished = inferTemporalRaceAtVenue('last Wingatui race', allOpenRaces, 'Wingatui');
+assert.strictEqual(noFinished, null, 'no finished races → null for last');
+
+// 7h) "upcoming" keyword works as a "next" synonym
+const upcomingResult = inferTemporalRaceAtVenue('What is the upcoming Wingatui race?', races, 'Wingatui');
+assert.ok(upcomingResult);
+assert.strictEqual(upcomingResult.direction, 'next');
+assert.strictEqual(upcomingResult.race.race_number, 5);
+
+// 7i) "just ran" keyword works as a "last" synonym
+const justRanResult = inferTemporalRaceAtVenue('The race that just ran at Wingatui', races, 'Wingatui');
+assert.ok(justRanResult);
+assert.strictEqual(justRanResult.direction, 'last');
+assert.strictEqual(justRanResult.race.race_number, 4);
+
+console.log('inferTemporalRaceAtVenue tests passed');
 
 // ─── formatStatsCompact ────────────────────────────────────────────────────
 
