@@ -4,7 +4,8 @@
     "question": "Ashburton R8: Give top 3 win chances with percentages, edge vs market, and one-line bet decision.",
     "mustInclude": ["%", "edge", "bet"],
     "maxChars": 2200,
-    "contextFile": "tests/rw1-shatin-r11.txt"
+    "contextFile": "tests/rw1-shatin-r11.txt",
+    "requireRunnerMentions": ["Riding Together", "Fit For Beauty", "Super Unicorn"]
   },
   {
     "id": "race-pass-discipline",
@@ -53,6 +54,15 @@
     "question": "Give final decision in this format exactly: Decision | Stake | Confidence% | Invalidation.",
     "mustInclude": ["Decision", "Stake", "Confidence", "Invalidation"],
     "maxChars": 1200,
+    "requirePipeFormat": true,
     "contextFile": "tests/rw7-decision.txt"
+  },
+  {
+    "id": "runner-profile-depth",
+    "question": "Produce a full individual profile for each runner. For each: barrier, jockey, trainer, weight, age/sex, gear, form string interpretation (wins/places count), formComment, formIndicators (early speed, wet track, etc.), sire/dam traits, track/distance/condition stats, speedmap position, and a suitability score 1-10. Then name the top 2 and explain the edge.",
+    "mustInclude": ["barrier", "jockey", "trainer", "suitability", "sire", "speedmap"],
+    "maxChars": 4000,
+    "contextFile": "tests/rw9-runner-profile.txt",
+    "requireRunnerMentions": ["Riding Together", "Fit For Beauty", "Super Unicorn", "Joltin"]
   }
 ]
