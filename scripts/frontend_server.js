@@ -1211,6 +1211,9 @@ function mergeSelections(explicit = [], inferred = []){
   return merged;
 }
 
+const MIN_AI_ANSWER_LENGTH = 60;
+const MIN_RACE_ANALYSIS_ANSWER_LENGTH = 80;
+
 function aiAnswerRespectsSelections(answer, payload){
   const sels = Array.isArray(payload?.selections) ? payload.selections : [];
   if (!sels.length) return true;
@@ -1314,7 +1317,7 @@ function isMalformedJsonLikeAnswer(answer){
 
 function raceAnalysisMatchesContext(answer, clientContext = {}){
   const txt = String(answer || '');
-  if (txt.length < 80) return false;
+  if (txt.length < MIN_RACE_ANALYSIS_ANSWER_LENGTH) return false;
   const rc = clientContext?.raceContext || {};
   const meeting = String(rc.meeting || '').trim();
   const raceNo = String(rc.raceNumber || '').replace(/^R/i, '').trim();
@@ -3684,7 +3687,8 @@ const server = http.createServer(async (req, res)=>{
       const setupExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
       const users = [...(authState.users || [])];
       if (idx >= 0) {
-        users[idx] = { ...users[idx], setupToken: token, setupExpiresAt, stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
+        const subUpdate = sub.active ? { subscriptionActive: true, subscriptionStatus: 'active' } : {};
+        users[idx] = { ...users[idx], ...subUpdate, setupToken: token, setupExpiresAt, stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
         saveAuthState({ username: authState.username, password: authState.password, users });
       }
       const setupLink = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}/set-password?token=${encodeURIComponent(token)}`;
@@ -4588,7 +4592,6 @@ if (url.pathname === '/api/ask-selection') {
     let aiMeta = null;
     try {
       const ai = await buildSelectionAiAnswer(question, payload, tenantId, aiProvider);
-      const MIN_AI_ANSWER_LENGTH = 60;
       if (ai && ai.answer && String(ai.answer).trim().length < MIN_AI_ANSWER_LENGTH) {
         fallbackReason = 'answer_too_short';
       } else if (ai && ai.answer && isRaceAnalysis) {
