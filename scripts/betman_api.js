@@ -259,6 +259,65 @@ function createApiHandler(deps) {
       }, 200, rateInfo), true;
     }
 
+    /* ── GET /api/v1/models ─────────────────────────────────────── */
+    if (req.method === 'GET' && route === '/models') {
+      const defaultProvider = String(process.env.BETMAN_CHAT_PROVIDER || '').trim().toLowerCase()
+        || ((process.env.OLLAMA_BASE_URL || process.env.BETMAN_OLLAMA_BASE_URL || process.env.BETMAN_CHAT_BASE_URL) ? 'ollama' : '')
+        || ((process.env.OPENAI_API_KEY || process.env.BETMAN_OPENAI_API_KEY) ? 'openai' : '')
+        || 'ollama';
+
+      const ollamaFallbacks = ['qwen2.5:1.5b', 'llama3.2:3b', 'deepseek-r1:8b', 'llama3.1:8b'];
+      const openaiModels = ['gpt-4o-mini', 'gpt-5.2'];
+      const defaultModel = process.env.BETMAN_CHAT_MODEL
+        || (defaultProvider === 'ollama' ? 'qwen2.5:1.5b' : 'gpt-4o-mini');
+
+      // Attempt live Ollama tag fetch
+      let ollamaModels = ollamaFallbacks;
+      let ollamaLive = false;
+      const ollamaBase = String(
+        process.env.BETMAN_OLLAMA_BASE_URL || process.env.OLLAMA_BASE_URL
+        || process.env.BETMAN_CHAT_BASE_URL || ''
+      ).replace(/\/+$/, '');
+      if (ollamaBase) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 5000);
+          const resp = await fetch(`${ollamaBase}/api/tags`, { signal: ctrl.signal });
+          clearTimeout(timer);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (Array.isArray(data.models) && data.models.length) {
+              ollamaModels = data.models.map(m => m.name || m.model).filter(Boolean);
+              ollamaLive = true;
+            }
+          }
+        } catch { /* live fetch optional */ }
+      }
+
+      const smallModels = new Set(['deepseek-r1:8b', 'llama3.1:8b', 'llama3.2:3b', 'qwen2.5:1.5b', 'qwen2.5:3b']);
+      const allModels = [
+        ...ollamaModels.map(m => ({
+          name: m,
+          provider: 'ollama',
+          profile: smallModels.has(m) ? 'small' : 'large'
+        })),
+        ...openaiModels.map(m => ({
+          name: m,
+          provider: 'openai',
+          profile: 'large'
+        }))
+      ];
+
+      return apiJson(res, {
+        ok: true,
+        api_version: API_VERSION,
+        defaultProvider,
+        defaultModel,
+        ollamaLive,
+        models: allModels
+      }, 200, rateInfo), true;
+    }
+
     /* ── GET /api/v1/races ────────────────────────────────────────── */
     if (req.method === 'GET' && route === '/races') {
       const races = readDataFile('races.json', { races: [] });
@@ -353,22 +412,45 @@ function createApiHandler(deps) {
     if (req.method === 'GET' && route === '/suggested-bets') {
       const status = readDataFile('status.json', {});
       const bets = status.suggestedBets || [];
+      const meeting = String(url.searchParams.get('meeting') || '').toLowerCase();
+      const raceParam = String(url.searchParams.get('race') || '').replace(/^R/i, '').trim();
+      let filtered = bets;
+      if (meeting) {
+        filtered = filtered.filter(b => String(b.meeting || '').toLowerCase().includes(meeting));
+      }
+      if (raceParam) {
+        filtered = filtered.filter(b => String(b.race || '').replace(/^R/i, '').trim() === raceParam);
+      }
+
+      const exoticTypes = new Set(['multi', 'top2', 'top3', 'top4', 'trifecta']);
+      const formatBet = (b) => ({
+        meeting: b.meeting,
+        race: b.race,
+        selection: b.selection,
+        type: b.type || 'Win',
+        aiWinProb: b.aiWinProb || null,
+        signalScore: b.signal_score || null,
+        stake: b.stake || null,
+        odds: b.odds || null,
+        placeOdds: b.place_odds || null,
+        jumpsIn: b.jumpsIn || null,
+        reason: b.reason || null,
+        tags: b.tags || [],
+        pedigreeTag: b.pedigreeTag || null,
+        interesting: b.interesting || false
+      });
+
+      const wins = filtered.filter(b => !exoticTypes.has(String(b.type || '').toLowerCase())).map(formatBet);
+      const exotics = filtered.filter(b => exoticTypes.has(String(b.type || '').toLowerCase())).map(formatBet);
+
       return apiJson(res, {
         ok: true,
         api_version: API_VERSION,
-        count: bets.length,
+        count: filtered.length,
         updatedAt: status.updatedAt || null,
-        suggestedBets: bets.map(b => ({
-          meeting: b.meeting,
-          race: b.race,
-          selection: b.selection,
-          type: b.type || 'Win',
-          aiWinProb: b.aiWinProb || null,
-          stake: b.stake || null,
-          odds: b.odds || null,
-          signal: b.signal || null,
-          reason: b.reason || null
-        }))
+        wins,
+        exotics,
+        all: filtered.map(formatBet)
       }, 200, rateInfo), true;
     }
 

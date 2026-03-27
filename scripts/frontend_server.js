@@ -1703,7 +1703,7 @@ function renderHorseProfileLine(runner, idx){
   const commentLine = runner?.form_comment ? `\n- Comment: ${runner.form_comment}` : '';
   const indicatorsLine = runner?.form_indicators ? `\n- Signals: ${runner.form_indicators}` : '';
   return `${digit} ${runner?.name || runner?.runner_name || 'n/a'}
-- Barrier / Jockey / Trainer / Weight: ${barrier} / ${jockey}${apprentice} / ${trainer}${trainerLoc} / ${weight}${extraLine}
+- Gate / Jockey / Trainer / Weight: ${barrier} / ${jockey}${apprentice} / ${trainer}${trainerLoc} / ${weight}${extraLine}
 - Form/sectionals/speed map/suitability: ${formText} / ${sectional} / ${speed} / ${suitability}${statsText}${commentLine}${indicatorsLine}`;
 }
 
@@ -2370,15 +2370,43 @@ ${extra}` : base;
   }
 
   if (q.includes('top') || q.includes('best') || q.includes('winner') || q.includes('pick')) {
-    const top = nonMulti[0] || suggested[0];
-    const alts = nonMulti.slice(1,3).map(x => `${x.selection}`).join(', ');
-    return `${explain(top)}${alts ? ` Next in line: ${alts}.` : ''}`;
+    // If user is asking for a multi/exotic, let the multi handler below take priority
+    if (!(q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4'))) {
+      const top = nonMulti[0] || suggested[0];
+      const alts = nonMulti.slice(1,3).map(x => `${x.selection}`).join(', ');
+      return `${explain(top)}${alts ? ` Next in line: ${alts}.` : ''}`;
+    }
   }
 
   if (q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4')) {
-    if (!multis.length) return 'There are no active multi or exotic suggestions right now. If you want, I can still explain the best win selections and how they could be combined.';
-    const m = multis[0];
-    return `${m.meeting} Race ${m.race}: the leading exotic is ${m.selection} (${m.type}) at $${m.stake}. Reason: ${m.reason || 'exotic structure derived from the top probability cluster'}. This is higher variance than a straight win bet, so keep stake disciplined.`;
+    if (multis.length) {
+      // Show the best multi/exotic suggestion with full detail
+      const m = multis[0];
+      const extras = multis.slice(1, 3).map(x => `• ${x.meeting} R${x.race} ${x.selection} (${x.type}) $${x.stake}`).join('\n');
+      const base = `${m.meeting} Race ${m.race}: the leading exotic is ${m.selection} (${m.type}) at $${m.stake}. Reason: ${m.reason || 'exotic structure derived from the top probability cluster'}. This is higher variance than a straight win bet, so keep stake disciplined.`;
+      return extras ? `${base}\n\nOther exotics available:\n${extras}` : base;
+    }
+    // No exotic suggestions — construct a multi recommendation from top win picks across different races
+    const raceKeys = new Set();
+    const multiLegs = [];
+    for (const x of nonMulti) {
+      const rk = `${x.meeting}|${x.race}`;
+      if (raceKeys.has(rk)) continue;
+      raceKeys.add(rk);
+      multiLegs.push(x);
+      if (multiLegs.length >= 3) break;
+    }
+    if (multiLegs.length >= 2) {
+      const legLines = multiLegs.map((x, i) => {
+        const p = parsePct(x.reason);
+        return `Leg ${i + 1}: ${x.meeting} R${x.race} ${x.selection}${p != null ? ` (${p.toFixed(1)}%)` : ''} @ $${parseOdds(x.reason) || 'n/a'}`;
+      }).join('\n');
+      const probs = multiLegs.map(x => parsePct(x.reason)).filter(p => p != null);
+      const jointPct = probs.length >= 2 ? probs.reduce((a, b) => a * b / 100, probs.shift()) : null;
+      const jointLine = jointPct != null ? `\nCombined multi probability ≈ ${jointPct.toFixed(1)}%` : '';
+      return `Multi recommendation from today's strongest win picks across races:\n${legLines}${jointLine}\n\nThis is a ${multiLegs.length}-leg multi. Higher variance — keep stake small.`;
+    }
+    return 'There are no active multi or exotic suggestions right now. If you want, I can still explain the best win selections and how they could be combined.';
   }
 
   // Better same-race interpretation when we have at least 2 picks in the same race.
@@ -4401,7 +4429,11 @@ if (url.pathname === '/api/ask-selection') {
       selections.map(s => `${String(s.meeting || '').trim().toLowerCase()}|${String(s.race || '').trim()}`).filter(Boolean)
     );
     const isMultiRaceContext = !!payload?.multiRaceContext?.enabled || uniqueRaces.size > 1;
-    if (asksMulti && !hasMode && selectionCount !== 1 && !isMultiRaceContext) {
+    // Only ask for H2H/SRM clarification when the user has dragged same-race
+    // selections. When no selections are present (e.g., "pick me a multi"),
+    // let the request proceed so the AI can recommend the best available multi.
+    const hasDraggedSameRace = selections.length >= 2 && uniqueRaces.size === 1;
+    if (asksMulti && !hasMode && hasDraggedSameRace && selectionCount !== 1 && !isMultiRaceContext) {
       return okJson(res, {
         ok: true,
         mode: 'clarify',

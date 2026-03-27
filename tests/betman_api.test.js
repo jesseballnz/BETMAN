@@ -269,7 +269,10 @@ asyncTests.push((async () => {
     loadJson: (p, f) => {
       if (p.includes('status.json')) return {
         updatedAt: '2026-03-26T00:00:00Z',
-        suggestedBets: [{ meeting: 'Ellerslie', race: '4', selection: 'Fast Horse', type: 'Win', aiWinProb: 45 }]
+        suggestedBets: [
+          { meeting: 'Ellerslie', race: '4', selection: 'Fast Horse', type: 'Win', aiWinProb: 45 },
+          { meeting: 'Ellerslie', race: '4', selection: 'Fast Horse / Slow Horse', type: 'Top2', stake: 1 }
+        ]
       };
       return f;
     }
@@ -280,8 +283,12 @@ asyncTests.push((async () => {
   await handler(req, res, url);
   assert.strictEqual(res.statusCode, 200);
   const parsed = JSON.parse(res.body);
-  assert.strictEqual(parsed.count, 1);
-  assert.strictEqual(parsed.suggestedBets[0].selection, 'Fast Horse');
+  assert.strictEqual(parsed.count, 2);
+  assert.strictEqual(parsed.wins.length, 1, 'should have 1 win bet');
+  assert.strictEqual(parsed.wins[0].selection, 'Fast Horse');
+  assert.strictEqual(parsed.exotics.length, 1, 'should have 1 exotic bet');
+  assert.strictEqual(parsed.exotics[0].type, 'Top2');
+  assert.strictEqual(parsed.all.length, 2, 'all should contain both');
   console.log('  ✓ Suggested bets endpoint');
 })());
 
@@ -414,6 +421,31 @@ asyncTests.push((async () => {
   assert.strictEqual(res.statusCode, 400);
   assert.strictEqual(JSON.parse(res.body).error, 'missing_question');
   console.log('  ✓ ask-betman validation — missing question');
+})());
+
+// 21. Models endpoint
+asyncTests.push((async () => {
+  const testKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: testKey, label: 'Test', active: true }] })
+  });
+  const req = fakeReq('GET', '/api/v1/models', { 'x-api-key': testKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/models');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.ok(parsed.ok, 'response should be ok');
+  assert.ok(parsed.defaultProvider, 'should have defaultProvider');
+  assert.ok(parsed.defaultModel, 'should have defaultModel');
+  assert.ok(Array.isArray(parsed.models), 'should have models array');
+  assert.ok(parsed.models.length > 0, 'should have at least one model');
+  // Each model should have name, provider, profile
+  const m = parsed.models[0];
+  assert.ok(m.name, 'model should have name');
+  assert.ok(m.provider, 'model should have provider');
+  assert.ok(m.profile, 'model should have profile');
+  console.log('  ✓ Models endpoint');
 })());
 
 // Wait for all async tests to complete

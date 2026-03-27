@@ -223,7 +223,62 @@ assert.ok(/Fast One/i.test(answerAll) || /Strong/i.test(answerAll),
   `General Wingatui question should show suggestions, got: ${answerAll.slice(0, 200)}`);
 
 // Cleanup
-try { fs.rmSync(path.join(ROOT, 'memory', 'tenants', TENANT_ID), { recursive: true }); } catch {}
+try { fs.rmSync(path.join(ROOT, 'memory', 'tenants', TENANT_ID), { recursive: true }); } catch (e) {
+  if (e.code !== 'ENOENT') console.warn('cleanup warning:', e.message);
+}
 
 console.log('buildSelectionFactAnswer next-race scoping tests passed');
+
+// ─── buildSelectionFactAnswer: multi handling ───────────────────────────────
+
+const MULTI_TENANT = 'multi_test';
+const multiDir = path.join(ROOT, 'memory', 'tenants', MULTI_TENANT, 'frontend-data');
+fs.mkdirSync(multiDir, { recursive: true });
+
+const multiStatus = {
+  updatedAt: '2026-03-27T01:00:00.000Z',
+  suggestedBets: [
+    { meeting: 'Wingatui', race: '5', selection: 'Fast One', type: 'Win', stake: 5.0, reason: 'p=28.0% @ 2.40' },
+    { meeting: 'Ellerslie', race: '3', selection: 'Thunder', type: 'Win', stake: 4.0, reason: 'p=22.0% @ 3.50' },
+    { meeting: 'Wingatui', race: '5', selection: 'Fast One / Strong', type: 'Top2', stake: 1.0, reason: 'Top-2 profile from adjusted win probabilities' }
+  ]
+};
+
+const multiRaces = { races: [
+  { meeting: 'Wingatui', race_number: 5, description: 'R5', race_status: 'Open', runners: [] },
+  { meeting: 'Ellerslie', race_number: 3, description: 'R3', race_status: 'Open', runners: [] }
+]};
+
+fs.writeFileSync(path.join(multiDir, 'status.json'), JSON.stringify(multiStatus, null, 2));
+fs.writeFileSync(path.join(multiDir, 'races.json'), JSON.stringify(multiRaces, null, 2));
+
+// 14) "pick me a multi" should return multi/exotic suggestions
+const multiAnswer = buildSelectionFactAnswer('pick me a multi', {}, MULTI_TENANT);
+assert.ok(/Top2/i.test(multiAnswer) || /exotic/i.test(multiAnswer) || /multi/i.test(multiAnswer),
+  `Multi question should mention exotics, got: ${multiAnswer.slice(0, 200)}`);
+assert.ok(!/Do you want this analysed as H2H/i.test(multiAnswer),
+  'Should NOT ask for H2H/SRM clarification');
+
+// 15) When no exotic suggestions exist, should construct multi from win picks
+const noExoticStatus = {
+  updatedAt: '2026-03-27T01:00:00.000Z',
+  suggestedBets: [
+    { meeting: 'Wingatui', race: '5', selection: 'Fast One', type: 'Win', stake: 5.0, reason: 'p=28.0% @ 2.40' },
+    { meeting: 'Ellerslie', race: '3', selection: 'Thunder', type: 'Win', stake: 4.0, reason: 'p=22.0% @ 3.50' }
+  ]
+};
+fs.writeFileSync(path.join(multiDir, 'status.json'), JSON.stringify(noExoticStatus, null, 2));
+
+const constructedMulti = buildSelectionFactAnswer('pick me a multi', {}, MULTI_TENANT);
+assert.ok(/multi/i.test(constructedMulti) || /Leg/i.test(constructedMulti),
+  `Should construct a multi from wins, got: ${constructedMulti.slice(0, 200)}`);
+assert.ok(/Wingatui/i.test(constructedMulti) && /Ellerslie/i.test(constructedMulti),
+  `Multi should span races, got: ${constructedMulti.slice(0, 200)}`);
+
+// Cleanup
+try { fs.rmSync(path.join(ROOT, 'memory', 'tenants', MULTI_TENANT), { recursive: true }); } catch (e) {
+  if (e.code !== 'ENOENT') console.warn('cleanup warning:', e.message);
+}
+
+console.log('multi handling tests passed');
 console.log('next_race_context tests passed');
