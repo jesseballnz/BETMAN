@@ -23,7 +23,7 @@ assert(r1.available.includes('Wingatui'));
 
 // 2) Matches a known venue NOT in today's races (Riccarton scenario)
 const r2 = inferMeetingFromQuestion('Give me the strongest betting angle from the next Riccarton race.', races);
-assert.strictEqual(r2.mentioned, 'riccarton', 'should detect riccarton as known venue');
+assert.strictEqual(r2.mentioned, 'Riccarton', 'should detect Riccarton as known venue (title case)');
 assert.deepStrictEqual(r2.matched, [], 'no match in available races');
 assert(r2.available.includes('Wingatui'));
 assert(r2.available.includes('Ellerslie'));
@@ -44,7 +44,7 @@ assert.strictEqual(r5.mentioned, null);
 
 // 6) Empty races
 const r6 = inferMeetingFromQuestion('Give me Riccarton tips', []);
-assert.strictEqual(r6.mentioned, 'riccarton');
+assert.strictEqual(r6.mentioned, 'Riccarton');
 assert.deepStrictEqual(r6.matched, []);
 assert.deepStrictEqual(r6.available, []);
 

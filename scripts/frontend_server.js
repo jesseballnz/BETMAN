@@ -1096,10 +1096,11 @@ function inferMeetingFromQuestion(question, races = []) {
 
   // Check known venues not in today's races
   for (const venue of KNOWN_VENUES) {
-    if (availableLower.some(a => a === venue || a.includes(venue) || venue.includes(a))) continue;
+    if (availableLower.some(a => a === venue || a.startsWith(venue + ' ') || a.startsWith(venue + '-'))) continue;
     const escaped = venue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp(`\\b${escaped}\\b`, 'i').test(q)) {
-      return { mentioned: venue, matched: [], available };
+      const titleCase = venue.replace(/\b\w/g, c => c.toUpperCase());
+      return { mentioned: titleCase, matched: [], available };
     }
   }
 
