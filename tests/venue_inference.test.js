@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const { inferMeetingFromQuestion, buildSelectionFactAnswer, buildAiContextSummary, FINISHED_RACE_STATUSES } = require(path.join(ROOT, 'scripts', 'frontend_server.js'));
+const { inferMeetingFromQuestion, buildSelectionFactAnswer, buildAiContextSummary, isLiveRaceEntry, FINISHED_RACE_STATUSES } = require(path.join(ROOT, 'scripts', 'frontend_server.js'));
 
 // ─── inferMeetingFromQuestion ───────────────────────────────────────────────
 
@@ -167,5 +167,65 @@ assert(/ellerslie/i.test(a3), 'Should suggest Ellerslie as alternative');
 try { fs.rmSync(path.join(ROOT, 'memory', 'tenants', FINISHED_TENANT), { recursive: true }); } catch {}
 
 console.log('finished race filtering tests passed');
+
+// ─── isLiveRaceEntry ────────────────────────────────────────────────────────
+
+const allRacesForFilter = [
+  { meeting: 'Wingatui', race_number: '1', race_status: 'Final' },
+  { meeting: 'Wingatui', race_number: '4', race_status: 'resulted' },
+  { meeting: 'Wingatui', race_number: '6', race_status: 'open' },
+  { meeting: 'Ellerslie', race_number: '3', race_status: 'closed' },
+  { meeting: 'Ellerslie', race_number: '5', race_status: 'abandoned' }
+];
+
+// 15) Entries for finished races should return false
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui', race: '1' }, allRacesForFilter), false, 'Final race should not be live');
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui', race: '4' }, allRacesForFilter), false, 'Resulted race should not be live');
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Ellerslie', race: '3' }, allRacesForFilter), false, 'Closed race should not be live');
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Ellerslie', race: '5' }, allRacesForFilter), false, 'Abandoned race should not be live');
+
+// 16) Entries for open races should return true
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui', race: '6' }, allRacesForFilter), true, 'Open race should be live');
+
+// 17) Entries with no matching race in allRaces are kept (safe default)
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Randwick', race: '1' }, allRacesForFilter), true, 'Unknown venue should be treated as live');
+
+// 18) Handles R-prefix in race field
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui', race: 'R1' }, allRacesForFilter), false, 'R-prefix should still match finished race');
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui', race: 'R6' }, allRacesForFilter), true, 'R-prefix should still match open race');
+
+// 19) Handles race_number field instead of race
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Ellerslie', race_number: '3' }, allRacesForFilter), false, 'race_number field should work for finished race');
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui', race_number: '6' }, allRacesForFilter), true, 'race_number field should work for open race');
+
+// 20) Case-insensitive meeting matching
+assert.strictEqual(isLiveRaceEntry({ meeting: 'WINGATUI', race: '1' }, allRacesForFilter), false, 'Case-insensitive meeting should match');
+
+// 21) Edge cases: missing/malformed fields treated as live (safe default)
+assert.strictEqual(isLiveRaceEntry({}, allRacesForFilter), true, 'Empty entry should be treated as live');
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui' }, allRacesForFilter), true, 'Entry with no race field should be treated as live');
+assert.strictEqual(isLiveRaceEntry({ race: '1' }, allRacesForFilter), true, 'Entry with no meeting field should be treated as live');
+assert.strictEqual(isLiveRaceEntry({ meeting: null, race: null }, allRacesForFilter), true, 'Null fields should be treated as live');
+assert.strictEqual(isLiveRaceEntry({ meeting: 'Wingatui', race: '1' }, []), true, 'Empty allRaces should treat entry as live');
+
+// 21) buildAiContextSummary should not include interesting runners or movers from finished races
+const summaryWithFinished = buildAiContextSummary({
+  status: { updatedAt: 'now', apiStatus: 'ok' },
+  interesting: [
+    { meeting: 'Wingatui', race: '1', runner: 'FinishedRunner', odds: 3.5, reason: 'looks good' },
+    { meeting: 'Wingatui', race: '6', runner: 'LiveRunner', odds: 4.0, reason: 'strong form' }
+  ].filter(s => isLiveRaceEntry(s, allRacesForFilter)),
+  marketMovers: [
+    { meeting: 'Ellerslie', race: '3', runner: 'ClosedMover', pctMove: -10, fromOdds: 5.0, toOdds: 4.0 },
+    { meeting: 'Wingatui', race: '6', runner: 'LiveMover', pctMove: -5, fromOdds: 3.0, toOdds: 2.5 }
+  ].filter(s => isLiveRaceEntry(s, allRacesForFilter)),
+  maxLength: 5000
+});
+assert(!summaryWithFinished.includes('FinishedRunner'), 'Interesting runner from finished race should be excluded from context');
+assert(summaryWithFinished.includes('LiveRunner'), 'Interesting runner from live race should be included');
+assert(!summaryWithFinished.includes('ClosedMover'), 'Market mover from closed race should be excluded from context');
+assert(summaryWithFinished.includes('LiveMover'), 'Market mover from live race should be included');
+
+console.log('isLiveRaceEntry tests passed');
 
 console.log('venue_inference tests passed');
