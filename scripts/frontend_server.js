@@ -1211,6 +1211,20 @@ function mergeSelections(explicit = [], inferred = []){
 }
 
 const FINISHED_RACE_STATUSES = new Set(['final', 'closed', 'abandoned', 'resulted']);
+
+/** Return true when `entry` (any object with meeting + race/race_number) does NOT
+ *  belong to a race whose status is in FINISHED_RACE_STATUSES.  Entries that have
+ *  no matching race in allRaces are kept (safe default). */
+function isLiveRaceEntry(entry, allRaces) {
+  const m = String(entry.meeting || '').trim().toLowerCase();
+  const r = String(entry.race || entry.race_number || '').trim().replace(/^R/i, '');
+  const raceObj = allRaces.find(x =>
+    String(x.meeting || '').trim().toLowerCase() === m &&
+    String(x.race_number || '').trim() === r
+  );
+  return !raceObj || !FINISHED_RACE_STATUSES.has(String(raceObj.race_status || '').toLowerCase());
+}
+
 const MIN_AI_ANSWER_LENGTH = 60;
 const MIN_RACE_ANALYSIS_ANSWER_LENGTH = 80;
 
@@ -2169,15 +2183,7 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
   const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
   const liveRaces = allRaces.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
   // Filter suggested bets to exclude picks for races that have already finished
-  suggested = suggested.filter(s => {
-    const m = String(s.meeting || '').trim().toLowerCase();
-    const r = String(s.race || '').trim().replace(/^R/i, '');
-    const raceObj = allRaces.find(x =>
-      String(x.meeting || '').trim().toLowerCase() === m &&
-      String(x.race_number || '').trim() === r
-    );
-    return !raceObj || !FINISHED_RACE_STATUSES.has(String(raceObj.race_status || '').toLowerCase());
-  });
+  suggested = suggested.filter(s => isLiveRaceEntry(s, allRaces));
   // Include venues from suggested bets so venue detection works even when races.json
   // is loaded from a different path (e.g. tenant data with separate status/races).
   const suggestedVenues = [...new Set(suggested.map(x => String(x.meeting || '').trim()).filter(Boolean))]
@@ -3105,15 +3111,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
   const liveRaces = allRaces.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
   // Filter suggested bets to exclude picks for races that have already finished
-  suggested = suggested.filter(s => {
-    const m = String(s.meeting || '').trim().toLowerCase();
-    const r = String(s.race || '').trim().replace(/^R/i, '');
-    const raceObj = allRaces.find(x =>
-      String(x.meeting || '').trim().toLowerCase() === m &&
-      String(x.race_number || '').trim() === r
-    );
-    return !raceObj || !FINISHED_RACE_STATUSES.has(String(raceObj.race_status || '').toLowerCase());
-  });
+  suggested = suggested.filter(s => isLiveRaceEntry(s, allRaces));
   const venueInference = (!hasDraggedSelections && !isRaceAnalysis)
     ? inferMeetingFromQuestion(question, liveRaces)
     : { mentioned: null, matched: [], available: [] };
@@ -3121,15 +3119,16 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   let venueNote = '';
   let venueScopedRaces = liveRaces;
   let venueScopedSuggested = suggested;
-  let venueScopedInteresting = status.interestingRunners || [];
-  let venueScopedMovers = status.marketMovers || [];
+  // Exclude interesting runners & market movers for races that have already finished
+  let venueScopedInteresting = (status.interestingRunners || []).filter(s => isLiveRaceEntry(s, allRaces));
+  let venueScopedMovers = (status.marketMovers || []).filter(s => isLiveRaceEntry(s, allRaces));
 
   if (venueInference.mentioned && venueInference.matched.length > 0) {
     const matchedLower = new Set(venueInference.matched.map(m => m.toLowerCase()));
     venueScopedRaces = liveRaces.filter(r => matchedLower.has(String(r.meeting || '').trim().toLowerCase()));
     venueScopedSuggested = suggested.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
-    venueScopedInteresting = (status.interestingRunners || []).filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
-    venueScopedMovers = (status.marketMovers || []).filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+    venueScopedInteresting = venueScopedInteresting.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
+    venueScopedMovers = venueScopedMovers.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
   } else if (venueInference.mentioned && venueInference.matched.length === 0) {
     const availableList = venueInference.available.length
       ? venueInference.available.join(', ')
@@ -3208,7 +3207,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     suggested: hasDraggedSelections ? scopedSuggested.filter(x => scopedSelections.some(s => String(x.meeting||'').trim() === s.meeting && String(x.race||'').trim() === s.race && String(x.selection||'').trim() === s.selection)) : scopedSuggested,
     interesting: hasDraggedSelections ? [] : venueScopedInteresting,
     marketMovers: hasDraggedSelections ? [] : venueScopedMovers,
-    upcoming: hasDraggedSelections ? [] : (status.upcomingRaces || []),
+    upcoming: hasDraggedSelections ? [] : (status.upcomingRaces || []).filter(s => isLiveRaceEntry(s, allRaces)),
     activity: hasDraggedSelections ? [] : (status.activity || []),
     webContext: hasDraggedSelections ? { results: [], domains: [] } : webContext,
     clientContext: effectiveClientContext,
@@ -5451,5 +5450,6 @@ module.exports = {
   inferNextRaceAtVenue,
   inferTemporalRaceAtVenue,
   formatStatsCompact,
+  isLiveRaceEntry,
   FINISHED_RACE_STATUSES
 };
