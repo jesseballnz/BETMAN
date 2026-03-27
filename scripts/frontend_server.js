@@ -920,6 +920,7 @@ async function fetchOllamaModelsForBase(base){
       models = DEFAULT_OLLAMA_FALLBACK_MODELS.slice();
     }
   } catch (err) {
+    console.error('ollama_models_fetch_error', normalized, err?.message || err);
     if (cached && Array.isArray(cached.models) && cached.models.length) {
       clearTimeout(timer);
       return { base: normalized, models: cached.models.slice(), ok: !!cached.ok };
@@ -2521,10 +2522,10 @@ async function searchWebSnippets(query, maxResults = 5){
         })).filter(x => x.url);
         if (rows.length) return rows;
       } else {
-        console.warn('brave_search_failed', r.status);
+        console.error('brave_search_failed', r.status);
       }
     } catch (err) {
-      console.warn('brave_search_error', err?.message || err);
+      console.error('brave_search_error', err?.message || err);
     }
   }
 
@@ -2534,7 +2535,7 @@ async function searchWebSnippets(query, maxResults = 5){
       headers: { 'User-Agent': 'Mozilla/5.0 BETMAN/1.0' }
     }, searchTimeout);
     if (!r.ok) {
-      console.warn('ddg_search_failed', r.status);
+      console.error('ddg_search_failed', r.status);
       return [];
     }
     const html = await r.text();
@@ -2549,7 +2550,7 @@ async function searchWebSnippets(query, maxResults = 5){
     }
     return out;
   } catch (err) {
-    console.warn('ddg_search_error', err?.message || err);
+    console.error('ddg_search_error', err?.message || err);
     return [];
   }
 }
@@ -3009,7 +3010,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   } catch (e) {
     // For race-analysis/strategy, internet context is optional; keep going with local race context.
     if (!webOptional) throw e;
-    console.warn('optional_web_context_unavailable', String(e?.message || e));
+    console.error('optional_web_context_unavailable', String(e?.message || e));
   }
   if (!webOptional && !webContext?.results?.length) throw new Error('web_context_unavailable');
 
@@ -3298,7 +3299,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
           return await runOllamaOnce(baseUrl, modelName);
         } catch (err) {
           lastErr = err;
-          console.warn('ollama_attempt_failed', baseUrl, modelName, `attempt ${attempt}/${maxAttempts}`, err?.message || err);
+          console.error('ollama_attempt_failed', baseUrl, modelName, `attempt ${attempt}/${maxAttempts}`, err?.message || err);
           if (attempt < maxAttempts) {
             await new Promise(res => setTimeout(res, attempt * 200));
           }
@@ -3319,12 +3320,12 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         response = await runOllamaWithRetry(base, modelForBase);
       } catch (err) {
         lastError = err;
-        console.warn('ollama_request_failed', base, err?.message || err);
+        console.error('ollama_request_failed', base, err?.message || err);
         continue;
       }
 
       if (!response.ok && response.status === 404) {
-        console.warn('ollama_model_missing', modelForBase, 'base', base);
+        console.error('ollama_model_missing', modelForBase, 'base', base);
       }
 
       if (!response.ok) {
@@ -3336,7 +3337,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         const out = await response.json();
         const txt = out?.message?.content;
         if (!txt) {
-          console.warn('ollama_no_text', JSON.stringify(out || {}));
+          console.error('ollama_no_text', JSON.stringify(out || {}));
           lastError = new Error('ollama_no_text');
           continue;
         }
@@ -3346,7 +3347,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         break;
       } catch (err) {
         lastError = err;
-        console.warn('ollama_response_parse_error', err?.message || err);
+        console.error('ollama_response_parse_error', err?.message || err);
       }
     }
 
@@ -3384,7 +3385,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         } catch (err) {
           errorDetail = `read_error:${err?.message || err}`;
         }
-        console.warn('openai_response_error', r.status, errorDetail.slice(0, 400));
+        console.error('openai_response_error', r.status, errorDetail.slice(0, 400));
         throw new Error(`openai_${r.status}`);
       }
       const out = await r.json();
@@ -3400,7 +3401,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       }
       const txt = textParts.join('\n').trim();
       if (!txt) {
-        console.warn('openai_no_text', JSON.stringify(out || {}));
+        console.error('openai_no_text_responses_api', JSON.stringify(out || {}));
         return null;
       }
       answer = String(txt).trim();
@@ -3432,13 +3433,13 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         } catch (err) {
           errorDetail = `read_error:${err?.message || err}`;
         }
-        console.warn('openai_error_response', r.status, errorDetail.slice(0, 400));
+        console.error('openai_error_response', r.status, errorDetail.slice(0, 400));
         throw new Error(`openai_${r.status}`);
       }
       const out = await r.json();
       const txt = out?.choices?.[0]?.message?.content;
       if (!txt) {
-        console.warn('openai_no_text', JSON.stringify(out || {}));
+        console.error('openai_no_text', JSON.stringify(out || {}));
         return null;
       }
       answer = String(txt).trim();
@@ -3619,6 +3620,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const email = normalizeEmail(payload.email || '');
@@ -3668,6 +3670,10 @@ const server = http.createServer(async (req, res)=>{
       }
       const setupLink = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}/set-password?token=${encodeURIComponent(token)}`;
       return okJson(res, { ok: true, setupLink });
+      } catch (err) {
+        console.error('password_setup_link_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3720,7 +3726,9 @@ const server = http.createServer(async (req, res)=>{
             try {
               const c = await stripe.customers.retrieve(customerId);
               email = normalizeEmail(c?.email || '');
-            } catch {}
+            } catch (stripeErr) {
+              console.error('webhook_stripe_customer_retrieve_failed', customerId, stripeErr?.message || stripeErr);
+            }
           }
           if (email) {
             const planType = inferPlanTypeFromStripe(obj);
@@ -3756,6 +3764,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const planTypeInput = String(payload.planType || 'single').toLowerCase();
@@ -3813,11 +3822,17 @@ const server = http.createServer(async (req, res)=>{
         verifiedBy: 'self-signup',
         createdAt: new Date().toISOString()
       };
-      try { newUser = await ensureStripeCustomerForUser(newUser); } catch {}
+      try { newUser = await ensureStripeCustomerForUser(newUser); } catch (stripeErr) {
+        console.error('signup_stripe_customer_failed', email, stripeErr?.message || stripeErr);
+      }
 
       const users = [...(authState.users || []), newUser];
       saveAuthState({ username: authState.username, password: authState.password, users });
       return okJson(res, { ok: true, user: email, paymentLink: paymentLinkForPlan(planType) || null });
+      } catch (err) {
+        console.error('signup_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3919,7 +3934,10 @@ const server = http.createServer(async (req, res)=>{
       if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403);
       syncProvisioningFromStripe()
         .then(r => okJson(res, r))
-        .catch(e => okJson(res, { ok: false, error: 'stripe_sync_failed', detail: e.message }, 500));
+        .catch(e => {
+          console.error('stripe_sync_failed', e?.message || e);
+          okJson(res, { ok: false, error: 'stripe_sync_failed', detail: e.message }, 500);
+        });
       return;
     }
 
@@ -4416,6 +4434,7 @@ if (url.pathname === '/api/ask-selection') {
   let body='';
   req.on('data', c=>body+=c);
   req.on('end', async ()=>{
+    try {
     let payload = {};
     try { payload = body ? JSON.parse(body) : {}; } catch {}
     const question = String(payload.question || '').trim();
@@ -4698,6 +4717,10 @@ if (url.pathname === '/api/ask-selection') {
       historyCharsUsed: aiMeta?.historyCharsUsed ?? fallbackCharsMeta,
       fallbackReason: mode === 'fallback' ? fallbackReason : null
     });
+    } catch (err) {
+      console.error('ask_selection_error', err?.message || err);
+      return okJson(res, { ok: false, error: 'internal_error', detail: err?.message || 'unexpected_error' }, 500);
+    }
   });
   return;
 }
@@ -4740,6 +4763,7 @@ if (url.pathname === '/api/ask-selection') {
       let body='';
       req.on('data', c=>body+=c);
       req.on('end', async ()=>{
+        try {
         let payload = {};
         try { payload = body ? JSON.parse(body) : {}; } catch {}
 
@@ -4805,11 +4829,17 @@ if (url.pathname === '/api/ask-selection') {
           verifiedBy: principal?.username || 'admin',
           createdAt: new Date().toISOString()
         };
-        try { newUser = await ensureStripeCustomerForUser(newUser); } catch {}
+        try { newUser = await ensureStripeCustomerForUser(newUser); } catch (stripeErr) {
+          console.error('admin_create_user_stripe_failed', email, stripeErr?.message || stripeErr);
+        }
 
         const users = [...(authState.users || []), newUser];
         saveAuthState({ username: authState.username, password: authState.password, users });
         return okJson(res, { ok: true, user: email, tenantId, paymentLink: paymentLinkForPlan(planType) || null, count: users.length });
+        } catch (err) {
+          console.error('auth_users_create_error', err?.message || err);
+          return okJson(res, { ok: false, error: 'internal_error' }, 500);
+        }
       });
       return;
     }

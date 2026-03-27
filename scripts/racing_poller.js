@@ -805,6 +805,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('Poller error:', err.message);
+  console.error('Poller error:', err);
   process.exit(1);
 });

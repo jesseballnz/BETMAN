@@ -100,7 +100,7 @@ async function run() {
         try {
           context = fs.readFileSync(contextPath, 'utf8').trim();
         } catch (e) {
-          console.warn('context_read_failed', contextPath, e?.message || e);
+          console.error('context_read_failed', contextPath, e?.message || e);
         }
       }
       return { ...p, context } ;
