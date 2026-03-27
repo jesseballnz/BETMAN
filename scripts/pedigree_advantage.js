@@ -149,6 +149,19 @@ function computeRacePedigreeAdvantageMap(race, runners){
   return new Map(entries.map(x => [x.key, { ...x.signal, relativeEdge: x.signal.score - avg, qualifies: qualifiedKeys.has(x.key), topScore: top, averageScore: avg }]));
 }
 
+// Track condition confirmation thresholds
+const TRACK_CONFIRM_MIN_STARTS = 3;
+const TRACK_CONFIRM_STRONG_WIN_RATE = 0.25;
+const TRACK_CONFIRM_STRONG_PLACE_RATE = 0.5;
+const TRACK_CONFIRM_POOR_PLACE_RATE = 0.15;
+const TRACK_CONFIRM_BOOST = 1.15;
+const TRACK_CONFIRM_DISCOUNT = 0.7;
+
+// Pedigree probability adjustment limits
+const PEDIGREE_ADJ_CAP = 0.02;
+const PEDIGREE_ADJ_SCALE = 0.02;
+const PEDIGREE_MIN_CONFIDENCE = 0.50;
+
 function trackConditionConfirmation(runner, signal) {
   if (!runner?.stats || !signal) return 1;
   const arch = String(signal.archetype || '');
@@ -158,13 +171,13 @@ function trackConditionConfirmation(runner, signal) {
     : (runner.stats.good || runner.stats.firm);
   if (!conditionStats) return 1;
   const starts = Number(conditionStats.number_of_starts || 0);
-  if (starts < 3) return 1;
+  if (starts < TRACK_CONFIRM_MIN_STARTS) return 1;
   const wins = Number(conditionStats.number_of_wins || 0);
   const placings = Number(conditionStats.number_of_placings || 0);
   const placeRate = placings / starts;
   const winRate = wins / starts;
-  if (winRate >= 0.25 || placeRate >= 0.5) return 1.15;
-  if (placeRate < 0.15) return 0.7;
+  if (winRate >= TRACK_CONFIRM_STRONG_WIN_RATE || placeRate >= TRACK_CONFIRM_STRONG_PLACE_RATE) return TRACK_CONFIRM_BOOST;
+  if (placeRate < TRACK_CONFIRM_POOR_PLACE_RATE) return TRACK_CONFIRM_DISCOUNT;
   return 1;
 }
 
@@ -176,10 +189,10 @@ function pedigreeAdjFactor(runner, pedigreeMap) {
   if (!signal || !Number.isFinite(signal.score)) return 0;
   const relEdge = Number.isFinite(signal.relativeEdge) ? signal.relativeEdge : 0;
   const conf = Number.isFinite(signal.confidence) ? signal.confidence : 0;
-  if (relEdge <= 0 || conf < 0.50) return 0;
+  if (relEdge <= 0 || conf < PEDIGREE_MIN_CONFIDENCE) return 0;
   const trackConfirm = trackConditionConfirmation(runner, signal);
   const scaledEdge = Math.min(relEdge / 10, 1);
-  return Math.min(0.02, scaledEdge * conf * 0.02 * trackConfirm);
+  return Math.min(PEDIGREE_ADJ_CAP, scaledEdge * conf * PEDIGREE_ADJ_SCALE * trackConfirm);
 }
 
 module.exports = {

@@ -35,8 +35,8 @@ assert(library.bloodlines.jakkalberry, 'library should include Jakkalberry');
 assert(library.bloodlines['rip van winkle'], 'library should include Rip Van Winkle');
 
 // NZ sires should have NZ-focused priors
-assert(library.bloodlines.proisir.priors['NZ:WET_SPRINT'] > 1, 'Proisir should have elevated NZ:WET_SPRINT prior');
-assert(library.bloodlines.tavistock.priors['NZ:WET_STAYING'] > 1, 'Tavistock should have elevated NZ:WET_STAYING prior');
+assert.strictEqual(library.bloodlines.proisir.priors['NZ:WET_SPRINT'], 1.15, 'Proisir should have NZ:WET_SPRINT prior of 1.15');
+assert.strictEqual(library.bloodlines.tavistock.priors['NZ:WET_STAYING'], 1.2, 'Tavistock should have NZ:WET_STAYING prior of 1.2');
 
 // New crosses
 assert(library.crosses['proisir|savabeel'], 'cross library should include Proisir x Savabeel');
