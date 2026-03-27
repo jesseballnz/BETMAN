@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const { inferMeetingFromQuestion, buildSelectionFactAnswer, buildAiContextSummary } = require(path.join(ROOT, 'scripts', 'frontend_server.js'));
+const { inferMeetingFromQuestion, buildSelectionFactAnswer, buildAiContextSummary, FINISHED_RACE_STATUSES } = require(path.join(ROOT, 'scripts', 'frontend_server.js'));
 
 // ─── inferMeetingFromQuestion ───────────────────────────────────────────────
 
@@ -114,5 +114,58 @@ assert(!summaryNoVenue.includes('No races at Riccarton'), 'should not include ve
 
 // Cleanup
 try { fs.rmSync(path.join(ROOT, 'memory', 'tenants', VENUE_TENANT), { recursive: true }); } catch {}
+
+// ─── FINISHED_RACE_STATUSES constant ────────────────────────────────────────
+
+// 12) FINISHED_RACE_STATUSES is exported and contains expected values
+assert.ok(FINISHED_RACE_STATUSES instanceof Set, 'should be a Set');
+assert.ok(FINISHED_RACE_STATUSES.has('final'));
+assert.ok(FINISHED_RACE_STATUSES.has('closed'));
+assert.ok(FINISHED_RACE_STATUSES.has('abandoned'));
+assert.ok(FINISHED_RACE_STATUSES.has('resulted'));
+assert.ok(!FINISHED_RACE_STATUSES.has('open'), 'open should not be a finished status');
+
+// ─── inferMeetingFromQuestion: finished races excluded ──────────────────────
+
+// 13) When all races at a venue are finished, venue should not match in available races
+const racesWithFinished = [
+  { meeting: 'Wingatui', race_number: 1, race_status: 'Final' },
+  { meeting: 'Wingatui', race_number: 2, race_status: 'Resulted' },
+  { meeting: 'Ellerslie', race_number: 3, race_status: 'Open' }
+];
+const liveOnly = racesWithFinished.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
+const r8 = inferMeetingFromQuestion('Give me the best bet from Wingatui', liveOnly);
+assert.deepStrictEqual(r8.matched, [], 'Wingatui should not match in available races when all finished');
+assert.ok(!r8.available.includes('Wingatui'), 'Wingatui should not be in available');
+assert.ok(r8.available.includes('Ellerslie'), 'Ellerslie should be available');
+
+// 14) buildSelectionFactAnswer: finished venue returns "no races" message
+const FINISHED_TENANT = 'finished_venue_test';
+const finishedDir = path.join(ROOT, 'memory', 'tenants', FINISHED_TENANT, 'frontend-data');
+fs.mkdirSync(finishedDir, { recursive: true });
+
+const finishedStatus = {
+  updatedAt: '2026-03-27T01:00:00.000Z',
+  suggestedBets: [
+    { meeting: 'Ellerslie', race: '3', selection: 'Thunder', type: 'Win', stake: 4.0, reason: 'p=22.0% @ 3.50' }
+  ]
+};
+const finishedRaces = {
+  races: [
+    { meeting: 'Wingatui', race_number: 1, race_status: 'Final', description: 'R1', runners: [{ runner_number: 1, name: 'OldRunner', odds: 5.0 }] },
+    { meeting: 'Wingatui', race_number: 2, race_status: 'Resulted', description: 'R2', runners: [{ runner_number: 1, name: 'OldRunner2', odds: 6.0 }] },
+    { meeting: 'Ellerslie', race_number: 3, race_status: 'Open', description: 'R3', runners: [{ runner_number: 1, name: 'Thunder', odds: 3.50 }] }
+  ]
+};
+fs.writeFileSync(path.join(finishedDir, 'status.json'), JSON.stringify(finishedStatus, null, 2));
+fs.writeFileSync(path.join(finishedDir, 'races.json'), JSON.stringify(finishedRaces, null, 2));
+
+const a3 = buildSelectionFactAnswer('Give me the next favourite at Wingatui', {}, FINISHED_TENANT);
+assert(/no races at wingatui/i.test(a3), `Expected "no races at Wingatui" for finished venue, got: ${a3.slice(0, 200)}`);
+assert(/ellerslie/i.test(a3), 'Should suggest Ellerslie as alternative');
+
+try { fs.rmSync(path.join(ROOT, 'memory', 'tenants', FINISHED_TENANT), { recursive: true }); } catch {}
+
+console.log('finished race filtering tests passed');
 
 console.log('venue_inference tests passed');
