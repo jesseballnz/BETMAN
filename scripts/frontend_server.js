@@ -3525,6 +3525,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', async ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const username = String(payload.username || '').trim();
@@ -3602,6 +3603,10 @@ const server = http.createServer(async (req, res)=>{
         tenantId: principal.tenantId || 'default',
         effectiveTenantId: principal.effectiveTenantId || (principal.tenantId || 'default')
       });
+      } catch (err) {
+        console.error('login_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
@@ -3657,15 +3662,18 @@ const server = http.createServer(async (req, res)=>{
       }
 
       if (!user) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
-      if (!sub) sub = await checkSubscriptionByUser(user);
-      if (sub.enforceable && !sub.active) {
+      // Existing local accounts (live accounts) can always reset their password;
+      // subscription enforcement happens at login. Only gate new-to-system users.
+      if (!sub) sub = await checkSubscriptionByUser(user).catch(() => ({ enforceable: false, active: false }));
+      const isLiveAccount = idx >= 0;
+      if (!isLiveAccount && sub.enforceable && !sub.active) {
         return okJson(res, { ok: false, error: 'subscription_required', paymentLink: paymentLinkForPlan(user.planType), planType: user.planType || 'single' }, 402);
       }
       const token = makeSetupToken();
       const setupExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
       const users = [...(authState.users || [])];
       if (idx >= 0) {
-        users[idx] = { ...users[idx], setupToken: token, setupExpiresAt, subscriptionActive: true, subscriptionStatus: 'active', stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
+        users[idx] = { ...users[idx], setupToken: token, setupExpiresAt, stripeCustomerId: sub.customerId || users[idx].stripeCustomerId || null, accessExpiresAt: sub.accessExpiresAt || users[idx].accessExpiresAt || null, updatedAt: new Date().toISOString() };
         saveAuthState({ username: authState.username, password: authState.password, users });
       }
       const setupLink = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}/set-password?token=${encodeURIComponent(token)}`;
@@ -3682,6 +3690,7 @@ const server = http.createServer(async (req, res)=>{
     let body='';
     req.on('data', c=>body+=c);
     req.on('end', ()=>{
+      try {
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const token = String(payload.token || '').trim();
@@ -3696,6 +3705,10 @@ const server = http.createServer(async (req, res)=>{
       users[idx] = { ...users[idx], password, setupToken: null, setupExpiresAt: null, updatedAt: new Date().toISOString() };
       saveAuthState({ username: authState.username, password: authState.password, users });
       return okJson(res, { ok: true, user: users[idx].username });
+      } catch (err) {
+        console.error('set_password_error', err?.message || err);
+        return okJson(res, { ok: false, error: 'internal_error' }, 500);
+      }
     });
     return;
   }
