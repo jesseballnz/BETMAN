@@ -302,10 +302,12 @@ const SECURITY_HEADERS = {
 
 const MAX_BODY_BYTES = 1024 * 512; // 512 KB
 
-/** Per-IP sliding-window rate limiter for auth endpoints. */
+/** Per-IP sliding-window rate limiter for auth endpoints.
+ *  Assumes the server runs behind a trusted reverse proxy that sets x-forwarded-for. */
 const authRateBuckets = new Map();
 const AUTH_RATE_LIMIT = 15;       // max attempts per window
 const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+// Clean up expired entries every 5 minutes; retain 2× window to avoid premature eviction
 setInterval(() => {
   const cutoff = Date.now() - AUTH_RATE_WINDOW_MS * 2;
   for (const [ip, bucket] of authRateBuckets) {

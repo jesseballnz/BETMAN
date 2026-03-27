@@ -786,8 +786,13 @@ appendJsonl(betPlanAuditPath, {
 fs.mkdirSync(path.dirname(statusPath), { recursive: true });
 const statusTmp = statusPath + '.tmp';
 const statusJson = JSON.stringify(status, null, 2);
-fs.writeFileSync(statusTmp, statusJson);
-fs.renameSync(statusTmp, statusPath);
+try {
+  fs.writeFileSync(statusTmp, statusJson);
+  fs.renameSync(statusTmp, statusPath);
+} catch (err) {
+  try { fs.unlinkSync(statusTmp); } catch {}
+  throw err;
+}
 if (isDefaultTenant) {
   try {
     const wsTarget = path.join(WORKSPACE_ROOT, 'status.json');

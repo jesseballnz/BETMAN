@@ -180,8 +180,11 @@ function createApiHandler(deps) {
       const match = keys.find(k => {
         if (k.active === false) return false;
         try {
-          return k.key.length === apiKey.length &&
-            crypto.timingSafeEqual(Buffer.from(k.key), Buffer.from(apiKey));
+          // Use HMAC to produce fixed-length digests so timingSafeEqual is constant-time
+          // regardless of the original key lengths.
+          const hmacA = crypto.createHmac('sha256', 'betman-key-cmp').update(k.key).digest();
+          const hmacB = crypto.createHmac('sha256', 'betman-key-cmp').update(apiKey).digest();
+          return crypto.timingSafeEqual(hmacA, hmacB);
         } catch { return false; }
       });
       if (match) {
