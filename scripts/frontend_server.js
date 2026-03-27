@@ -1289,10 +1289,10 @@ function enforceDecisionAnswerFormat(answer){
   const hasRisk = /\brisk\b/i.test(out);
   const hasInvalidation = /invalidation|pass\s+conditions?/i.test(out);
 
-  if (!hasVerdict) out += `\n\nVerdict: Use only if edge remains positive versus current market.`;
-  if (!hasEdge) out += `\nMarket edge: unavailable from current response text.`;
-  if (!hasRisk) out += `\nRisk: medium (variance and pace-shape uncertainty).`;
-  if (!hasInvalidation) out += `\nInvalidation points: pass if market drifts materially or race shape changes against setup.`;
+  if (!hasVerdict) out += `\n\nVerdict: Refer to the analysis above — verify edge is positive before acting.`;
+  if (!hasEdge) out += `\nMarket edge: not calculated in this response — check odds table above.`;
+  if (!hasRisk) out += `\nRisk: assess based on field size and pace-shape uncertainty.`;
+  if (!hasInvalidation) out += `\nPass conditions: pass if market drifts beyond edge or race shape changes against setup.`;
   return out;
 }
 
@@ -1314,6 +1314,7 @@ function isMalformedJsonLikeAnswer(answer){
 
 function raceAnalysisMatchesContext(answer, clientContext = {}){
   const txt = String(answer || '');
+  if (txt.length < 80) return false;
   const rc = clientContext?.raceContext || {};
   const meeting = String(rc.meeting || '').trim();
   const raceNo = String(rc.raceNumber || '').replace(/^R/i, '').trim();
@@ -1322,8 +1323,6 @@ function raceAnalysisMatchesContext(answer, clientContext = {}){
   const hasMeeting = new RegExp(meeting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(txt);
   const raceMentions = [...txt.matchAll(/\bR(?:ace)?\s*([0-9]{1,2})\b/gi)].map(m => String(m[1]));
   if (raceMentions.length && !raceMentions.includes(raceNo)) return false;
-  // Meeting name is preferred but not mandatory; avoid false fallback when model omits header text.
-  if (!hasMeeting && !raceMentions.length) return true;
   return true;
 }
 
@@ -1945,8 +1944,13 @@ function enforceRaceAnalysisAnswerFormat(answer, clientContext = {}, tenantId = 
   // Remove low-value generic boilerplate carried over from decision-format enforcement.
   out = out
     .replace(/\n?Verdict:\s*Use only if edge remains positive versus current market\.?/ig, '')
+    .replace(/\n?Verdict:\s*Refer to the analysis above.*?before acting\.?/ig, '')
     .replace(/\n?Risk:\s*medium\s*\(variance and pace-shape uncertainty\)\.?/ig, '')
+    .replace(/\n?Risk:\s*assess based on field size and pace-shape uncertainty\.?/ig, '')
     .replace(/\n?Invalidation points:\s*pass if market drifts materially or race shape changes against setup\.?/ig, '')
+    .replace(/\n?Pass conditions:\s*pass if market drifts beyond edge or race shape changes against setup\.?/ig, '')
+    .replace(/\n?Market edge:\s*not calculated in this response.*?above\.?/ig, '')
+    .replace(/\n?Market edge:\s*unavailable from current response text\.?/ig, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   const rc = clientContext?.raceContext || {};
@@ -2836,7 +2840,14 @@ function buildAiContextSummary({
 
   const summary = lines.filter(Boolean).join('\n');
   if (summary.length <= maxLength) return summary;
-  return `${summary.slice(0, maxLength - 1)}…`;
+  // Truncate lower-priority sections first (from end) instead of slicing mid-content.
+  const trimmed = lines.filter(Boolean);
+  while (trimmed.join('\n').length > maxLength && trimmed.length > 1) {
+    trimmed.pop();
+  }
+  const result = trimmed.join('\n');
+  if (result.length <= maxLength) return result;
+  return `${result.slice(0, maxLength - 1)}…`;
 }
 
 const BETMAN_ANALYST_SYSTEM_PROMPT = `You are BETMAN's senior racing analyst. Be direct, structured, and evidence-first.
@@ -4577,7 +4588,10 @@ if (url.pathname === '/api/ask-selection') {
     let aiMeta = null;
     try {
       const ai = await buildSelectionAiAnswer(question, payload, tenantId, aiProvider);
-      if (ai && ai.answer && isRaceAnalysis) {
+      const MIN_AI_ANSWER_LENGTH = 60;
+      if (ai && ai.answer && String(ai.answer).trim().length < MIN_AI_ANSWER_LENGTH) {
+        fallbackReason = 'answer_too_short';
+      } else if (ai && ai.answer && isRaceAnalysis) {
         const aiSelectionSafe = aiAnswerRespectsSelections(ai.answer, payload);
         const aiRaceSafe = raceAnalysisMatchesContext(ai.answer, payload);
         const aiJsonSafe = !isMalformedJsonLikeAnswer(ai.answer);
