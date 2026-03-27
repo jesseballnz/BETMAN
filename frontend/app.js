@@ -510,6 +510,10 @@ let latestMarketOddsHistory = {};
 let latestMarketOddsSnapshot = {};
 let latestUpcomingBets = [];
 let latestDataVersion = 0;
+let apiKeyEligible = false;
+let apiKeyCreatedAt = null;
+let apiKeyPreview = null;
+let latestGeneratedApiKey = null;
 function loadAiUserNotes(){
   try {
     const raw = localStorage.getItem('aiUserNotes');
@@ -11087,12 +11091,57 @@ async function auditAiChatModels(){
   if (auditBtn) { auditBtn.disabled = false; auditBtn.textContent = '⚖️ Compare'; }
 }
 
+function clearApiKeySecretDisplay(){
+  latestGeneratedApiKey = null;
+  const secretInput = $('apiKeySecretValue');
+  if (secretInput) secretInput.value = '';
+  const copyBtn = $('apiKeyCopyBtn');
+  if (copyBtn) copyBtn.style.display = 'none';
+  const secretWrap = $('apiKeySecretWrap');
+  if (secretWrap) secretWrap.classList.add('hidden');
+}
+
+function updateApiKeyPanel(){
+  const panel = $('apiKeyPanel');
+  if (!panel) return;
+  panel.classList.toggle('hidden', !apiKeyEligible);
+  if (!apiKeyEligible) {
+    const status = $('apiKeyStatus');
+    if (status) status.textContent = 'API keys are only available on BETMAN API plans.';
+    clearApiKeySecretDisplay();
+    return;
+  }
+  const status = $('apiKeyStatus');
+  if (status) {
+    if (apiKeyCreatedAt) {
+      const ts = new Date(apiKeyCreatedAt).toLocaleString();
+      const tail = apiKeyPreview ? ` (ending ${apiKeyPreview})` : '';
+      status.textContent = `API key generated ${ts}${tail}. Generate again to rotate.`;
+    } else {
+      status.textContent = 'Generate an API key to call the BETMAN API via HTTP Basic auth.';
+    }
+  }
+  const secretWrap = $('apiKeySecretWrap');
+  if (secretWrap) secretWrap.classList.toggle('hidden', !latestGeneratedApiKey);
+  const copyBtn = $('apiKeyCopyBtn');
+  if (copyBtn) copyBtn.style.display = latestGeneratedApiKey ? '' : 'none';
+  const secretInput = $('apiKeySecretValue');
+  if (secretInput && latestGeneratedApiKey) {
+    secretInput.value = latestGeneratedApiKey;
+  }
+}
+
 function toggleAuthModal(show){
   const modal = $('authModal');
   if (!modal) return;
   const shouldShow = (typeof show === 'boolean') ? show : modal.classList.contains('hidden');
   modal.classList.toggle('hidden', !shouldShow);
   modal.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
+  if (!shouldShow) {
+    clearApiKeySecretDisplay();
+  } else {
+    updateApiKeyPanel();
+  }
 }
 
 function setAdminTab(tab='create'){
@@ -11164,11 +11213,18 @@ async function loadAuthenticatedUser(){
     const last = String(cfg?.currentUserLastName || cfg?.lastName || cfg?.profile?.lastName || '').trim();
     currentUserDisplayName = [first, last].filter(Boolean).join(' ').trim() || u || 'User';
     isAdminUser = !!cfg?.isAdmin;
+    apiKeyEligible = !!cfg?.apiKeyEligible;
+    apiKeyCreatedAt = cfg?.apiKeyCreatedAt || null;
+    apiKeyPreview = cfg?.apiKeyPreview || null;
     el.textContent = `Authenticated User ${u || '—'}`;
   } catch {
     isAdminUser = false;
     currentUserDisplayName = 'User';
     el.textContent = 'Authenticated User —';
+    apiKeyEligible = false;
+    apiKeyCreatedAt = null;
+    apiKeyPreview = null;
+    clearApiKeySecretDisplay();
   }
   const trainBtn = $('trainModelsBtn');
   if (trainBtn) {
@@ -11178,6 +11234,7 @@ async function loadAuthenticatedUser(){
   }
   applyPerformanceVisibility();
   refreshTabAccess();
+  updateApiKeyPanel();
   if (!isAdminUser && (activePage === 'bakeoff' || activePage === 'performance')) setActivePage('workspace');
 }
 
@@ -11188,7 +11245,15 @@ async function openAuthModal(){
     const current = await fetchLocal('./api/auth-config').then(r=>r.json());
     if (current?.username) $('authUsername').value = current.username;
     isAdmin = !!current?.isAdmin;
-  } catch {}
+    apiKeyEligible = !!current?.apiKeyEligible;
+    apiKeyCreatedAt = current?.apiKeyCreatedAt || null;
+    apiKeyPreview = current?.apiKeyPreview || null;
+  } catch {
+    apiKeyEligible = false;
+    apiKeyCreatedAt = null;
+    apiKeyPreview = null;
+  }
+  updateApiKeyPanel();
 
   const adminBlock = $('adminAuthBlock');
   if (adminBlock) adminBlock.style.display = '';
@@ -11226,6 +11291,48 @@ async function changeMyPassword(){
     alert('Password updated. You may be prompted to log in again.');
   } catch {
     alert('Unable to change password right now.');
+  }
+}
+
+async function generateApiKey(){
+  if (!apiKeyEligible) {
+    return alert('API keys are only available on BETMAN API plans.');
+  }
+  if (!confirm('Generate a new API key? This will revoke any previous key.')) return;
+  try {
+    const res = await fetchLocal('./api/auth-self-api-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const out = await res.json();
+    if (!res.ok || out.ok === false) {
+      return alert(`API key generation failed: ${out.error || res.status}`);
+    }
+    latestGeneratedApiKey = out.apiKey || '';
+    apiKeyCreatedAt = out.createdAt || new Date().toISOString();
+    apiKeyPreview = latestGeneratedApiKey ? latestGeneratedApiKey.slice(-6) : null;
+    updateApiKeyPanel();
+    alert('API key created. Copy and store it securely — it will not be shown again.');
+  } catch {
+    alert('Unable to generate an API key right now.');
+  }
+}
+
+async function copyApiKeyToClipboard(){
+  const secret = $('apiKeySecretValue')?.value || '';
+  if (!secret) return;
+  try {
+    await navigator.clipboard.writeText(secret);
+    alert('API key copied to clipboard.');
+  } catch {
+    const input = $('apiKeySecretValue');
+    if (input) {
+      input.select();
+      document.execCommand('copy');
+      input.blur();
+      alert('API key copied to clipboard.');
+    }
   }
 }
 
@@ -11587,6 +11694,8 @@ authPill?.addEventListener('keydown', (e)=>{
     openAuthModal();
   }
 });
+$('generateApiKeyBtn')?.addEventListener('click', generateApiKey);
+$('apiKeyCopyBtn')?.addEventListener('click', copyApiKeyToClipboard);
 $('authModalClose')?.addEventListener('click', ()=>toggleAuthModal(false));
 $('authModalBackdrop')?.addEventListener('click', ()=>toggleAuthModal(false));
 $('selfChangePasswordBtn')?.addEventListener('click', changeMyPassword);

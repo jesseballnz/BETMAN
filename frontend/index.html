@@ -656,6 +656,19 @@
         <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="selfNewPassword" type="password" placeholder="New password (min 8 chars)" /></div>
         <button id="selfChangePasswordBtn" class="btn btn-ghost">Update My Password</button>
 
+        <div id="apiKeyPanel" class="auth-api-key hidden">
+          <div style="margin-bottom:10px"><b>BETMAN API Key</b></div>
+          <div id="apiKeyStatus" class="sub" style="margin-bottom:10px"></div>
+          <div class="btn-row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">
+            <button id="generateApiKeyBtn" class="btn btn-ghost">Generate API Key</button>
+            <button id="apiKeyCopyBtn" class="btn btn-ghost compact-btn" style="display:none">Copy</button>
+          </div>
+          <div id="apiKeySecretWrap" class="api-key-secret hidden">
+            <input id="apiKeySecretValue" type="text" readonly value="" aria-label="BETMAN API key" />
+            <div class="sub" style="margin-top:6px">Copy and store this key securely. It will not be shown again.</div>
+          </div>
+        </div>
+
         <div id="adminAuthBlock" style="margin-top:16px">
           <div style="margin-bottom:10px"><b>Admin User Management</b></div>
           <div id="adminPermissionNotice" class="sub" style="display:none;margin-bottom:8px">Admin credentials required. Enter the admin username/password below to unlock user controls.</div>

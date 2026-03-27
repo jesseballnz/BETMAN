@@ -250,15 +250,25 @@ function loadAuthState(){
           const copy = { ...u };
           copy.role = copy.role || 'user';
           copy.tenantId = normalizeTenantId(copy.tenantId || 'default');
+          copy.planType = copy.planType || 'single';
+          copy.apiKeyHash = copy.apiKeyHash || null;
+          copy.apiKeyCreatedAt = copy.apiKeyCreatedAt || null;
+          copy.apiKeyPreview = copy.apiKeyPreview || null;
           if (!('createdAt' in copy)) copy.createdAt = null;
           if (!('updatedAt' in copy)) copy.updatedAt = null;
           return copy;
         })
     : [];
+  const adminMeta = {
+    apiKeyHash: fromFile?.adminMeta?.apiKeyHash || fromFile?.adminApiKeyHash || null,
+    apiKeyCreatedAt: fromFile?.adminMeta?.apiKeyCreatedAt || fromFile?.adminApiKeyCreatedAt || null,
+    apiKeyPreview: fromFile?.adminMeta?.apiKeyPreview || fromFile?.adminApiKeyPreview || null
+  };
   return {
     username: fromFile?.username || AUTH_USER,
     password: fromFile?.password || AUTH_PASS,
-    users
+    users,
+    adminMeta
   };
 }
 let authState = loadAuthState();
@@ -273,7 +283,8 @@ async function initAuthPersistence(){
       authState = {
         username: fromDb.username || authState.username,
         password: fromDb.password || authState.password,
-        users: Array.isArray(fromDb.users) ? fromDb.users : authState.users
+        users: Array.isArray(fromDb.users) ? fromDb.users : authState.users,
+        adminMeta: fromDb.adminMeta || authState.adminMeta || {}
       };
       console.log('Auth state loaded from Postgres.');
     } else {
@@ -604,9 +615,13 @@ async function ensurePgSchema(pool){
       username TEXT NOT NULL,
       password TEXT NOT NULL,
       users JSONB NOT NULL DEFAULT '[]'::jsonb,
+      admin_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(
+    "ALTER TABLE betman_auth_state ADD COLUMN IF NOT EXISTS admin_meta JSONB NOT NULL DEFAULT '{}'::jsonb"
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS betman_data (
       tenant_id TEXT NOT NULL,
@@ -628,26 +643,28 @@ async function ensurePgSchema(pool){
 }
 
 async function loadAuthStateFromPg(pool){
-  const r = await pool.query('SELECT username, password, users FROM betman_auth_state WHERE id=1');
+  const r = await pool.query('SELECT username, password, users, admin_meta FROM betman_auth_state WHERE id=1');
   if (!r.rows?.length) return null;
   const row = r.rows[0];
   return {
     username: row.username,
     password: row.password,
-    users: Array.isArray(row.users) ? row.users : []
+    users: Array.isArray(row.users) ? row.users : [],
+    adminMeta: row.admin_meta || {}
   };
 }
 
 async function saveAuthStateToPg(pool, state){
   await pool.query(
-    `INSERT INTO betman_auth_state (id, username, password, users, updated_at)
-     VALUES (1, $1, $2, $3::jsonb, NOW())
+    `INSERT INTO betman_auth_state (id, username, password, users, admin_meta, updated_at)
+     VALUES (1, $1, $2, $3::jsonb, $4::jsonb, NOW())
      ON CONFLICT (id) DO UPDATE
      SET username=EXCLUDED.username,
          password=EXCLUDED.password,
          users=EXCLUDED.users,
+         admin_meta=EXCLUDED.admin_meta,
          updated_at=NOW()`,
-    [state.username, state.password, JSON.stringify(state.users || [])]
+    [state.username, state.password, JSON.stringify(state.users || []), JSON.stringify(state.adminMeta || {})]
   );
 }
 
@@ -756,14 +773,21 @@ function getSessionPrincipal(req){
 function validateCredentials(username, password){
   const user = normalizeUsername(username);
   const pass = String(password || '');
+  const hashed = hashApiSecret(pass);
   const adminUser = normalizeUsername(authState.username);
-  if (user === adminUser && pass === authState.password) {
+  const adminMeta = authState.adminMeta || {};
+  const adminPasswordValid = pass === authState.password;
+  const adminKeyValid = adminMeta.apiKeyHash && hashed === adminMeta.apiKeyHash;
+  if (user === adminUser && (adminPasswordValid || adminKeyValid)) {
     const principal = { username: authState.username, role: 'admin', isAdmin: true, source: 'admin', tenantId: 'default' };
     principal.effectiveTenantId = effectiveTenantId(principal);
     return principal;
   }
-  const found = (authState.users || []).find(u => normalizeUsername(u.username) === user && u.password === pass);
+  const found = (authState.users || []).find(u => normalizeUsername(u.username) === user);
   if (!found) return null;
+  const passwordMatches = pass === found.password;
+  const apiKeyMatches = found.apiKeyHash && hashed === found.apiKeyHash;
+  if (!passwordMatches && !apiKeyMatches) return null;
   const role = found.role || 'user';
   const principal = { username: found.username, role, isAdmin: role === 'admin', source: 'users', tenantId: normalizeTenantId(found.tenantId || 'default') };
   principal.effectiveTenantId = effectiveTenantId(principal);
@@ -782,6 +806,10 @@ function getAuthPrincipal(req){
 function getUserRecordByPrincipal(principal){
   if (!principal || principal.source !== 'users') return null;
   return (authState.users || []).find(u => normalizeUsername(u.username) === normalizeUsername(principal.username)) || null;
+}
+
+function hashApiSecret(secret){
+  return crypto.createHash('sha256').update(String(secret || '')).digest('hex');
 }
 
 const OPENAI_COMPLIMENTARY_GLOBAL = String(process.env.BETMAN_OPENAI_COMPLIMENTARY || 'false').toLowerCase() === 'true';
@@ -816,12 +844,23 @@ function requireAuth(req, res){
 }
 
 function saveAuthState(next){
+  const previousMeta = authState?.adminMeta || {};
+  const requestedMeta = next.adminMeta || {};
   authState = {
     username: next.username,
     password: next.password,
+    adminMeta: {
+      apiKeyHash: (requestedMeta.apiKeyHash !== undefined) ? requestedMeta.apiKeyHash : (previousMeta.apiKeyHash || null),
+      apiKeyCreatedAt: (requestedMeta.apiKeyCreatedAt !== undefined) ? requestedMeta.apiKeyCreatedAt : (previousMeta.apiKeyCreatedAt || null),
+      apiKeyPreview: (requestedMeta.apiKeyPreview !== undefined) ? requestedMeta.apiKeyPreview : (previousMeta.apiKeyPreview || null)
+    },
     users: (Array.isArray(next.users) ? next.users : (authState.users || [])).map(u => ({
       ...u,
       tenantId: normalizeTenantId(u.tenantId || 'default'),
+      planType: u.planType || 'single',
+      apiKeyHash: u.apiKeyHash || null,
+      apiKeyCreatedAt: u.apiKeyCreatedAt || null,
+      apiKeyPreview: u.apiKeyPreview || null,
       openaiEnabled: u.openaiEnabled === true,
       openaiComplimentary: u.openaiComplimentary === true
     }))
@@ -4481,7 +4520,10 @@ if (url.pathname === '/api/ask-selection') {
           subscriptionStatus: 'manual_override',
           verifiedAt: new Date().toISOString(),
           verifiedBy: principal?.username || 'admin',
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          apiKeyHash: null,
+          apiKeyCreatedAt: null,
+          apiKeyPreview: null
         };
         try { newUser = await ensureStripeCustomerForUser(newUser); } catch {}
 
@@ -4594,6 +4636,45 @@ if (url.pathname === '/api/ask-selection') {
         users.splice(idx, 1);
         saveAuthState({ username: authState.username, password: authState.password, users });
         return okJson(res, { ok: true, user: username, message: 'user_deleted', count: users.length });
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/auth-self-api-key') {
+      let body='';
+      req.on('data', c=>body+=c);
+      req.on('end', ()=>{
+        let payload = {};
+        try { payload = body ? JSON.parse(body) : {}; } catch {}
+        const principal = req.authPrincipal;
+        const userRecord = getUserRecordByPrincipal(principal);
+        const planType = userRecord?.planType || null;
+        const eligible = !!(principal?.isAdmin || planType === 'commercial');
+        if (!eligible) {
+          return okJson(res, { ok: false, error: 'api_key_not_allowed' }, 403);
+        }
+        const apiKey = `betman_${crypto.randomBytes(24).toString('hex')}`;
+        const preview = apiKey.slice(-6);
+        const hash = hashApiSecret(apiKey);
+        const nowIso = new Date().toISOString();
+
+        if (principal?.isAdmin && !userRecord) {
+          const adminMeta = {
+            ...(authState.adminMeta || {}),
+            apiKeyHash: hash,
+            apiKeyCreatedAt: nowIso,
+            apiKeyPreview: preview
+          };
+          saveAuthState({ username: authState.username, password: authState.password, users: authState.users || [], adminMeta });
+          return okJson(res, { ok: true, apiKey, createdAt: nowIso });
+        }
+
+        const users = [...(authState.users || [])];
+        const idx = users.findIndex(u => normalizeUsername(u.username) === normalizeUsername(principal?.username));
+        if (idx < 0) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
+        users[idx] = { ...users[idx], apiKeyHash: hash, apiKeyCreatedAt: nowIso, apiKeyPreview: preview, updatedAt: nowIso };
+        saveAuthState({ username: authState.username, password: authState.password, users });
+        return okJson(res, { ok: true, apiKey, createdAt: nowIso });
       });
       return;
     }
@@ -4756,8 +4837,14 @@ if (url.pathname === '/api/ask-selection') {
     const principal = req.authPrincipal;
     const openAiUiEnabled = String(process.env.BETMAN_OPENAI_BUTTON_ENABLED || 'false').toLowerCase() === 'true';
     const openAiAllowed = canUseOpenAiByPrincipal(principal);
-    const userComplimentary = !!getUserRecordByPrincipal(principal)?.openaiComplimentary;
+    const userRecord = getUserRecordByPrincipal(principal);
+    const userComplimentary = !!userRecord?.openaiComplimentary;
     const openAiComplimentary = OPENAI_COMPLIMENTARY_GLOBAL && userComplimentary;
+    const planType = userRecord?.planType || (principal?.isAdmin ? 'admin' : null);
+    const apiKeyEligible = !!(principal?.isAdmin || userRecord?.planType === 'commercial');
+    const adminMeta = authState.adminMeta || {};
+    const apiKeyCreatedAt = principal?.isAdmin ? (adminMeta.apiKeyCreatedAt || null) : (userRecord?.apiKeyCreatedAt || null);
+    const apiKeyPreview = principal?.isAdmin ? (adminMeta.apiKeyPreview || null) : (userRecord?.apiKeyPreview || null);
     return okJson(res, {
       ok: true,
       username: authState.username,
@@ -4766,6 +4853,10 @@ if (url.pathname === '/api/ask-selection') {
       currentTenantId: principal?.effectiveTenantId || 'default',
       rawTenantId: principal?.tenantId || 'default',
       isAdmin: !!principal?.isAdmin,
+      planType,
+      apiKeyEligible,
+      apiKeyCreatedAt,
+      apiKeyPreview,
       openAiUiEnabled,
       openAiAllowed,
       openAiComplimentary

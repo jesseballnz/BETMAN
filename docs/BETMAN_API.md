@@ -15,6 +15,7 @@ Authentication:
 - Defaults (must be changed):
   - username: `betman`
   - password: `change-me-now`
+- BETMAN API (commercial) accounts and admins can generate a per-user API key inside the UI (`Auth` → `Generate API Key`). Use the same HTTP Basic username with the API key in place of the password when scripting against the API. Keys are shown once, so copy/store them securely.
 
 ## Endpoints
 
