@@ -1134,13 +1134,12 @@ function inferTemporalRaceAtVenue(question, races, venueMeeting) {
   if (!wantsNext && !wantsLast) return null;
 
   const meetingLower = String(venueMeeting).trim().toLowerCase();
-  const finishedStatuses = new Set(['final', 'closed', 'abandoned', 'resulted']);
   const venueRaces = (races || [])
     .filter(r => String(r.meeting || '').trim().toLowerCase() === meetingLower);
 
   if (wantsLast) {
     const finished = venueRaces
-      .filter(r => finishedStatuses.has(String(r.race_status || '').toLowerCase()))
+      .filter(r => FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()))
       .sort((a, b) => (Number(b.race_number) || 0) - (Number(a.race_number) || 0));
     if (finished.length) return { race: finished[0], direction: 'last' };
   }
@@ -1148,7 +1147,7 @@ function inferTemporalRaceAtVenue(question, races, venueMeeting) {
   // Default to "next" if both keywords appear or only "next"
   if (wantsNext || !wantsLast) {
     const upcoming = venueRaces
-      .filter(r => !finishedStatuses.has(String(r.race_status || '').toLowerCase()))
+      .filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()))
       .sort((a, b) => (Number(a.race_number) || 0) - (Number(b.race_number) || 0));
     if (upcoming.length) return { race: upcoming[0], direction: 'next' };
   }
@@ -1211,6 +1210,7 @@ function mergeSelections(explicit = [], inferred = []){
   return merged;
 }
 
+const FINISHED_RACE_STATUSES = new Set(['final', 'closed', 'abandoned', 'resulted']);
 const MIN_AI_ANSWER_LENGTH = 60;
 const MIN_RACE_ANALYSIS_ANSWER_LENGTH = 80;
 
@@ -2167,12 +2167,13 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
 
   // Venue-aware scoping: if the question mentions a specific venue, constrain answers
   const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
+  const liveRaces = allRaces.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
   // Include venues from suggested bets so venue detection works even when races.json
   // is loaded from a different path (e.g. tenant data with separate status/races).
   const suggestedVenues = [...new Set(suggested.map(x => String(x.meeting || '').trim()).filter(Boolean))]
-    .filter(m => !allRaces.some(r => String(r.meeting || '').trim().toLowerCase() === m.toLowerCase()))
+    .filter(m => !liveRaces.some(r => String(r.meeting || '').trim().toLowerCase() === m.toLowerCase()))
     .map(m => ({ meeting: m }));
-  const venueInf = inferMeetingFromQuestion(question, allRaces.concat(suggestedVenues));
+  const venueInf = inferMeetingFromQuestion(question, liveRaces.concat(suggestedVenues));
   if (venueInf.mentioned && venueInf.matched.length === 0) {
     const availableList = venueInf.available.length
       ? venueInf.available.join(', ')
@@ -3092,19 +3093,20 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   // Venue-aware context scoping for general chat (no dragged selections, no raceContext)
   const allRaces = Array.isArray(racesData.races) ? racesData.races : [];
+  const liveRaces = allRaces.filter(r => !FINISHED_RACE_STATUSES.has(String(r.race_status || '').toLowerCase()));
   const venueInference = (!hasDraggedSelections && !isRaceAnalysis)
-    ? inferMeetingFromQuestion(question, allRaces)
+    ? inferMeetingFromQuestion(question, liveRaces)
     : { mentioned: null, matched: [], available: [] };
 
   let venueNote = '';
-  let venueScopedRaces = allRaces;
+  let venueScopedRaces = liveRaces;
   let venueScopedSuggested = suggested;
   let venueScopedInteresting = status.interestingRunners || [];
   let venueScopedMovers = status.marketMovers || [];
 
   if (venueInference.mentioned && venueInference.matched.length > 0) {
     const matchedLower = new Set(venueInference.matched.map(m => m.toLowerCase()));
-    venueScopedRaces = allRaces.filter(r => matchedLower.has(String(r.meeting || '').trim().toLowerCase()));
+    venueScopedRaces = liveRaces.filter(r => matchedLower.has(String(r.meeting || '').trim().toLowerCase()));
     venueScopedSuggested = suggested.filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
     venueScopedInteresting = (status.interestingRunners || []).filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
     venueScopedMovers = (status.marketMovers || []).filter(x => matchedLower.has(String(x.meeting || '').trim().toLowerCase()));
@@ -3651,7 +3653,7 @@ const server = http.createServer(async (req, res)=>{
       if (!user) {
         try {
           const lookup = await checkSubscriptionByUser({ email });
-          if (!lookup?.active || !lookup?.customerId) {
+          if (!lookup?.customerId) {
             return okJson(res, { ok: false, error: 'user_not_found' }, 404);
           }
           const planType = lookup.planType || 'single';
@@ -5428,5 +5430,6 @@ module.exports = {
   inferMeetingFromQuestion,
   inferNextRaceAtVenue,
   inferTemporalRaceAtVenue,
-  formatStatsCompact
+  formatStatsCompact,
+  FINISHED_RACE_STATUSES
 };
