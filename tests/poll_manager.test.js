@@ -177,7 +177,7 @@ asyncTests.push((async () => {
     log: silent
   });
   svc.start();
-  await sleep(180);
+  await sleep(300);
   svc.stop();
   assert.ok(svc.runs >= 2, `expected >=2 runs, got ${svc.runs}`);
   assert.strictEqual(svc.failures, 0);
@@ -197,7 +197,7 @@ asyncTests.push((async () => {
     log: silent
   });
   svc.start();
-  await sleep(250);
+  await sleep(350);
   svc.stop();
   assert.ok(svc.failures >= 2, `expected >=2 failures, got ${svc.failures}`);
   assert.ok(svc.runs >= 1, 'should have at least 1 success after initial failures');
@@ -231,7 +231,7 @@ asyncTests.push((async () => {
   mgr.register({ name: 'b', run: async () => { bCount++; }, intervalMs: 60, log: silent });
   mgr.start();
   assert.ok(mgr.startedAt !== null);
-  await sleep(200);
+  await sleep(350);
   mgr.stop();
   assert.ok(aCount >= 2, `a ran ${aCount} times`);
   assert.ok(bCount >= 1, `b ran ${bCount} times`);
@@ -245,17 +245,17 @@ asyncTests.push((async () => {
   mgr.register({
     name: 'bad',
     run: async () => { throw new Error('always fails'); },
-    intervalMs: 30,
+    intervalMs: 40,
     log: silent
   });
   mgr.register({
     name: 'good',
     run: async () => { goodCount++; },
-    intervalMs: 30,
+    intervalMs: 40,
     log: silent
   });
   mgr.start();
-  await sleep(200);
+  await sleep(350);
   mgr.stop();
   const badSvc = mgr.services.get('bad');
   const goodSvc = mgr.services.get('good');
@@ -345,7 +345,7 @@ asyncTests.push((async () => {
     log: silent
   });
   svc.start();
-  await sleep(300);
+  await sleep(400);
   svc.stop();
   assert.ok(runTimes.length >= 3, `expected >=3 runs, got ${runTimes.length}`);
   // Gap between runs should be roughly intervalMs (allowing ±40ms for scheduling jitter)

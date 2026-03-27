@@ -97,7 +97,8 @@ class PollService {
     this._running = false;
 
     if (!this._stopped) {
-      const wait = Math.max(1000, this.intervalMs - this.lastRunDurationMs);
+      const floor = this.intervalMs < 1000 ? 0 : 1000;
+      const wait = Math.max(floor, this.intervalMs - this.lastRunDurationMs);
       this._timer = setTimeout(() => this._tick(), wait);
     }
   }

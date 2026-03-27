@@ -4,14 +4,17 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node frontend/scripts/consistency-harness.js && node tests/status_writer.test.js && node tests/status_snapshot_merge.test.js && node tests/mvp11_audit.test.js && node tests/ai_chat_scenarios.test.js && node tests/select_filters.test.js && node tests/model_profile_context.test.js && node tests/ai_model_authority.test.js && node tests/ai_analyse.test.js && node tests/ai_analyse_fixes.test.js && node tests/ai_live_chat_smoke.test.js && node tests/bakeoff_ui.test.js && node tests/bakeoff_scoring.test.js && node tests/meeting_search.test.js && node tests/perf-utils.test.js && node tests/data_presence.test.js && node tests/pedigree_advantage.test.js && node tests/ai_meeting_notes.test.js && node tests/venue_inference.test.js && node tests/next_race_context.test.js && node tests/betman_api.test.js",
+    "test": "node frontend/scripts/consistency-harness.js && node tests/status_writer.test.js && node tests/status_snapshot_merge.test.js && node tests/mvp11_audit.test.js && node tests/ai_chat_scenarios.test.js && node tests/select_filters.test.js && node tests/model_profile_context.test.js && node tests/ai_model_authority.test.js && node tests/ai_analyse.test.js && node tests/ai_analyse_fixes.test.js && node tests/ai_live_chat_smoke.test.js && node tests/bakeoff_ui.test.js && node tests/bakeoff_scoring.test.js && node tests/meeting_search.test.js && node tests/perf-utils.test.js && node tests/data_presence.test.js && node tests/pedigree_advantage.test.js && node tests/ai_meeting_notes.test.js && node tests/venue_inference.test.js && node tests/next_race_context.test.js && node tests/betman_api.test.js && node tests/poll_manager.test.js",
     "consistency:check": "node frontend/scripts/consistency-harness.js",
     "bakeoff": "node scripts/model_bakeoff.js",
     "bakeoff:quick": "BAKEOFF_MODE=quick node scripts/model_bakeoff.js",
     "models:test": "node scripts/model_sanity_test.js",
     "pool:intel": "node scripts/info_pooler.js",
     "jobs:once": "bash scripts/jobs_once.sh",
-    "jobs:run": "bash scripts/jobs_runner.sh"
+    "jobs:run": "bash scripts/jobs_runner.sh",
+    "poll:start": "node scripts/poll_manager.js",
+    "setup": "bash scripts/deploy/setup.sh",
+    "backup": "bash scripts/deploy/backup.sh"
   },
   "keywords": [],
   "author": "",
