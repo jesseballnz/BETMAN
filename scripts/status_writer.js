@@ -11,7 +11,7 @@ function appendJsonl(p, row){
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.appendFileSync(p, JSON.stringify(row) + '\n', 'utf8');
-  } catch {}
+  } catch (err) { console.error('[status_writer] appendJsonl failed:', err?.message || err); }
 }
 
 function getArg(name, def){
@@ -784,15 +784,22 @@ appendJsonl(betPlanAuditPath, {
 });
 
 fs.mkdirSync(path.dirname(statusPath), { recursive: true });
-fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+const statusTmp = statusPath + '.tmp';
+const statusJson = JSON.stringify(status, null, 2);
+fs.writeFileSync(statusTmp, statusJson);
+fs.renameSync(statusTmp, statusPath);
 if (isDefaultTenant) {
   try {
-    fs.writeFileSync(path.join(WORKSPACE_ROOT, 'status.json'), JSON.stringify(status, null, 2));
-  } catch {}
+    const wsTarget = path.join(WORKSPACE_ROOT, 'status.json');
+    const wsTmp = wsTarget + '.tmp';
+    fs.writeFileSync(wsTmp, statusJson);
+    fs.renameSync(wsTmp, wsTarget);
+  } catch (err) { console.error('[status_writer] workspace status write failed:', err?.message || err); }
 }
 console.log(`status.json updated (${tenantId})`);
 
 if (process.env.DATABASE_URL || process.env.BETMAN_DATABASE_URL) {
   const { spawnSync } = require('child_process');
-  spawnSync('node', [path.join(ROOT, 'scripts', 'db_sync.js'), `--tenant=${tenantId}`, '--keys=status.json', '--audit=tail', '--auditTail=1'], { stdio: 'ignore' });
+  const syncResult = spawnSync('node', [path.join(ROOT, 'scripts', 'db_sync.js'), `--tenant=${tenantId}`, '--keys=status.json', '--audit=tail', '--auditTail=1'], { stdio: 'pipe' });
+  if (syncResult.status !== 0) console.error('[status_writer] db_sync exit code:', syncResult.status, syncResult.stderr?.toString()?.trim() || '');
 }

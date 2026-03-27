@@ -7,7 +7,14 @@ function getPool(){
   if (!DB_URL) return null;
   if (pool) return pool;
   pool = new Pool({ connectionString: DB_URL });
+  pool.on('error', (err) => {
+    console.error('[db_store] pool error:', err?.message || err);
+  });
   return pool;
+}
+
+function closePool() {
+  if (pool) { pool.end().catch(() => {}); pool = undefined; }
 }
 
 async function ensureSchema(pg){
@@ -67,6 +74,7 @@ async function appendAudit(pg, { tenantId = 'default', row }){
 
 module.exports = {
   getPool,
+  closePool,
   ensureSchema,
   upsertData,
   loadData,

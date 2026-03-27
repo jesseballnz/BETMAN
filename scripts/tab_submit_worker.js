@@ -57,9 +57,7 @@ async function captureDebugSnapshot(page, tag = 'debug', extras = {}) {
 
 function resolveChromiumPath(){
   const candidates = [
-    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
-    '/Users/jesseball/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
   ].filter(Boolean);
   return candidates.find(p => fs.existsSync(p)) || null;
 }
