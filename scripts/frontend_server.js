@@ -1679,8 +1679,12 @@ function renderHorseProfileLine(runner, idx){
   const digit = normalizeHorseProfileDigit(idx);
   const barrier = runner?.barrier ?? 'n/a';
   const jockey = runner?.jockey || 'n/a';
+  const apprentice = runner?.apprentice_indicator ? ' (A)' : '';
   const trainer = runner?.trainer || 'n/a';
+  const trainerLoc = runner?.trainer_location ? ` (${runner.trainer_location})` : '';
   const weight = runner?.weight || runner?.weight_total || runner?.carrying_weight || 'n/a';
+  const ageSex = [runner?.age, runner?.sex].filter(Boolean).join('');
+  const gear = runner?.gear || null;
   const formText = describeRunnerForm(runner);
   const sectional = describeRunnerSectional(runner);
   const speed = runner?.speedmap || 'n/a';
@@ -1694,9 +1698,13 @@ function renderHorseProfileLine(runner, idx){
   if (track) statsBits.push(`Track ${track}`);
   if (distance) statsBits.push(`Dist ${distance}`);
   const statsText = statsBits.length ? ` · Stats: ${statsBits.slice(0, 2).join(' | ')}` : '';
+  const extraBits = [ageSex, gear].filter(Boolean).join(' ');
+  const extraLine = extraBits ? ` · ${extraBits}` : '';
+  const commentLine = runner?.form_comment ? `\n- Comment: ${runner.form_comment}` : '';
+  const indicatorsLine = runner?.form_indicators ? `\n- Signals: ${runner.form_indicators}` : '';
   return `${digit} ${runner?.name || runner?.runner_name || 'n/a'}
-- Barrier / Jockey / Trainer / Weight: ${barrier} / ${jockey} / ${trainer} / ${weight}
-- Form/sectionals/speed map/suitability: ${formText} / ${sectional} / ${speed} / ${suitability}${statsText}`;
+- Barrier / Jockey / Trainer / Weight: ${barrier} / ${jockey}${apprentice} / ${trainer}${trainerLoc} / ${weight}${extraLine}
+- Form/sectionals/speed map/suitability: ${formText} / ${sectional} / ${speed} / ${suitability}${statsText}${commentLine}${indicatorsLine}`;
 }
 
 function formatHorseProfileLines(runners, limit = 3){
@@ -2261,18 +2269,26 @@ const describeRunner = (runner, raceInfo, impliedPct) => {
   if (runner) {
     const tags = [];
     if (runner.runner_number != null) tags.push(`#${runner.runner_number}`);
-    if (runner.barrier != null) tags.push(`barrier ${runner.barrier}`);
+    if (runner.barrier != null) tags.push(`gate ${runner.barrier}`);
+    if (runner.age) tags.push(`${runner.age}yo`);
+    if (runner.sex) tags.push(runner.sex);
     const tagStr = tags.length ? ` (${tags.join(', ')})` : '';
     const riderBits = [];
-    if (runner.jockey) riderBits.push(`${runner.jockey} up`);
-    if (runner.trainer) riderBits.push(`for ${runner.trainer}`);
-    if (runner.weight) riderBits.push(`${runner.weight}kg`);
+    if (runner.jockey) riderBits.push(`${runner.jockey}${runner.apprentice_indicator ? ' (A)' : ''} up`);
+    if (runner.trainer) {
+      const loc = runner.trainer_location ? ` (${runner.trainer_location})` : '';
+      riderBits.push(`for ${runner.trainer}${loc}`);
+    }
+    if (runner.weight || runner.weight_total) riderBits.push(`${runner.weight || runner.weight_total}kg`);
     if (riderBits.length) {
       sentences.push(`${runner.name || 'This runner'}${tagStr} with ${riderBits.join(', ')}.`);
     } else {
       sentences.push(`${runner.name || 'This runner'}${tagStr}.`);
     }
+    if (runner.gear) sentences.push(`Gear: ${runner.gear}.`);
     if (runner.last_twenty_starts) sentences.push(`Recent form ${runner.last_twenty_starts}.`);
+    if (runner.form_comment) sentences.push(`Comment: ${runner.form_comment}.`);
+    if (runner.form_indicators) sentences.push(`Signals: ${runner.form_indicators}.`);
     if (runner.speedmap) sentences.push(`Maps ${runner.speedmap.toLowerCase()} per the speed map.`);
     const priceParts = [];
     if (runner.fixed_win) priceParts.push(`fixed $${Number(runner.fixed_win).toFixed(2)}`);
@@ -2286,6 +2302,8 @@ const describeRunner = (runner, raceInfo, impliedPct) => {
     }
     const breeding = [runner.sire, runner.dam, runner.dam_sire].filter(Boolean);
     if (breeding.length) sentences.push(`Breeding: ${breeding.join(' / ')}.`);
+    const statsStr = formatStatsCompact(runner.stats);
+    if (statsStr) sentences.push(`Stats: ${statsStr}.`);
   }
   if (raceInfo) {
     const meta = [];
