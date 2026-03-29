@@ -350,6 +350,8 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .alert-card.hot{border-color:rgba(197,255,0,.35);box-shadow:0 12px 28px rgba(197,255,0,.08)}
 .alert-card.critical{border-color:rgba(255,107,107,.5);box-shadow:0 12px 28px rgba(255,107,107,.12)}
 .alert-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.alert-card-hero{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:start}
+.alert-signal-img{width:64px;height:64px;border-radius:12px;object-fit:cover;border:1px solid rgba(255,255,255,.08);background:#0b1118}
 .alert-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
 .alert-badge.watch{background:rgba(255,255,255,.08);color:#b9c6d8}
 .alert-badge.hot{background:rgba(197,255,0,.14);color:var(--accent)}

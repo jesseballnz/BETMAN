@@ -3788,6 +3788,7 @@ const server = http.createServer(async (req, res)=>{
       return okJson(res, {
         ok: true,
         user: principal.username,
+        sessionToken: sid,
         tenantId: principal.tenantId || 'default',
         effectiveTenantId: principal.effectiveTenantId || (principal.tenantId || 'default')
       });

@@ -741,6 +741,13 @@ function alertTypeTag(type){
   return 'PULSE ALERT';
 }
 
+function alertTypeImage(type){
+  const t = String(type || '').toLowerCase();
+  if (t === 'hot_plunge') return '/assets/firming.png';
+  if (t === 'hot_drift') return '/assets/drifting.png';
+  return '';
+}
+
 function setActivePerformanceTab(tab){
   document.querySelectorAll('.perf-subtab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.perfTab === tab);
@@ -798,19 +805,26 @@ async function renderAlertsShell(){
           const role = escapeHtml(String(a?.betmanRole || 'market'));
           const interpretation = escapeHtml(String(a?.interpretation || 'Pulse signal detected'));
           const action = escapeHtml(String(a?.action || 'Watch'));
-          const note = escapeHtml(String(a?.note || a?.message || ''));
+          const note = escapeHtml(String(a?.note || ''));
+          const signalNote = escapeHtml(String(a?.signalNote || a?.signal_note || ''));
           const moveText = `${escapeHtml(String(a?.fromOdds ?? '—'))} → ${escapeHtml(String(a?.toOdds ?? '—'))}`;
           const movePct = `${escapeHtml(String(a?.movePct ?? ''))}%`;
           const mins = `${escapeHtml(String(a?.minsToJump ?? '—'))}m`;
+          const signalImg = alertTypeImage(a?.type);
           return `<div class='alert-card ${sev} alert-row' data-meeting='${escapeAttr(String(a?.meeting || ''))}' data-race='${escapeAttr(String(a?.race || ''))}' style='cursor:pointer'>
-            <div class='alert-card-top'>
+            <div class='alert-card-hero'>
+              ${signalImg ? `<img class='alert-signal-img' src='${signalImg}' alt='${escapeHtml(alertTypeTag(a?.type))}' />` : `<div class='alert-signal-img'></div>`}
               <div>
-                <div class='alert-card-title'>${title}</div>
-                <div class='alert-card-sub'>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))} • ${escapeHtml(alertTypeTag(a?.type))}</div>
+                <div class='alert-card-top'>
+                  <div>
+                    <div class='alert-card-title'>${title}</div>
+                    <div class='alert-card-sub'>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))} • ${escapeHtml(alertTypeTag(a?.type))}</div>
+                  </div>
+                  <span class='alert-badge ${sev}'>${escapeHtml(String(a?.severity || 'WATCH'))}</span>
+                </div>
+                <div class='alert-card-msg'><b>${runner}</b> — ${escapeHtml(String(a?.message || interpretation))}</div>
               </div>
-              <span class='alert-badge ${sev}'>${escapeHtml(String(a?.severity || 'WATCH'))}</span>
             </div>
-            <div class='alert-card-msg'><b>${runner}</b> — ${escapeHtml(String(a?.message || interpretation))}</div>
             <div class='alert-card-grid'>
               <div><div class='k'>Role</div><div class='v'>${role}</div></div>
               <div><div class='k'>Move</div><div class='v'>${moveText}<div class='sub'>${movePct}</div></div></div>
@@ -826,6 +840,7 @@ async function renderAlertsShell(){
                 <div class='value'>${action}</div>
               </div>
             </div>
+            ${signalNote ? `<div class='alert-card-action'><div><div class='label'>Signal Note</div><div class='value'>${signalNote}</div></div></div>` : ''}
             ${note ? `<div class='alert-card-action'><div><div class='label'>Note</div><div class='value'>${note}</div></div></div>` : ''}
           </div>`;
         }).join('') + `</div>`
