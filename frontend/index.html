@@ -740,10 +740,18 @@
           <button id="refreshAlertsBtn" class="btn btn-ghost compact-btn">Refresh</button>
         </div>
       </div>
-      <div class="btn-row" style="margin:10px 0 16px 0;flex-wrap:wrap;gap:8px">
+      <div class="btn-row" style="margin:10px 0 10px 0;flex-wrap:wrap;gap:8px">
         <button class="btn btn-ghost compact-btn alerts-subtab active" data-alerts-tab="live">Live Alerts</button>
         <button class="btn btn-ghost compact-btn alerts-subtab" data-alerts-tab="history">History</button>
         <button class="btn btn-ghost compact-btn alerts-subtab" data-alerts-tab="config">Pulse Config</button>
+      </div>
+      <div class="perf-kpis perf-kpis-secondary" style="margin:0 0 14px 0;gap:10px;align-items:end">
+        <div class="perf-card" style="min-width:220px;flex:1">
+          <div class="label">Meeting Filter</div>
+          <select id="alertsMeetingFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none">
+            <option value="all">All meetings</option>
+          </select>
+        </div>
       </div>
 
       <div class="alerts-subpanel active" data-alerts-panel="live">

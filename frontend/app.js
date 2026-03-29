@@ -729,6 +729,18 @@ function refreshTabAccess(){
   });
 }
 
+function alertTypeTag(type){
+  const t = String(type || '').toLowerCase();
+  if (t === 'hot_drift') return 'HOT DRIFT';
+  if (t === 'hot_plunge') return 'HOT PLUNGE';
+  if (t === 'market_conflict') return 'MARKET CONFLICT';
+  if (t === 'selection_flip_recommended') return 'RECOMMENDED FLIP';
+  if (t === 'selection_flip_odds_runner') return 'ODDS RUNNER FLIP';
+  if (t === 'selection_flip_ew') return 'EW FLIP';
+  if (t === 'prejump_heat') return 'PRE-JUMP HEAT';
+  return 'PULSE ALERT';
+}
+
 function setActivePerformanceTab(tab){
   document.querySelectorAll('.perf-subtab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.perfTab === tab);
@@ -751,13 +763,27 @@ function setActiveAlertsTab(tab){
   });
 }
 
+async function hydrateAlertsMeetingFilter(alerts){
+  const sel = $('alertsMeetingFilter');
+  if (!sel) return;
+  const prev = sel.value || 'all';
+  const meetings = Array.from(new Set((alerts || []).map(a => String(a?.meeting || '').trim()).filter(Boolean))).sort((a,b) => a.localeCompare(b));
+  sel.innerHTML = [`<option value="all">All meetings</option>`].concat(meetings.map(m => `<option value="${escapeAttr(m)}">${escapeHtml(m)}</option>`)).join('');
+  sel.value = meetings.includes(prev) || prev === 'all' ? prev : 'all';
+}
+
 async function renderAlertsShell(){
   const live = $('alertsLiveTable');
   const hist = $('alertsHistoryTable');
   const cfg = $('alertsConfigPanel');
   const feed = await fetchLocal('./data/alerts_feed.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] }));
   const history = await fetchLocal('./data/alerts_history.json', { cache: 'no-store' }).then(r => r.json()).catch(() => []);
-  const alerts = Array.isArray(feed?.alerts) ? feed.alerts : [];
+  const allAlerts = Array.isArray(feed?.alerts) ? feed.alerts : [];
+  hydrateAlertsMeetingFilter(allAlerts);
+  const meetingFilter = String($('alertsMeetingFilter')?.value || 'all');
+  const alerts = meetingFilter === 'all'
+    ? allAlerts
+    : allAlerts.filter(a => String(a?.meeting || '') === meetingFilter);
   const critical = alerts.filter(a => String(a?.severity || '') === 'CRITICAL').length;
   const hot = alerts.filter(a => String(a?.severity || '') === 'HOT').length;
   $('alertsHotCount') && ($('alertsHotCount').textContent = String(hot));
@@ -765,15 +791,56 @@ async function renderAlertsShell(){
   $('alertsLiveCount') && ($('alertsLiveCount').textContent = String(alerts.length));
   if (live) {
     live.innerHTML = alerts.length
-      ? `<div class='row header'><div>Severity</div><div>Type</div><div>Race</div><div>Runner</div><div>Move</div><div class='right'>Action</div></div>` + alerts.map(a => `<div class='row'>
-          <div>${escapeHtml(String(a?.severity || '—'))}</div>
-          <div>${escapeHtml(String(a?.type || '—'))}</div>
-          <div>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))}</div>
-          <div>${escapeHtml(String(a?.selection || '—'))}<div class='sub'>${escapeHtml(String(a?.betmanRole || 'market'))}</div></div>
-          <div>${escapeHtml(String(a?.fromOdds ?? '—'))} → ${escapeHtml(String(a?.toOdds ?? '—'))}<div class='sub'>${escapeHtml(String(a?.movePct ?? ''))}% · ${escapeHtml(String(a?.minsToJump ?? '—'))}m</div></div>
-          <div class='right'>${escapeHtml(String(a?.action || 'Watch'))}</div>
-        </div>`).join('')
+      ? `<div class='alert-cards'>` + alerts.map(a => {
+          const sev = String(a?.severity || 'WATCH').toLowerCase();
+          const title = escapeHtml(String(a?.title || `${a?.meeting || '—'} R${a?.race || ''}`));
+          const runner = escapeHtml(String(a?.selection || '—'));
+          const role = escapeHtml(String(a?.betmanRole || 'market'));
+          const interpretation = escapeHtml(String(a?.interpretation || 'Pulse signal detected'));
+          const action = escapeHtml(String(a?.action || 'Watch'));
+          const note = escapeHtml(String(a?.note || a?.message || ''));
+          const moveText = `${escapeHtml(String(a?.fromOdds ?? '—'))} → ${escapeHtml(String(a?.toOdds ?? '—'))}`;
+          const movePct = `${escapeHtml(String(a?.movePct ?? ''))}%`;
+          const mins = `${escapeHtml(String(a?.minsToJump ?? '—'))}m`;
+          return `<div class='alert-card ${sev} alert-row' data-meeting='${escapeAttr(String(a?.meeting || ''))}' data-race='${escapeAttr(String(a?.race || ''))}' style='cursor:pointer'>
+            <div class='alert-card-top'>
+              <div>
+                <div class='alert-card-title'>${title}</div>
+                <div class='alert-card-sub'>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))} • ${escapeHtml(alertTypeTag(a?.type))}</div>
+              </div>
+              <span class='alert-badge ${sev}'>${escapeHtml(String(a?.severity || 'WATCH'))}</span>
+            </div>
+            <div class='alert-card-msg'><b>${runner}</b> — ${escapeHtml(String(a?.message || interpretation))}</div>
+            <div class='alert-card-grid'>
+              <div><div class='k'>Role</div><div class='v'>${role}</div></div>
+              <div><div class='k'>Move</div><div class='v'>${moveText}<div class='sub'>${movePct}</div></div></div>
+              <div><div class='k'>Jump</div><div class='v'>${mins}</div></div>
+            </div>
+            <div class='alert-card-action'>
+              <div>
+                <div class='label'>Interpretation</div>
+                <div class='value'>${interpretation}</div>
+              </div>
+              <div style='text-align:right'>
+                <div class='label'>Action</div>
+                <div class='value'>${action}</div>
+              </div>
+            </div>
+            ${note ? `<div class='alert-card-action'><div><div class='label'>Note</div><div class='value'>${note}</div></div></div>` : ''}
+          </div>`;
+        }).join('') + `</div>`
       : `<div class='row'><div style='grid-column:1/-1'>No live alerts yet</div></div>`;
+
+    live.querySelectorAll('.alert-row').forEach(node => {
+      node.addEventListener('click', async () => {
+        const meeting = node.getAttribute('data-meeting') || '';
+        const raceNum = node.getAttribute('data-race') || '';
+        const race = await findRaceForButton(meeting, raceNum);
+        if (!race) return;
+        setActivePage('workspace');
+        await selectRace(race.key, race.meeting, race.race_number);
+      });
+    });
   }
   if (hist) {
     hist.innerHTML = Array.isArray(history) && history.length
@@ -10435,6 +10502,7 @@ document.querySelectorAll('.alerts-subtab').forEach(btn => {
   btn.addEventListener('click', () => setActiveAlertsTab(btn.dataset.alertsTab || 'live'));
 });
 $('refreshAlertsBtn')?.addEventListener('click', () => renderAlertsShell());
+$('alertsMeetingFilter')?.addEventListener('change', () => renderAlertsShell());
 $('trainModelsBtn')?.addEventListener('click', ()=> triggerModelTraining());
 setActivePage(activePage);
 

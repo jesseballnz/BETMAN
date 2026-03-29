@@ -345,6 +345,24 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .perf-insights{display:flex;flex-direction:column;gap:12px}
 .perf-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px}
 .perf-grid .perf-wide{grid-column:1/-1}
+.alert-cards{display:grid;grid-template-columns:1fr;gap:12px;margin-top:8px}
+.alert-card{background:linear-gradient(180deg, rgba(14,22,33,.98), rgba(9,16,24,.98));border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:14px 14px 12px 14px;box-shadow:0 10px 24px rgba(0,0,0,.28)}
+.alert-card.hot{border-color:rgba(197,255,0,.35);box-shadow:0 12px 28px rgba(197,255,0,.08)}
+.alert-card.critical{border-color:rgba(255,107,107,.5);box-shadow:0 12px 28px rgba(255,107,107,.12)}
+.alert-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.alert-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.alert-badge.watch{background:rgba(255,255,255,.08);color:#b9c6d8}
+.alert-badge.hot{background:rgba(197,255,0,.14);color:var(--accent)}
+.alert-badge.critical{background:rgba(255,107,107,.16);color:#ff9c9c}
+.alert-card-title{font-weight:800;font-size:15px;color:#f4f8ff;margin-bottom:4px}
+.alert-card-sub{font-size:12px;color:#8ea6c8}
+.alert-card-msg{font-size:13px;color:#dfe7f2;line-height:1.45;margin:8px 0}
+.alert-card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+.alert-card-grid .k{font-size:11px;color:#8ea6c8;text-transform:uppercase;letter-spacing:.04em}
+.alert-card-grid .v{font-size:13px;color:#f4f8ff;font-weight:700;margin-top:2px}
+.alert-card-action{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.alert-card-action .label{font-size:11px;color:#8ea6c8;text-transform:uppercase;letter-spacing:.04em}
+.alert-card-action .value{font-size:13px;color:#f4f8ff;font-weight:700}
 .perf-section{padding:12px;border-radius:12px;border:1px solid var(--border-soft);background:rgba(16,22,32,.7)}
 .perf-section h4{margin:0 0 8px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .perf-section .table{overflow-x:hidden}
