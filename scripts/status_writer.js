@@ -88,7 +88,7 @@ if ((balanceData.betcha?.openBets == null || balanceData.tab?.openBets == null) 
 
 const { buildStatus } = require('./status_writer_impl');
 
-const status = buildStatus(state, balanceData, stakeData.stakePerRace || 10);
+const status = buildStatus(state, balanceData, stakeData.stakePerRace || 10, { stakePath });
 status.stakePerRace = stakeData.stakePerRace || 10;
 status.exoticStakePerRace = (typeof stakeData.exoticStakePerRace === 'number') ? stakeData.exoticStakePerRace : 1;
 status.earlyWindowMin = (typeof stakeData.earlyWindowMin === 'number') ? stakeData.earlyWindowMin : 180;
@@ -508,6 +508,9 @@ status.upcomingBets = [...queuedRows, ...placedRows];
 
 const betResultsPath = path.join(ROOT, 'frontend', 'data', 'bet_results.json');
 const betResults = loadJson(betResultsPath, []);
+const settledBetsPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'settled_bets.json') : path.join(tenantDataDir, 'settled_bets.json');
+const settledBets = loadJson(settledBetsPath, []);
+const settledMap = new Map((settledBets || []).map(r => [`${String(r.meeting).toLowerCase()}|${String(r.race)}|${String(r.selection).toLowerCase()}|${String(r.type || '').toLowerCase()}`, r]));
 const resMap = new Map((betResults || []).map(r => [`${String(r.meeting).toLowerCase()}|${String(r.race)}|${String(r.selection).toLowerCase()}`, r.result]));
 
 status.completedBets = placedRowsAll
@@ -517,10 +520,21 @@ status.completedBets = placedRowsAll
   })
   .sort((a,b) => toMs(b.sortTime || b.eta) - toMs(a.sortTime || a.eta))
   .slice(0, 50)
-  .map(x => ({
-    ...x,
-    result: resMap.get(`${String(x.meeting).toLowerCase()}|${String(x.race)}|${String(x.selection).toLowerCase()}`) || 'pending'
-  }));
+  .map(x => {
+    const sk = `${String(x.meeting).toLowerCase()}|${String(x.race)}|${String(x.selection).toLowerCase()}|${String(x.type || '').toLowerCase()}`;
+    const settled = settledMap.get(sk);
+    return {
+      ...x,
+      result: settled?.result || resMap.get(`${String(x.meeting).toLowerCase()}|${String(x.race)}|${String(x.selection).toLowerCase()}`) || 'pending',
+      returnUnits: settled?.return_units ?? null,
+      profitUnits: settled?.profit_units ?? null,
+      roi: settled?.roi ?? null,
+      position: settled?.position ?? null,
+      winner: settled?.winner ?? null,
+      pick_bucket: settled?.pick_bucket ?? null,
+      is_long: settled?.is_long ?? null
+    };
+  });
 
 const wl = status.completedBets.reduce((acc, b) => {
   if (b.result === 'win') acc.wins += 1;

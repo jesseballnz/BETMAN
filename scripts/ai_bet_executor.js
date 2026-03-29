@@ -14,8 +14,11 @@ function writeJson(p, data){
 }
 
 const ROOT = path.resolve(__dirname, '..');
-const queuePath = path.join(ROOT, 'frontend', 'data', 'ai_bet_queue.json');
-const placedPath = path.join(ROOT, 'frontend', 'data', 'placed_bets.json');
+const tenantId = String(process.env.TENANT_ID || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
+const isDefaultTenant = tenantId === 'default';
+const tenantDataDir = path.join(ROOT, 'memory', 'tenants', tenantId, 'frontend-data');
+const queuePath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'ai_bet_queue.json') : path.join(tenantDataDir, 'ai_bet_queue.json');
+const placedPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'placed_bets.json') : path.join(tenantDataDir, 'placed_bets.json');
 
 const queue = loadJson(queuePath, []);
 if (!queue.length) process.exit(0);
@@ -50,5 +53,8 @@ const stamped = due.map(x => ({
 writeJson(placedPath, [...placed, ...stamped]);
 writeJson(queuePath, pending);
 
-spawnSync('node', [path.join(ROOT, 'scripts', 'status_writer.js')], { stdio: 'ignore' });
-console.log(`ai_bet_executor: moved ${stamped.length} queued bets to placed`);
+spawnSync('node', [path.join(ROOT, 'scripts', 'status_writer.js')], {
+  stdio: 'ignore',
+  env: { ...process.env, TENANT_ID: tenantId }
+});
+console.log(`ai_bet_executor: moved ${stamped.length} queued bets to placed for tenant=${tenantId}`);

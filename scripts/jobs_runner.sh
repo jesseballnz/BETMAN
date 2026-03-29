@@ -25,6 +25,7 @@ while true; do
   node scripts/status_writer.js || true
   node scripts/race_cache_writer.js || true
   python3 scripts/success_tracker.py || true
+  python3 scripts/generate_learnings.py || true
   python3 scripts/fringe_threshold_report.py || true
 
   sleep "$POLL_SECONDS"

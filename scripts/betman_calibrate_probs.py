@@ -10,7 +10,18 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(ROOT, 'data', 'tab')
 MEMORY_DIR = os.path.join(ROOT, 'memory')
 TENANTS_DIR = os.path.join(MEMORY_DIR, 'tenants')
-OUT = os.path.join(MEMORY_DIR, 'betman_prob_calibration.json')
+
+
+def detect_tenant_id(path):
+    marker = os.path.join('memory', 'tenants') + os.sep
+    if marker in path:
+        tail = path.split(marker, 1)[1]
+        return tail.split(os.sep, 1)[0]
+    return 'default'
+
+
+def out_path_for_tenant(tenant_id):
+    return os.path.join(ROOT, 'frontend', 'data', 'betman_prob_calibration.json') if tenant_id == 'default' else os.path.join(TENANTS_DIR, tenant_id, 'frontend-data', 'betman_prob_calibration.json')
 
 
 def norm(text):
@@ -77,9 +88,10 @@ def load_results_for_date(date):
 
 
 def build_samples():
-    samples = []
+    samples = defaultdict(list)
     results_cache = {}
     for path in load_audit_files():
+        tenant_id = detect_tenant_id(path)
         with open(path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
@@ -108,53 +120,58 @@ def build_samples():
                     if not winner:
                         continue
                     win = 1 if norm(selection) == norm(winner) else 0
-                    samples.append({"p": prob, "win": win})
+                    samples[tenant_id].append({"p": prob, "win": win})
     return samples
 
 
 def main():
-    samples = build_samples()
-    if not samples:
+    samples_by_tenant = build_samples()
+    if not samples_by_tenant:
         print('No samples available for calibration.')
         return
 
-    bins = []
     step = 0.05
     edges = [round(x * step, 2) for x in range(int(1 / step) + 1)]
-    for i in range(len(edges) - 1):
-        bins.append({"min": edges[i], "max": edges[i+1], "samples": 0, "wins": 0, "avg_pred": 0.0})
 
-    for s in samples:
-        p = s['p']
-        idx = min(int(p / step), len(bins) - 1)
-        b = bins[idx]
-        b['samples'] += 1
-        b['wins'] += s['win']
-        b['avg_pred'] += p
+    for tenant_id, samples in samples_by_tenant.items():
+        bins = []
+        for i in range(len(edges) - 1):
+            bins.append({"min": edges[i], "max": edges[i+1], "samples": 0, "wins": 0, "avg_pred": 0.0})
 
-    for b in bins:
-        if b['samples']:
-            b['avg_pred'] = b['avg_pred'] / b['samples']
-            actual_rate = b['wins'] / b['samples']
-        else:
-            b['avg_pred'] = None
-            actual_rate = None
-        if b['avg_pred'] and actual_rate is not None and b['avg_pred'] > 0:
-            mult = actual_rate / b['avg_pred']
-        else:
-            mult = 1.0
-        b['actual_rate'] = actual_rate
-        b['multiplier'] = max(0.5, min(1.5, mult))
+        for s in samples:
+            p = s['p']
+            idx = min(int(p / step), len(bins) - 1)
+            b = bins[idx]
+            b['samples'] += 1
+            b['wins'] += s['win']
+            b['avg_pred'] += p
 
-    out = {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
-        "samples": len(samples),
-        "step": step,
-        "bins": bins
-    }
-    with open(OUT, 'w', encoding='utf-8') as f:
-        json.dump(out, f, indent=2)
-    print(json.dumps(out, indent=2))
+        for b in bins:
+            if b['samples']:
+                b['avg_pred'] = b['avg_pred'] / b['samples']
+                actual_rate = b['wins'] / b['samples']
+            else:
+                b['avg_pred'] = None
+                actual_rate = None
+            if b['avg_pred'] and actual_rate is not None and b['avg_pred'] > 0:
+                mult = actual_rate / b['avg_pred']
+            else:
+                mult = 1.0
+            b['actual_rate'] = actual_rate
+            b['multiplier'] = max(0.5, min(1.5, mult))
+
+        out = {
+            "tenantId": tenant_id,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "samples": len(samples),
+            "step": step,
+            "bins": bins
+        }
+        out_path = out_path_for_tenant(tenant_id)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, 'w', encoding='utf-8') as f:
+            json.dump(out, f, indent=2)
+        print(json.dumps(out, indent=2))
 
 
 if __name__ == '__main__':

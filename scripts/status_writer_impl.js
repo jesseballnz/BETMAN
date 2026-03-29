@@ -1,13 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 
-function buildStatus(state, balanceData, stakePerRace=10) {
+function buildStatus(state, balanceData, stakePerRace=10, opts = {}) {
   const rawBetPlans = (state.bet_plans || []);
   const rawEarlyPlans = (state.early_plans || []);
   const rawExoticPlans = (state.exotic_plans || []);
   let aiWindowMin = 10;
+  const stakePath = opts.stakePath || path.join(process.cwd(), 'frontend', 'data', 'stake.json');
   try {
-    const stake = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'frontend', 'data', 'stake.json'), 'utf8'));
+    const stake = JSON.parse(fs.readFileSync(stakePath, 'utf8'));
     if (typeof stake.aiWindowMin === 'number') aiWindowMin = stake.aiWindowMin;
   } catch {}
 

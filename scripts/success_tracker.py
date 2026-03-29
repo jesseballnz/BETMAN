@@ -220,6 +220,7 @@ def evaluate_bets(bets):
     races_seen = defaultdict(set)
     races_won = defaultdict(set)
     races_total = {}
+    settled_bets = []
 
     def ensure_day(date):
         if date not in daily:
@@ -306,25 +307,27 @@ def evaluate_bets(bets):
 
             pos_by_name = { norm(name): pos for pos, name in positions.items() }
             winner = positions.get(1)
+            sel_pos = pos_by_name.get(norm(selection))
             if bet_type == 'ew':
-                sel_pos = pos_by_name.get(norm(selection))
                 hit = bool(sel_pos and sel_pos <= 3)
+                result_label = 'ew_win' if sel_pos == 1 else ('ew_place' if hit else 'ew_loss')
             else:
                 hit = norm(selection) == norm(winner)
+                result_label = 'win' if hit else 'loss'
             if hit:
                 day['wins'] += 1
                 pick['wins'] += 1
                 races_won[date].add(race_id)
             profit = None
+            place_odds = bet.get('place_odds')
             if odds is not None:
                 if bet_type == 'ew':
-                    place_odds = bet.get('place_odds')
                     # Fallback proxy when place price is missing in audit payload:
                     # use a conservative quarter-odds approximation so EW metrics remain populated.
                     if place_odds is None and odds is not None:
                         place_odds = max(1.6, round(float(odds) * 0.25, 2))
                     if place_odds is not None:
-                        if pos_by_name.get(norm(selection)) == 1:
+                        if sel_pos == 1:
                             profit = (odds - 1.0) + (place_odds - 1.0)
                         elif hit:
                             profit = (place_odds - 1.0) - 1.0
@@ -334,6 +337,29 @@ def evaluate_bets(bets):
                     profit = (odds - 1.0) if hit else -1.0
             if profit is not None:
                 add_profit(pick, profit, stake_units)
+                settled_bets.append({
+                    'date': date,
+                    'meeting': meeting,
+                    'race': str(race),
+                    'selection': selection,
+                    'type': bet_type,
+                    'result': result_label,
+                    'position': sel_pos,
+                    'winner': winner,
+                    'odds': odds,
+                    'place_odds': place_odds,
+                    'stake_units': stake_units,
+                    'return_units': round(profit + stake_units, 4),
+                    'profit_units': round(profit, 4),
+                    'roi': round((profit / stake_units), 6) if stake_units else None,
+                    'is_long': bool(odds is not None and odds >= 12),
+                    'pick_bucket': pick_key,
+                    'pedigreeTag': bet.get('pedigreeTag'),
+                    'pedigreeScore': bet.get('pedigreeScore'),
+                    'pedigreeConfidence': bet.get('pedigreeConfidence'),
+                    'pedigreeRelativeEdge': bet.get('pedigreeRelativeEdge'),
+                    'pedigreeArchetype': bet.get('pedigreeArchetype')
+                })
                 if bet.get('pedigreeTag') == 'Pedigree Advantage':
                     ped = day['pedigree_breakdown']
                     ped['bets'] += 1
@@ -571,7 +597,8 @@ def evaluate_bets(bets):
         if d and d < cutoff:
             continue
         recent[k] = v
-    return recent
+    settled_bets.sort(key=lambda x: (x.get('date') or '', x.get('meeting') or '', int(x.get('race') or 0), x.get('selection') or ''))
+    return recent, settled_bets
 
 
 def group_periods(daily, mode):
@@ -650,7 +677,7 @@ def group_periods(daily, mode):
     return out
 
 
-def write_outputs(base_dir, daily, weekly, monthly):
+def write_outputs(base_dir, daily, weekly, monthly, settled_bets=None):
     os.makedirs(base_dir, exist_ok=True)
     with open(os.path.join(base_dir, 'success_daily.json'), 'w', encoding='utf-8') as f:
         json.dump(daily, f, indent=2)
@@ -658,6 +685,8 @@ def write_outputs(base_dir, daily, weekly, monthly):
         json.dump(weekly, f, indent=2)
     with open(os.path.join(base_dir, 'success_monthly.json'), 'w', encoding='utf-8') as f:
         json.dump(monthly, f, indent=2)
+    with open(os.path.join(base_dir, 'settled_bets.json'), 'w', encoding='utf-8') as f:
+        json.dump(settled_bets or [], f, indent=2)
 
 
 def sync_to_db(tenant_id):
@@ -686,14 +715,14 @@ def main():
     if not bets_by_tenant:
         return
     for tenant_id, bets in bets_by_tenant.items():
-        daily = evaluate_bets(bets)
+        daily, settled_bets = evaluate_bets(bets)
         weekly = group_periods(daily, 'weekly')
         monthly = group_periods(daily, 'monthly')
         if tenant_id == 'default':
-            write_outputs(FRONTEND_DATA, daily, weekly, monthly)
+            write_outputs(FRONTEND_DATA, daily, weekly, monthly, settled_bets)
         else:
             tenant_dir = os.path.join(TENANTS_DIR, tenant_id, 'frontend-data')
-            write_outputs(tenant_dir, daily, weekly, monthly)
+            write_outputs(tenant_dir, daily, weekly, monthly, settled_bets)
 
         sync_to_db(tenant_id)
 

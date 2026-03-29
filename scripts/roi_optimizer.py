@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import re
 from pathlib import Path
 from datetime import datetime
@@ -8,7 +9,20 @@ from collections import defaultdict
 ROOT = Path(__file__).resolve().parents[1]
 MEMORY_DIR = ROOT / 'memory'
 DATA_DIR = ROOT / 'data' / 'tab'
-OUT_PATH = MEMORY_DIR / 'roi_optimization.json'
+TENANTS_DIR = MEMORY_DIR / 'tenants'
+
+
+def detect_tenant_id(path: Path) -> str:
+    marker = str(Path('memory') / 'tenants') + os.sep
+    raw = str(path)
+    if marker in raw:
+        tail = raw.split(marker, 1)[1]
+        return tail.split(os.sep, 1)[0]
+    return 'default'
+
+
+def out_path_for_tenant(tenant_id: str) -> Path:
+    return (ROOT / 'frontend' / 'data' / 'roi_optimization.json') if tenant_id == 'default' else (TENANTS_DIR / tenant_id / 'frontend-data' / 'roi_optimization.json')
 
 
 def norm(text):
@@ -76,11 +90,12 @@ def load_audit_files():
 
 
 def load_latest_bets():
-    latest = {}
+    latest = defaultdict(dict)
     files = load_audit_files()
     if not files:
-        return []
+        return {}
     for path in files:
+        tenant_id = detect_tenant_id(path)
         try:
             lines = path.read_text().splitlines()
         except Exception:
@@ -109,9 +124,9 @@ def load_latest_bets():
                 odds = item.get('odds') if item.get('odds') is not None else parse_odds(item.get('reason'))
                 prob = parse_prob(item.get('reason'))
                 key = f"{date}|{meeting}|{race}|{selection}|{bet_type}"
-                existing = latest.get(key)
+                existing = latest[tenant_id].get(key)
                 if not existing or ts_val > existing['ts']:
-                    latest[key] = {
+                    latest[tenant_id][key] = {
                         'date': date,
                         'meeting': meeting,
                         'race': str(race).replace('R','') if race is not None else '',
@@ -121,7 +136,7 @@ def load_latest_bets():
                         'prob': prob,
                         'ts': ts_val
                     }
-    return list(latest.values())
+    return {tenant_id: list(rows.values()) for tenant_id, rows in latest.items()}
 
 
 def build_results_cache(bets):
@@ -255,16 +270,20 @@ def optimize(bets, results_cache):
 
 
 def main():
-    bets = load_latest_bets()
-    results_cache = build_results_cache(bets)
-    baseline, best = optimize(bets, results_cache)
-    out = {
-        'baseline': baseline,
-        'best': best,
-        'notes': 'baseline excludes exotics; optimized filters use p= and odds only; small-sample risk if min_bets drops.'
-    }
-    OUT_PATH.write_text(json.dumps(out, indent=2))
-    print(json.dumps(out, indent=2))
+    bets_by_tenant = load_latest_bets()
+    for tenant_id, bets in bets_by_tenant.items():
+        results_cache = build_results_cache(bets)
+        baseline, best = optimize(bets, results_cache)
+        out = {
+            'tenantId': tenant_id,
+            'baseline': baseline,
+            'best': best,
+            'notes': 'baseline excludes exotics; optimized filters use p= and odds only; small-sample risk if min_bets drops.'
+        }
+        out_path = out_path_for_tenant(tenant_id)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(out, indent=2))
+        print(json.dumps(out, indent=2))
 
 
 if __name__ == '__main__':

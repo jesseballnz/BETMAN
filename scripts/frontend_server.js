@@ -304,8 +304,26 @@ async function initAuthPersistence(){
   }
 }
 
-function send(res, code, body, type='text/plain'){
-  res.writeHead(code, {'Content-Type': type});
+function getCorsHeaders(req){
+  const origin = String(req?.headers?.origin || '').trim();
+  const allowed = new Set(
+    String(process.env.BETMAN_CORS_ORIGINS || 'http://localhost:8081,http://127.0.0.1:8081,http://localhost:8080,http://127.0.0.1:8080')
+      .split(',')
+      .map((v) => String(v || '').trim())
+      .filter(Boolean)
+  );
+  const allowOrigin = allowed.has(origin) ? origin : 'http://localhost:8081';
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin'
+  };
+}
+
+function send(res, code, body, type='text/plain', req=null){
+  res.writeHead(code, { 'Content-Type': type, ...getCorsHeaders(req) });
   res.end(body);
 }
 
@@ -678,8 +696,8 @@ function toInt(v, fallback){
   return Math.max(0, Math.floor(n));
 }
 
-function okJson(res, payload, code = 200){
-  send(res, code, JSON.stringify(payload, null, 2), 'application/json');
+function okJson(res, payload, code = 200, req = null){
+  send(res, code, JSON.stringify(payload, null, 2), 'application/json', req);
 }
 
 function normalizeUsername(u){
@@ -3645,6 +3663,11 @@ const betmanApiHandler = createApiHandler({
 const server = http.createServer(async (req, res)=>{
   const url = new URL(req.url, `http://${req.headers.host}`);
 
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, getCorsHeaders(req));
+    return res.end();
+  }
+
   // BETMAN Commercial API v1
   if (url.pathname.startsWith('/api/v1/')) {
     try {
@@ -3653,7 +3676,7 @@ const server = http.createServer(async (req, res)=>{
     } catch (e) {
       console.error('API v1 error:', e);
       if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(500, { 'Content-Type': 'application/json', ...getCorsHeaders(req) });
         res.end(JSON.stringify({ ok: false, error: 'internal_error', message: 'An unexpected error occurred.' }));
       }
       return;
@@ -4041,8 +4064,10 @@ const server = http.createServer(async (req, res)=>{
 
   // Allow pre-auth reads for bootstrap config used by the login/landing UI.
   if (req.method === 'GET' && url.pathname === '/data/stake.json') {
-    const p = path.join(process.cwd(), 'frontend', 'data', 'stake.json');
-    return send(res, 200, fs.readFileSync(p), 'application/json');
+    const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
+    const p = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'stake.json'), 'stake.json');
+    const fallback = path.join(process.cwd(), 'frontend', 'data', 'stake.json');
+    return send(res, 200, fs.readFileSync(fs.existsSync(p) ? p : fallback), 'application/json');
   }
 
   if (req.method === 'GET' && url.pathname === '/favicon.ico') {
@@ -4454,6 +4479,7 @@ const server = http.createServer(async (req, res)=>{
       }
       const { spawnSync } = require('child_process');
       spawnSync('python', [path.join(process.cwd(), 'scripts', 'success_tracker.py')], { stdio: 'ignore' });
+      spawnSync('python', [path.join(process.cwd(), 'scripts', 'generate_learnings.py')], { stdio: 'ignore' });
       lastPerformancePollTs = now;
       return okJson(res, { ok: true, ran: true });
     }
@@ -5511,9 +5537,10 @@ if (url.pathname === '/api/ask-selection') {
     const meeting = String(url.searchParams.get('meeting') || '').trim().toLowerCase();
     const limitRaw = toInt(url.searchParams.get('limit'), 200);
     const offset = toInt(url.searchParams.get('offset'), 0);
-    const datedPath = date ? path.join(process.cwd(), 'frontend', 'data', `races-${date}.json`) : null;
-    const fallbackPath = path.join(process.cwd(), 'frontend', 'data', 'races.json');
-    const racesFile = (datedPath && fs.existsSync(datedPath)) ? datedPath : fallbackPath;
+    const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
+    const datedPath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', `races-${date}.json`), `races-${date}.json`);
+    const fallbackPath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json');
+    const racesFile = (date && datedPath && fs.existsSync(datedPath)) ? datedPath : fallbackPath;
     const fileStamp = fs.existsSync(racesFile) ? (fs.statSync(racesFile).mtimeMs || 0) : 0;
     const cacheKey = buildRaceListCacheKey({ date, country, meeting, limit: limitRaw, offset, version: fileStamp });
     const cached = getCachedRaceList(cacheKey);
@@ -5522,6 +5549,90 @@ if (url.pathname === '/api/ask-selection') {
     const data = loadJson(racesFile, { races: [], date: date || null, updatedAt: null });
 
     let rows = Array.isArray(data.races) ? data.races : [];
+    if ((!rows.length || meeting) && date) {
+      try {
+        const histDir = path.join(process.cwd(), 'data', 'tab', date);
+        const archived = [];
+        const walk = (dir) => {
+          if (!fs.existsSync(dir)) return;
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) walk(full);
+            else if (entry.isFile() && entry.name === 'event.json') {
+              try {
+                const raw = loadJson(full, null);
+                const payload = raw?.data || {};
+                const race = payload?.race || {};
+                const m = String(race.meeting_name || race.display_meeting_name || '').trim();
+                const rno = String(race.race_number || '').trim();
+                if (!m || !rno) continue;
+                if (meeting && m.toLowerCase() !== meeting) continue;
+                archived.push({
+                  key: `${String(race.country || '').toUpperCase()}:${m}:R${rno}`,
+                  country: String(race.country || '').toUpperCase() || null,
+                  meeting: m,
+                  race_number: rno,
+                  description: race.race_name || race.description || '',
+                  start_time_nz: race.start_time_nz || race.start_time || null,
+                  advertised_start: race.start_time || null,
+                  track_condition: race.track_condition || null,
+                  distance: race.distance || null,
+                  rail_position: race.rail_position || null,
+                  race_status: race.status || 'historical',
+                  runners: Array.isArray(payload.runners) ? payload.runners.map(x => ({
+                    runner_number: x.runner_number,
+                    name: x.runner_name || x.name,
+                    barrier: x.barrier,
+                    jockey: x.jockey,
+                    trainer: x.trainer,
+                    trainer_location: x.trainer_location,
+                    owners: x.owners,
+                    gear: x.gear,
+                    age: x.age,
+                    sex: x.sex,
+                    colour: x.colour,
+                    country: x.country,
+                    favourite: x.favourite,
+                    mover: x.mover,
+                    form_comment: x.form_comment,
+                    allowance_weight: x.allowance_weight,
+                    apprentice_indicator: x.apprentice_indicator,
+                    weight: x.weight_total || x.weight_allocated,
+                    rating: x.rating,
+                    handicap_rating: x.handicap_rating,
+                    win_p: x.win_p,
+                    place_p: x.place_p,
+                    spr: x.spr,
+                    odds: x.fixed_win || x.tote_win || null,
+                    fixed_win: x.fixed_win,
+                    tote_win: x.tote_win,
+                    fixed_place: x.fixed_place,
+                    tote_place: x.tote_place,
+                    is_scratched: x.is_scratched,
+                    sire: x.sire,
+                    dam: x.dam,
+                    dam_sire: x.dam_sire,
+                    dam_dam: x.dam_dam,
+                    breeding: x.breeding,
+                    last_twenty_starts: x.last_twenty_starts,
+                    last_starts: x.last_starts,
+                    speedmap: x.speedmap,
+                    silk_url_64x64: x.silk_url_64x64,
+                    silk_url_128x128: x.silk_url_128x128,
+                    silk_colours: x.silk_colours,
+                    stats: x.stats || null,
+                    form_indicators: x.form_indicators || null,
+                    past_performances: x.past_performances || null
+                  })) : []
+                });
+              } catch {}
+            }
+          }
+        };
+        walk(histDir);
+        if (archived.length) rows = archived;
+      } catch {}
+    }
     if (country) rows = rows.filter(r => String(r.country || '').toUpperCase() === country);
     if (meeting) rows = rows.filter(r => String(r.meeting || '').trim().toLowerCase() === meeting);
 
@@ -5600,10 +5711,11 @@ if (url.pathname === '/api/ask-selection') {
     return send(res, 200, fs.readFileSync(p), 'application/json');
   }
   if (req.method === 'GET' && url.pathname.startsWith('/data/races')) {
+    const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
     const filename = path.basename(url.pathname);
-    const payload = DB_URL ? await loadDataSnapshotFromPg('default', filename) : null;
+    const payload = DB_URL ? await loadDataSnapshotFromPg(tenantId, filename) : null;
     if (payload) return send(res, 200, JSON.stringify(payload), 'application/json');
-    const p = safePath(`/data/${filename}`);
+    const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', filename), filename);
     if (p && fs.existsSync(p)) return send(res, 200, fs.readFileSync(p), 'application/json');
   }
 

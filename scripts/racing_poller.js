@@ -238,7 +238,10 @@ function recentFormOK(lastTwenty, windowN, top3Min) {
 
 function adjFactor(r, profileBias=null) {
   let adj = 0;
-  const inds = (r.form_indicators || '').split(';').map(s => s.trim()).filter(Boolean);
+  const rawIndicators = r.form_indicators;
+  const inds = Array.isArray(rawIndicators)
+    ? rawIndicators.map(x => String(x).trim()).filter(Boolean)
+    : String(rawIndicators || '').split(';').map(s => s.trim()).filter(Boolean);
   const pos = (name, delta) => { if (inds.includes(name)) adj += delta; };
   pos('Jockey Flying', 0.02);
   pos('Jockey Airborne', 0.015);
@@ -317,7 +320,11 @@ function bestPlaceOdds(r){
   return NaN;
 }
 
-const probCalibration = loadJson(path.join(process.cwd(), 'memory', 'betman_prob_calibration.json'), null);
+const tenantId = String(process.env.TENANT_ID || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
+const tenantDataDir = path.join(process.cwd(), 'memory', 'tenants', tenantId, 'frontend-data');
+const tenantCalPath = tenantId === 'default' ? path.join(process.cwd(), 'frontend', 'data', 'betman_prob_calibration.json') : path.join(tenantDataDir, 'betman_prob_calibration.json');
+const systemCalPath = path.join(process.cwd(), 'frontend', 'data', 'betman_prob_calibration.json');
+const probCalibration = loadJson(tenantCalPath, loadJson(systemCalPath, null));
 const applyCalibration = (p) => {
   if (!probCalibration || !Array.isArray(probCalibration.bins)) return p;
   const bin = probCalibration.bins.find(b => typeof b.min === 'number' && typeof b.max === 'number' && p >= b.min && p < b.max);
@@ -354,7 +361,9 @@ async function main() {
   const meetingsFilter = (getArg('meetings', '')).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
   const statusFilter = getArg('status', '');
   const moveThreshold = parseFloat(getArg('move', '0.1')); // 10% default
-  const stakeCfg = loadJson(path.join(process.cwd(), 'frontend', 'data', 'stake.json'), { stakePerRace: 10, exoticStakePerRace: 1, betHarderMultiplier: 1.5 });
+  const tenantStakePath = tenantId === 'default' ? path.join(process.cwd(), 'frontend', 'data', 'stake.json') : path.join(tenantDataDir, 'stake.json');
+  const systemStakePath = path.join(process.cwd(), 'frontend', 'data', 'stake.json');
+  const stakeCfg = loadJson(tenantStakePath, loadJson(systemStakePath, { stakePerRace: 10, exoticStakePerRace: 1, betHarderMultiplier: 1.5 }));
   const longOdds = parseFloat(getArg('long_odds', '12'));
   const recentWindow = parseInt(getArg('recent_window', '3'), 10);
   const recentTop3 = parseInt(getArg('recent_top3', '2'), 10);

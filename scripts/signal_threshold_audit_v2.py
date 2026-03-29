@@ -7,7 +7,18 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MEMORY_DIR = os.path.join(ROOT, 'memory')
 TENANTS_DIR = os.path.join(MEMORY_DIR, 'tenants')
 DATA_DIR = os.path.join(ROOT, 'data', 'tab')
-OUT = os.path.join(MEMORY_DIR, 'signal-threshold-audit-v2.json')
+
+
+def detect_tenant_id(path):
+    marker = os.path.join('memory', 'tenants') + os.sep
+    if marker in path:
+        tail = path.split(marker, 1)[1]
+        return tail.split(os.sep, 1)[0]
+    return 'default'
+
+
+def out_path_for_tenant(tenant_id):
+    return os.path.join(ROOT, 'frontend', 'data', 'signal-threshold-audit-v2.json') if tenant_id == 'default' else os.path.join(TENANTS_DIR, tenant_id, 'frontend-data', 'signal-threshold-audit-v2.json')
 
 
 def norm(text):
@@ -137,16 +148,21 @@ def summarize(store):
 
 
 def main():
-    results_cache = {}
-    by_prob = {}
-    by_edge = {}
-    by_conf = {}
-    by_odds = {}
-    by_archetype = {}
-    intersections = {}
-    rows_seen = 0
-
+    grouped_paths = defaultdict(list)
     for audit_path in load_audit_files():
+        grouped_paths[detect_tenant_id(audit_path)].append(audit_path)
+
+    for tenant_id, audit_paths in grouped_paths.items():
+        results_cache = {}
+        by_prob = {}
+        by_edge = {}
+        by_conf = {}
+        by_odds = {}
+        by_archetype = {}
+        intersections = {}
+        rows_seen = 0
+
+        for audit_path in audit_paths:
         with open(audit_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
@@ -228,9 +244,12 @@ def main():
         recommendations.append('Raise minimum edge threshold above 2 points; current edge floor is too permissive.')
     summary['recommendations'] = recommendations
 
-    with open(OUT, 'w', encoding='utf-8') as f:
-        json.dump(summary, f, indent=2)
-    print(json.dumps(summary, indent=2))
+        summary['tenantId'] = tenant_id
+        out = out_path_for_tenant(tenant_id)
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(out, 'w', encoding='utf-8') as f:
+            json.dump(summary, f, indent=2)
+        print(json.dumps(summary, indent=2))
 
 
 if __name__ == '__main__':

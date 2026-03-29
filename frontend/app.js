@@ -729,6 +729,17 @@ function refreshTabAccess(){
   });
 }
 
+function setActivePerformanceTab(tab){
+  document.querySelectorAll('.perf-subtab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.perfTab === tab);
+  });
+  document.querySelectorAll('.perf-subpanel').forEach(panel => {
+    const active = panel.dataset.perfPanel === tab;
+    panel.style.display = active ? '' : 'none';
+    panel.classList.toggle('active', active);
+  });
+}
+
 function setActivePage(page){
   if ((page === 'bakeoff' || page === 'performance') && !isAdminUser) page = 'workspace';
   if (page !== 'workspace' && selectedMeeting === 'ALL') {
@@ -744,6 +755,7 @@ function setActivePage(page){
   refreshTabAccess();
   renderMeetingIntelPanel();
   if (page === 'performance') {
+    setActivePerformanceTab('overview');
     loadPerformance();
     loadRuntimeHealth();
   }
@@ -2543,7 +2555,7 @@ function renderSuggested(rows){
       .filter(r => meetingMatches(r.meeting))
       .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase())));
   }
-  if (!mainRows.length) {
+  if (!mainRows.length && (!selectedMeeting || selectedMeeting === 'ALL')) {
     const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
     mainRows = orderRowsAroundSelectedRace((latestSuggestedBets || suggestedSource)
       .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase())));
@@ -3958,7 +3970,7 @@ function renderNextPlanned(rows){
       .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn))
       .slice(0, 5);
   }
-  if (!scoped.length) {
+  if (!scoped.length && (!selectedMeeting || selectedMeeting === 'ALL')) {
     scoped = (rows || [])
       .slice()
       .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn))
@@ -5987,10 +5999,385 @@ function renderConfidenceBasedBets(){
   boostInput?.addEventListener('change', applyStakeSettings);
 }
 
+function downloadCsv(filename, rows){
+  const csv = rows.map(cols => cols.map(v => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function hydrateSettledMeetingFilter(rows){
+  const sel = $('perfSettledMeetingFilter');
+  if (!sel) return;
+  const prev = sel.value || 'all';
+  const meetings = Array.from(new Set((rows || []).map(r => String(r?.meeting || '').trim()).filter(Boolean))).sort((a,b) => a.localeCompare(b));
+  sel.innerHTML = [`<option value="all">All meetings</option>`].concat(meetings.map(m => `<option value="${escapeAttr(m)}">${escapeHtml(m)}</option>`)).join('');
+  sel.value = meetings.includes(prev) || prev === 'all' ? prev : 'all';
+}
+
+function renderBetProfile(race, runner, bet){
+  const safeRace = race || { meeting: bet?.meeting, race_number: bet?.race, distance: '—', track_condition: '—' };
+  const silk = runner?.silk_url_128x128 || runner?.silk_url_64x64 || '';
+  const silkImg = silk ? `<img class='silk-img' src='${silk}' alt='Silks for ${escapeHtml(runner?.name || runner?.runner_name || bet?.selection || '')}' />` : `<div class='silk-img' style='display:flex;align-items:center;justify-content:center;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#8ea0b5'>—</div>`;
+  const result = String(bet?.result || 'pending');
+  const resultTag = result === 'win' ? `<span class='tag win'>WIN</span>`
+    : result === 'loss' ? `<span class='tag'>LOSS</span>`
+    : result === 'ew_win' ? `<span class='tag win'>EW WIN</span>`
+    : result === 'ew_place' ? `<span class='tag value'>EW PLACE</span>`
+    : result === 'ew_loss' ? `<span class='tag'>EW LOSS</span>`
+    : `<span class='tag value'>${escapeHtml(result.toUpperCase())}</span>`;
+  const movement = (() => {
+    try {
+      const history = marketOddsHistoryCache || {};
+      const raceKey = Object.keys(history).find(k => {
+        const parts = String(k).split('|');
+        return parts.length >= 3 && String(parts[0] || '').toLowerCase().includes(String(bet?.meeting || '').toLowerCase()) && String(parts[1] || '') === String(bet?.race || '') && String(parts.slice(2).join('|') || '').toLowerCase().includes(String(bet?.selection || '').toLowerCase());
+      });
+      const hist = raceKey ? history[raceKey] : null;
+      if (!Array.isArray(hist) || !hist.length) return 'No odds movement captured';
+      const first = Number(hist[0]?.odds || 0);
+      const last = Number(hist[hist.length - 1]?.odds || 0);
+      if (!Number.isFinite(first) || !Number.isFinite(last) || first <= 0 || last <= 0) return 'No odds movement captured';
+      const pct = (((last - first) / first) * 100).toFixed(1);
+      const dir = last < first ? 'Firmed' : (last > first ? 'Drifting' : 'Flat');
+      return `${dir}: ${first.toFixed(2)} → ${last.toFixed(2)} (${pct}%)`;
+    } catch {
+      return 'No odds movement captured';
+    }
+  })();
+  const horseBlock = runner ? renderHorseAnalysis(safeRace, runner) : `
+    <div class='horse-meta'>
+      <div><b>Horse:</b> ${escapeHtml(String(bet?.selection || '—'))}</div>
+      <div><b>Race:</b> ${escapeHtml(String(bet?.meeting || '—'))} R${escapeHtml(String(bet?.race || '—'))}</div>
+      <div><b>Cache enrichment:</b> Historic race card not currently loaded in cache. Showing settled bet profile from ledger.</div>
+    </div>`;
+  return `
+    <div class='horse-summary'>
+      <div class='horse-silk'>${silkImg}</div>
+      <div>
+        <div><b>Bet:</b> ${escapeHtml(String(bet?.selection || '—'))}</div>
+        <div><b>Race:</b> ${escapeHtml(String(bet?.meeting || safeRace?.meeting || '—'))} R${escapeHtml(String(bet?.race || safeRace?.race_number || '—'))}</div>
+        <div><b>Type:</b> ${escapeHtml(String(bet?.type || '—')).toUpperCase()} · <b>Stake:</b> ${fmtUnits(bet?.stake_units)} · <b>Outcome:</b> ${resultTag}</div>
+        <div><b>Odds:</b> ${escapeHtml(String(bet?.odds ?? '—'))} · <b>Return:</b> ${fmtUnits(bet?.return_units)} · <b>P/L:</b> ${fmtUnits(bet?.profit_units)} · <b>ROI:</b> ${fmtPct(bet?.roi)}</div>
+        <div><b>Position:</b> ${escapeHtml(String(bet?.position ?? '—'))} · <b>Winner:</b> ${escapeHtml(String(bet?.winner || '—'))}</div>
+        <div><b>Odds movement:</b> ${escapeHtml(movement)}</div>
+      </div>
+    </div>
+    <div style='margin-top:12px'>${horseBlock}</div>
+  `;
+}
+
+async function findHistoricalRaceForBet(meeting, raceNum, betDate){
+  const normMeeting = String(meeting || '').trim().toLowerCase();
+  const normRace = String(raceNum || '').replace(/^R/i,'').trim();
+  if (betDate) {
+    try {
+      const res = await fetchLocal(`./api/races?date=${encodeURIComponent(String(betDate))}&meeting=${encodeURIComponent(String(meeting || ''))}&limit=5000`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const rows = Array.isArray(data?.races) ? data.races.map(sanitizeRaceObject) : [];
+        const hit = rows.find(r => String(r.meeting || '').trim().toLowerCase() === normMeeting && String(r.race_number || '').trim() === normRace);
+        if (hit) return hit;
+      }
+    } catch {}
+  }
+  try {
+    return await findRaceForButton(meeting, raceNum);
+  } catch {}
+  return null;
+}
+
+async function openSettledBetAnalysis(row){
+  let race = null;
+  try {
+    race = await findHistoricalRaceForBet(row?.meeting, row?.race, row?.date);
+  } catch {}
+  const selRaw = String(row?.selection || '');
+  const selNorm = normalizeRunnerName(selRaw.replace(/^\d+\.\s*/, '').trim());
+  const runner = race ? (race.runners || []).find(x => {
+    const nm = normalizeRunnerName(String(x.name || x.runner_name || '').trim());
+    return nm === selNorm || nm.includes(selNorm) || selNorm.includes(nm);
+  }) : null;
+  const title = race
+    ? `${race.meeting} R${race.race_number} — ${row?.selection || runner?.name || 'Bet Profile'}`
+    : `${row?.meeting || 'Unknown Meeting'} R${row?.race || '—'} — ${row?.selection || 'Bet Profile'}`;
+  openSummaryPopup(title, renderBetProfile(race, runner, row));
+}
+
+let latestSettledBetsCache = [];
+
+function initializeSettledBetFilters(rows){
+  const allRows = Array.isArray(rows) ? rows : [];
+  const latestDate = allRows.reduce((max, b) => {
+    const d = String(b?.date || '');
+    return d > max ? d : max;
+  }, '');
+  const latestTs = latestDate ? Date.parse(`${latestDate}T00:00:00Z`) : NaN;
+  const defaultFrom = Number.isFinite(latestTs) ? new Date(latestTs - (6 * 86400000)).toISOString().slice(0,10) : '';
+  const fromInput = $('perfSettledDateFrom');
+  const toInput = $('perfSettledDateTo');
+  if (fromInput) fromInput.value = defaultFrom || '';
+  if (toInput) toInput.value = latestDate || '';
+  const meeting = $('perfSettledMeetingFilter');
+  const result = $('perfSettledResultFilter');
+  const type = $('perfSettledTypeFilter');
+  const sort = $('perfSettledSort');
+  const search = $('perfSettledSearch');
+  if (meeting) meeting.value = 'all';
+  if (result) result.value = 'all';
+  if (type) type.value = 'all';
+  if (sort) sort.value = 'date_desc';
+  if (search) search.value = '';
+}
+
+function renderSettledBets(rows){
+  const el = $('perfSettledBetsTable');
+  const summaryEl = $('perfSettledSummary');
+  if (!el) return;
+  const allRows = Array.isArray(rows) ? rows : [];
+  if (!allRows.length) {
+    if (summaryEl) summaryEl.textContent = '';
+    el.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No settled bets captured yet</div></div>`;
+    return;
+  }
+
+  hydrateSettledMeetingFilter(allRows);
+
+  const q = String($('perfSettledSearch')?.value || '').trim().toLowerCase();
+  const resultFilter = String($('perfSettledResultFilter')?.value || 'all').toLowerCase();
+  const typeFilter = String($('perfSettledTypeFilter')?.value || 'all').toLowerCase();
+  const meetingFilter = String($('perfSettledMeetingFilter')?.value || 'all');
+  const sortBy = String($('perfSettledSort')?.value || 'date_desc');
+
+  const latestDate = allRows.reduce((max, b) => {
+    const d = String(b?.date || '');
+    return d > max ? d : max;
+  }, '');
+  const fromInput = $('perfSettledDateFrom');
+  const toInput = $('perfSettledDateTo');
+  const fromDate = String(fromInput?.value || '');
+  const toDate = String(toInput?.value || latestDate || '');
+
+  let filtered = allRows.filter(b => {
+    const result = String(b?.result || '').toLowerCase();
+    const type = String(b?.type || '').toLowerCase();
+    const meeting = String(b?.meeting || '');
+    const betDate = String(b?.date || '');
+    if (fromDate && betDate && betDate < fromDate) return false;
+    if (toDate && betDate && betDate > toDate) return false;
+    if (meetingFilter !== 'all' && meeting !== meetingFilter) return false;
+    if (resultFilter !== 'all' && result !== resultFilter) return false;
+    if (typeFilter !== 'all' && type !== typeFilter) return false;
+    if (!q) return true;
+    const hay = [
+      b?.date,
+      b?.meeting,
+      `r${b?.race || ''}`,
+      b?.selection,
+      b?.type,
+      b?.result,
+      b?.winner,
+      b?.pick_bucket
+    ].map(v => String(v || '').toLowerCase()).join(' | ');
+    return hay.includes(q);
+  });
+
+  const sorters = {
+    date_desc: (a,b) => `${b?.date || ''}|${String(b?.meeting || '')}|${String(b?.race || '').padStart(3,'0')}`.localeCompare(`${a?.date || ''}|${String(a?.meeting || '')}|${String(a?.race || '').padStart(3,'0')}`),
+    date_asc: (a,b) => `${a?.date || ''}|${String(a?.meeting || '')}|${String(a?.race || '').padStart(3,'0')}`.localeCompare(`${b?.date || ''}|${String(b?.meeting || '')}|${String(b?.race || '').padStart(3,'0')}`),
+    profit_desc: (a,b) => (Number(b?.profit_units ?? -999999) - Number(a?.profit_units ?? -999999)),
+    profit_asc: (a,b) => (Number(a?.profit_units ?? 999999) - Number(b?.profit_units ?? 999999)),
+    roi_desc: (a,b) => (Number(b?.roi ?? -999999) - Number(a?.roi ?? -999999)),
+    roi_asc: (a,b) => (Number(a?.roi ?? 999999) - Number(b?.roi ?? 999999)),
+    return_desc: (a,b) => (Number(b?.return_units ?? -999999) - Number(a?.return_units ?? -999999)),
+    return_asc: (a,b) => (Number(a?.return_units ?? 999999) - Number(b?.return_units ?? 999999))
+  };
+  filtered = [...filtered].sort(sorters[sortBy] || sorters.date_desc);
+
+  const totalProfit = filtered.reduce((sum, b) => sum + (Number.isFinite(Number(b?.profit_units)) ? Number(b.profit_units) : 0), 0);
+  const totalReturn = filtered.reduce((sum, b) => sum + (Number.isFinite(Number(b?.return_units)) ? Number(b.return_units) : 0), 0);
+  if (summaryEl) {
+    const windowLabel = fromDate || toDate ? `${fromDate || '…'} → ${toDate || '…'}` : 'Date range';
+    summaryEl.textContent = `${windowLabel} · ${filtered.length} bet${filtered.length === 1 ? '' : 's'} · Return ${fmtUnits(totalReturn)} · P/L ${fmtUnits(totalProfit)}`;
+  }
+
+  const head = `<div class='row header'>
+    <div>Date</div>
+    <div>Race</div>
+    <div>Selection</div>
+    <div>Type</div>
+    <div>Result</div>
+    <div>Return</div>
+    <div>P/L</div>
+    <div class='right'>ROI</div>
+  </div>`;
+  const body = filtered.map(b => {
+    const result = String(b?.result || 'pending');
+    const resultTag = result === 'win' ? `<span class='tag win'>WIN</span>`
+      : result === 'loss' ? `<span class='tag'>LOSS</span>`
+      : result === 'ew_win' ? `<span class='tag win'>EW WIN</span>`
+      : result === 'ew_place' ? `<span class='tag value'>EW PLACE</span>`
+      : result === 'ew_loss' ? `<span class='tag'>EW LOSS</span>`
+      : `<span class='tag value'>${escapeHtml(result.toUpperCase())}</span>`;
+    const raceLabel = `${escapeHtml(String(b?.meeting || ''))} R${escapeHtml(String(b?.race || ''))}`;
+    const selection = escapeHtml(String(b?.selection || '—'));
+    const extra = b?.winner ? `<div class='sub'>Winner: ${escapeHtml(String(b.winner))}</div>` : '';
+    return `<div class='row settled-bet-row' data-date='${escapeAttr(String(b?.date || ''))}' data-meeting='${escapeAttr(String(b?.meeting || ''))}' data-race='${escapeAttr(String(b?.race || ''))}' data-selection='${escapeAttr(String(b?.selection || ''))}' style='cursor:pointer'>
+      <div>${escapeHtml(String(b?.date || '—'))}</div>
+      <div>${raceLabel}</div>
+      <div>${selection}${extra}</div>
+      <div>${escapeHtml(String(b?.type || '—')).toUpperCase()}</div>
+      <div>${resultTag}</div>
+      <div>${fmtUnits(b?.return_units)}</div>
+      <div>${fmtUnits(b?.profit_units)}</div>
+      <div class='right'>${fmtPct(b?.roi)}</div>
+    </div>`;
+  });
+  el.innerHTML = head + (body.length ? body.join('') : `<div class='row'><div style='grid-column:1/-1'>No bets matched your filters</div></div>`);
+
+  el.querySelectorAll('.settled-bet-row').forEach(node => {
+    node.addEventListener('click', async () => {
+      const picked = (latestSettledBetsCache || []).find(b =>
+        String(b?.date || '') === String(node.dataset.date || '') &&
+        String(b?.meeting || '') === String(node.dataset.meeting || '') &&
+        String(b?.race || '') === String(node.dataset.race || '') &&
+        String(b?.selection || '') === String(node.dataset.selection || '')
+      ) || {
+        date: node.dataset.date,
+        meeting: node.dataset.meeting,
+        race: node.dataset.race,
+        selection: node.dataset.selection
+      };
+      await openSettledBetAnalysis(picked);
+    });
+  });
+}
+
+function renderLearningsSimpleList(targetId, items, emptyText = 'No data'){ 
+  const el = $(targetId);
+  if (!el) return;
+  if (!items || !items.length) {
+    el.innerHTML = `<div class='row'><div style='grid-column:1/-1'>${escapeHtml(emptyText)}</div></div>`;
+    return;
+  }
+  el.innerHTML = items.map(item => `<div class='row'><div style='grid-column:1/-1'>${escapeHtml(item)}</div></div>`).join('');
+}
+
+function renderLearningsMetricTable(targetId, rows, options = {}){
+  const el = $(targetId);
+  if (!el) return;
+  if (!rows || !rows.length) {
+    el.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No data</div></div>`;
+    return;
+  }
+  const limit = options.limit || 5;
+  const body = rows.slice(0, limit).map(r => `<div class='row'>
+    <div>${escapeHtml(String(r?.name || '—'))}</div>
+    <div>${r?.bets ?? 0} bets</div>
+    <div>${fmtPct(r?.win_rate)}</div>
+    <div>${fmtPct(r?.roi)}</div>
+    <div class='right'>${fmtUnits(r?.profit_units)}</div>
+  </div>`).join('');
+  el.innerHTML = `<div class='row header'><div>Name</div><div>Bets</div><div>Win</div><div>ROI</div><div class='right'>P/L</div></div>${body}`;
+}
+
+function renderLearningsBetTable(targetId, rows){
+  const el = $(targetId);
+  if (!el) return;
+  if (!rows || !rows.length) {
+    el.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No bets</div></div>`;
+    return;
+  }
+  const body = rows.slice(0, 10).map(r => `<div class='row'>
+    <div>${escapeHtml(String(r?.date || '—'))}</div>
+    <div>${escapeHtml(String(r?.meeting || '—'))} R${escapeHtml(String(r?.race || ''))}</div>
+    <div>${escapeHtml(String(r?.selection || '—'))}</div>
+    <div>${escapeHtml(String(r?.type || '—')).toUpperCase()}</div>
+    <div>${fmtUnits(r?.profit_units)}</div>
+    <div class='right'>${fmtPct(r?.roi)}</div>
+  </div>`).join('');
+  el.innerHTML = `<div class='row header'><div>Date</div><div>Race</div><div>Selection</div><div>Type</div><div>P/L</div><div class='right'>ROI</div></div>${body}`;
+}
+
+function renderAutotuneControl(){
+  const el = $('perfAutotuneControl');
+  if (!el) return;
+  const key = 'betman_autotune_enabled';
+  const enabled = localStorage.getItem(key) === '1';
+  el.innerHTML = `<div class='row'>
+    <div><b>Status</b></div>
+    <div>${enabled ? '<span class="tag win">ON</span>' : '<span class="tag">OFF</span>'}</div>
+    <div style='grid-column:3 / -1; text-align:right'><button id='perfAutotuneToggle' class='btn'>Turn ${enabled ? 'OFF' : 'ON'}</button></div>
+  </div>
+  <div class='row'><div style='grid-column:1/-1'>AUTOTUNE is a control switch for future automatic threshold/rule adaptation. Phase 4 wiring starts here.</div></div>`;
+  const btn = $('perfAutotuneToggle');
+  if (btn) {
+    btn.onclick = () => {
+      localStorage.setItem(key, enabled ? '0' : '1');
+      renderAutotuneControl();
+    };
+  }
+}
+
+function renderLearningsReport(report){
+  const sumEl = $('perfLearningsSummary');
+  const recEl = $('perfLearningsRecommendations');
+  if (!sumEl || !recEl) return;
+  renderAutotuneControl();
+  if (!report || !report.summary) {
+    sumEl.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No learnings report yet</div></div>`;
+    recEl.innerHTML = '';
+    renderLearningsSimpleList('perfLearningsEdgeTable', [], 'No edge sources yet');
+    renderLearningsSimpleList('perfLearningsLeakTable', [], 'No leak sources yet');
+    renderLearningsMetricTable('perfLearningsBestMeetings', []);
+    renderLearningsMetricTable('perfLearningsWorstMeetings', []);
+    renderLearningsMetricTable('perfLearningsBestBands', []);
+    renderLearningsMetricTable('perfLearningsWorstBands', []);
+    renderLearningsBetTable('perfLearningsTopBets', []);
+    renderLearningsBetTable('perfLearningsWorstBets', []);
+    return;
+  }
+  const windowText = `${report.window?.from || '—'} → ${report.window?.to || '—'}`;
+  const summaryRows = [
+    `<div class='row header'><div>Window</div><div>Bets</div><div>Win Rate</div><div>ROI</div><div class='right'>P/L</div></div>`,
+    `<div class='row'><div>${escapeHtml(windowText)}</div><div>${report.summary?.bets ?? 0}</div><div>${fmtPct(report.summary?.win_rate)}</div><div>${fmtPct(report.summary?.roi)}</div><div class='right'>${fmtUnits(report.summary?.profit_units)}</div></div>`,
+    `<div class='row'><div style='grid-column:1/-1'><b>Edge sources:</b> ${(report.edge_sources || []).map(escapeHtml).join(' · ') || '—'}</div></div>`,
+    `<div class='row'><div style='grid-column:1/-1'><b>Leak sources:</b> ${(report.leak_sources || []).map(escapeHtml).join(' · ') || '—'}</div></div>`
+  ];
+  sumEl.innerHTML = summaryRows.join('');
+
+  const recs = report.recommendations || [];
+  recEl.innerHTML = recs.length
+    ? recs.map(r => `<div class='row'><div style='grid-column:1/-1'>${escapeHtml(r)}</div></div>`).join('')
+    : `<div class='row'><div style='grid-column:1/-1'>No recommendations yet</div></div>`;
+
+  renderLearningsSimpleList('perfLearningsEdgeTable', report.edge_sources || [], 'No edge sources yet');
+  renderLearningsSimpleList('perfLearningsLeakTable', report.leak_sources || [], 'No leak sources yet');
+  const meetings = Array.isArray(report.by_meeting) ? report.by_meeting : [];
+  const bands = Array.isArray(report.by_odds_band) ? report.by_odds_band : [];
+  renderLearningsMetricTable('perfLearningsBestMeetings', [...meetings].sort((a,b) => (b?.profit_units ?? -999) - (a?.profit_units ?? -999)), { limit: 5 });
+  renderLearningsMetricTable('perfLearningsWorstMeetings', [...meetings].sort((a,b) => (a?.profit_units ?? 999) - (b?.profit_units ?? 999)), { limit: 5 });
+  renderLearningsMetricTable('perfLearningsBestBands', [...bands].sort((a,b) => (b?.roi ?? -999) - (a?.roi ?? -999)), { limit: 5 });
+  renderLearningsMetricTable('perfLearningsWorstBands', [...bands].sort((a,b) => (a?.roi ?? 999) - (b?.roi ?? 999)), { limit: 5 });
+  renderLearningsBetTable('perfLearningsTopBets', report.top_bets || []);
+  renderLearningsBetTable('perfLearningsWorstBets', report.worst_bets || []);
+}
+
 async function loadPerformance(){
   const daily = await fetchLocal('./data/success_daily.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const weekly = await fetchLocal('./data/success_weekly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const monthly = await fetchLocal('./data/success_monthly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
+  const settledBets = await fetchLocal('./data/settled_bets.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>[]);
+  const learningsReport = await fetchLocal('./data/learnings_report.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   signalThresholdAuditCache = await fetchLocal('./data/signal_threshold_audit_v2.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
 
   const summaryEl = $('perfSummary');
@@ -5999,6 +6386,7 @@ async function loadPerformance(){
   }
 
   renderBetPlanPerformance(daily);
+  renderLearningsReport(learningsReport);
 
   const latestDailyKey = latestKey(daily);
   const latestDaily = latestDailyKey ? daily[latestDailyKey] : null;
@@ -6138,6 +6526,72 @@ async function loadPerformance(){
   renderPerformanceTable('perfWeeklyTable', weekly);
   renderPerformanceTable('perfMonthlyTable', monthly);
   renderExoticsTable('perfExoticsTable', daily);
+
+  latestSettledBetsCache = Array.isArray(settledBets) ? settledBets : [];
+  const fromInputInit = $('perfSettledDateFrom');
+  const toInputInit = $('perfSettledDateTo');
+  if ((fromInputInit && !fromInputInit.value) || (toInputInit && !toInputInit.value)) {
+    initializeSettledBetFilters(latestSettledBetsCache);
+  }
+  renderSettledBets(settledBets);
+
+  const searchInput = $('perfSettledSearch');
+  if (searchInput && searchInput.dataset.bound !== '1') {
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') renderSettledBets(latestSettledBetsCache);
+    });
+    searchInput.dataset.bound = '1';
+  }
+
+  const searchBtn = $('perfSettledSearchBtn');
+  if (searchBtn && searchBtn.dataset.bound !== '1') {
+    searchBtn.addEventListener('click', () => renderSettledBets(latestSettledBetsCache));
+    searchBtn.dataset.bound = '1';
+  }
+
+  const clearBtn = $('perfSettledClearBtn');
+  if (clearBtn && clearBtn.dataset.bound !== '1') {
+    clearBtn.addEventListener('click', () => {
+      initializeSettledBetFilters(latestSettledBetsCache);
+      renderSettledBets(latestSettledBetsCache);
+    });
+    clearBtn.dataset.bound = '1';
+  }
+
+  const exportBtn = $('perfSettledExportCsv');
+  if (exportBtn && exportBtn.dataset.bound !== '1') {
+    exportBtn.addEventListener('click', () => {
+      const rows = [['date','meeting','race','selection','type','result','winner','position','odds','place_odds','stake_units','return_units','profit_units','roi','pick_bucket','is_long']];
+      const q = String($('perfSettledSearch')?.value || '').trim().toLowerCase();
+      const resultFilter = String($('perfSettledResultFilter')?.value || 'all').toLowerCase();
+      const typeFilter = String($('perfSettledTypeFilter')?.value || 'all').toLowerCase();
+      const meetingFilter = String($('perfSettledMeetingFilter')?.value || 'all');
+      const fromDate = String($('perfSettledDateFrom')?.value || '');
+      const toDate = String($('perfSettledDateTo')?.value || '');
+      (Array.isArray(settledBets) ? settledBets : []).filter(b => {
+        const result = String(b?.result || '').toLowerCase();
+        const type = String(b?.type || '').toLowerCase();
+        const meeting = String(b?.meeting || '');
+        const betDate = String(b?.date || '');
+        if (fromDate && betDate && betDate < fromDate) return false;
+        if (toDate && betDate && betDate > toDate) return false;
+        if (meetingFilter !== 'all' && meeting !== meetingFilter) return false;
+        if (resultFilter !== 'all' && result !== resultFilter) return false;
+        if (typeFilter !== 'all' && type !== typeFilter) return false;
+        if (!q) return true;
+        const hay = [b?.date,b?.meeting,`r${b?.race || ''}`,b?.selection,b?.type,b?.result,b?.winner,b?.pick_bucket].map(v => String(v || '').toLowerCase()).join(' | ');
+        return hay.includes(q);
+      }).forEach(b => {
+        rows.push([
+          b?.date, b?.meeting, b?.race, b?.selection, b?.type, b?.result, b?.winner, b?.position,
+          b?.odds, b?.place_odds, b?.stake_units, b?.return_units, b?.profit_units, b?.roi, b?.pick_bucket, b?.is_long
+        ]);
+      });
+      downloadCsv(`settled-bets-${fromDate || 'from'}-to-${toDate || 'to'}.csv`, rows);
+    });
+    exportBtn.dataset.bound = '1';
+  }
+
   renderPerformanceCharts(daily);
   renderConfidenceBasedBets();
   updatePerformanceRefreshState();
@@ -9919,6 +10373,9 @@ $('openStrategyBtn')?.addEventListener('click', ()=> {
 $('strategyBuildBtn')?.addEventListener('click', ()=> buildStrategyPlan());
 $('strategyPrintBtn')?.addEventListener('click', ()=> printStrategyBook());
 $('refreshPerformanceBtn')?.addEventListener('click', ()=> triggerPerformancePoll(true));
+document.querySelectorAll('.perf-subtab').forEach(btn => {
+  btn.addEventListener('click', () => setActivePerformanceTab(btn.dataset.perfTab || 'overview'));
+});
 $('trainModelsBtn')?.addEventListener('click', ()=> triggerModelTraining());
 setActivePage(activePage);
 

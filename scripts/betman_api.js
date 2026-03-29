@@ -34,6 +34,11 @@ function generateApiKey() {
 function extractApiKey(req, url) {
   const header = String(req.headers['x-api-key'] || '').trim();
   if (header) return header;
+
+  const auth = String(req.headers['authorization'] || '').trim();
+  const bearerMatch = auth.match(/^Bearer\s+(.+)$/i);
+  if (bearerMatch && bearerMatch[1]) return String(bearerMatch[1]).trim();
+
   if (url && url.searchParams) {
     const qp = String(url.searchParams.get('api_key') || '').trim();
     if (qp) return qp;
@@ -96,8 +101,29 @@ async function tabFetch(endpoint, params) {
 
 /* ── JSON response helpers ─────────────────────────────────────────── */
 
-function apiJson(res, payload, code = 200, rateInfo) {
-  const headers = { 'Content-Type': 'application/json; charset=utf-8' };
+function getCorsHeaders(req) {
+  const origin = String(req?.headers?.origin || '').trim();
+  const allowed = new Set(
+    String(process.env.BETMAN_CORS_ORIGINS || 'http://localhost:8081,http://127.0.0.1:8081,http://localhost:8080,http://127.0.0.1:8080')
+      .split(',')
+      .map((v) => String(v || '').trim())
+      .filter(Boolean)
+  );
+  const allowOrigin = allowed.has(origin) ? origin : 'http://localhost:8081';
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin'
+  };
+}
+
+function apiJson(req, res, payload, code = 200, rateInfo) {
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    ...getCorsHeaders(req)
+  };
   if (rateInfo) {
     headers['X-RateLimit-Limit'] = String(rateInfo.limit || DEFAULT_RATE_LIMIT);
     headers['X-RateLimit-Remaining'] = String(rateInfo.remaining ?? '');
@@ -108,8 +134,8 @@ function apiJson(res, payload, code = 200, rateInfo) {
   res.end(JSON.stringify(payload, null, 2));
 }
 
-function apiError(res, code, error, message, rateInfo) {
-  apiJson(res, { ok: false, error, message, api_version: API_VERSION }, code, rateInfo);
+function apiError(req, res, code, error, message, rateInfo) {
+  apiJson(req, res, { ok: false, error, message, api_version: API_VERSION }, code, rateInfo);
 }
 
 /* ── Route handler factory ─────────────────────────────────────────── */
@@ -138,11 +164,38 @@ function createApiHandler(deps) {
     rootDir
   } = deps;
 
+  function sha256(value) {
+    return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+  }
+
   /* ── API-key auth middleware ──────────────────────────────────────── */
 
   function findKeyRecord(apiKey) {
     if (!apiKey) return null;
     const state = getAuthState();
+
+    const legacyAdminHash = String(state?.adminMeta?.apiKeyHash || '').trim();
+    if (legacyAdminHash && sha256(apiKey) === legacyAdminHash) {
+      return {
+        keyRecord: {
+          key: apiKey,
+          label: 'legacy-admin-key',
+          active: true,
+          createdAt: state?.adminMeta?.apiKeyCreatedAt || null,
+          keyPreview: state?.adminMeta?.apiKeyPreview || null,
+          legacy: true
+        },
+        principal: {
+          username: state.username,
+          role: 'admin',
+          isAdmin: true,
+          tenantId: 'default',
+          planType: 'admin',
+          source: 'api_key_legacy_admin'
+        }
+      };
+    }
+
     const allUsers = [
       { username: state.username, role: 'admin', isAdmin: true, tenantId: 'default', apiKeys: state.adminApiKeys || [] },
       ...(state.users || []).map(u => ({
@@ -177,12 +230,12 @@ function createApiHandler(deps) {
   function requireApiAuth(req, res, url) {
     const rawKey = extractApiKey(req, url);
     if (!rawKey) {
-      apiError(res, 401, 'api_key_required', 'Provide an API key via X-API-Key header or api_key query parameter.');
+      apiError(req, res, 401, 'api_key_required', 'Provide an API key via X-API-Key header or api_key query parameter.');
       return null;
     }
     const record = findKeyRecord(rawKey);
     if (!record) {
-      apiError(res, 401, 'invalid_api_key', 'The provided API key is invalid or has been revoked.');
+      apiError(req, res, 401, 'invalid_api_key', 'The provided API key is invalid or has been revoked.');
       return null;
     }
     // rate limit
@@ -191,7 +244,7 @@ function createApiHandler(deps) {
     const check = rateCheck(rawKey, limit, window);
     const rateInfo = { limit, remaining: check.remaining, window, retryAfter: check.retryAfter };
     if (!check.allowed) {
-      apiError(res, 429, 'rate_limit_exceeded', `Rate limit of ${limit} requests per ${window}s exceeded. Retry after ${check.retryAfter}s.`, rateInfo);
+      apiError(req, res, 429, 'rate_limit_exceeded', `Rate limit of ${limit} requests per ${window}s exceeded. Retry after ${check.retryAfter}s.`, rateInfo);
       return null;
     }
     req.apiPrincipal = record.principal;
@@ -221,7 +274,7 @@ function createApiHandler(deps) {
 
     /* ── Public: version / health ─────────────────────────────────── */
     if (req.method === 'GET' && route === '/health') {
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         service: 'BETMAN Racing Intelligence API',
@@ -230,7 +283,7 @@ function createApiHandler(deps) {
     }
 
     if (req.method === 'GET' && route === '/version') {
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         product: 'BETMAN',
@@ -247,7 +300,7 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/me ───────────────────────────────────────────── */
     if (req.method === 'GET' && route === '/me') {
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         user: {
@@ -308,7 +361,7 @@ function createApiHandler(deps) {
         }))
       ];
 
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         defaultProvider,
@@ -331,7 +384,7 @@ function createApiHandler(deps) {
       if (meeting) {
         filtered = filtered.filter(r => String(r.meeting || '').toLowerCase().includes(meeting));
       }
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         count: filtered.length,
@@ -363,9 +416,9 @@ function createApiHandler(deps) {
         String(r.race_number || r.raceNumber || '') === raceNum
       );
       if (!race) {
-        return apiError(res, 404, 'race_not_found', `No race found for meeting "${meetingSlug}" race ${raceNum}.`, rateInfo), true;
+        return apiError(req, res, 404, 'race_not_found', `No race found for meeting "${meetingSlug}" race ${raceNum}.`, rateInfo), true;
       }
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         race: {
@@ -443,7 +496,7 @@ function createApiHandler(deps) {
       const wins = filtered.filter(b => !exoticTypes.has(String(b.type || '').toLowerCase())).map(formatBet);
       const exotics = filtered.filter(b => exoticTypes.has(String(b.type || '').toLowerCase())).map(formatBet);
 
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         count: filtered.length,
@@ -458,7 +511,7 @@ function createApiHandler(deps) {
     if (req.method === 'GET' && route === '/interesting-runners') {
       const status = readDataFile('status.json', {});
       const runners = status.interestingRunners || [];
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         count: runners.length,
@@ -483,7 +536,7 @@ function createApiHandler(deps) {
       if (meeting) {
         filtered = filtered.filter(m => String(m.meeting || '').toLowerCase().includes(meeting));
       }
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         count: filtered.length,
@@ -503,7 +556,7 @@ function createApiHandler(deps) {
     /* ── GET /api/v1/status ───────────────────────────────────────── */
     if (req.method === 'GET' && route === '/status') {
       const status = readDataFile('status.json', {});
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         updatedAt: status.updatedAt || null,
@@ -520,11 +573,11 @@ function createApiHandler(deps) {
       const period = String(url.searchParams.get('period') || 'daily').toLowerCase();
       const validPeriods = ['daily', 'weekly', 'monthly'];
       if (!validPeriods.includes(period)) {
-        return apiError(res, 400, 'invalid_period', `Period must be one of: ${validPeriods.join(', ')}`, rateInfo), true;
+        return apiError(req, res, 400, 'invalid_period', `Period must be one of: ${validPeriods.join(', ')}`, rateInfo), true;
       }
       const fileMap = { daily: 'success_daily.json', weekly: 'success_weekly.json', monthly: 'success_monthly.json' };
       const data = readDataFile(fileMap[period], {});
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         period,
@@ -535,7 +588,7 @@ function createApiHandler(deps) {
     /* ── GET /api/v1/stake-config ─────────────────────────────────── */
     if (req.method === 'GET' && route === '/stake-config') {
       const stake = readDataFile('stake.json', {});
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         stakePerRace: stake.stakePerRace || null,
@@ -554,16 +607,16 @@ function createApiHandler(deps) {
         req.on('end', () => {
           let payload;
           try { payload = body ? JSON.parse(body) : {}; } catch {
-            apiError(res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);
+            apiError(req, res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);
             return resolve(true);
           }
           const question = String(payload.question || '').trim();
           if (!question) {
-            apiError(res, 400, 'missing_question', 'The "question" field is required.', rateInfo);
+            apiError(req, res, 400, 'missing_question', 'The "question" field is required.', rateInfo);
             return resolve(true);
           }
           if (question.length > 2000) {
-            apiError(res, 400, 'question_too_long', 'Questions are limited to 2000 characters.', rateInfo);
+            apiError(req, res, 400, 'question_too_long', 'Questions are limited to 2000 characters.', rateInfo);
             return resolve(true);
           }
 
@@ -736,7 +789,7 @@ function createApiHandler(deps) {
             }
           };
 
-          apiJson(res, response, 200, rateInfo);
+          apiJson(req, res, response, 200, rateInfo);
           resolve(true);
         });
       });
@@ -746,12 +799,14 @@ function createApiHandler(deps) {
     if (req.method === 'GET' && route === '/bet-history') {
       const results = readDataFile('bet_results.json', []);
       const placed = readDataFile('placed_bets.json', []);
+      const settled = readDataFile('settled_bets.json', []);
       const limitParam = Math.min(Number(url.searchParams.get('limit') || 50), 200);
-      return apiJson(res, {
+      return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         placedBets: (Array.isArray(placed) ? placed : []).slice(-limitParam),
-        betResults: (Array.isArray(results) ? results : []).slice(-limitParam)
+        betResults: (Array.isArray(results) ? results : []).slice(-limitParam),
+        settledBets: (Array.isArray(settled) ? settled : []).slice(-limitParam)
       }, 200, rateInfo), true;
     }
 
@@ -759,7 +814,7 @@ function createApiHandler(deps) {
 
     if (route.startsWith('/tab/')) {
       if (!principal.isAdmin) {
-        return apiError(res, 403, 'admin_required', 'TAB API proxy endpoints are restricted to admin accounts.', rateInfo), true;
+        return apiError(req, res, 403, 'admin_required', 'TAB API proxy endpoints are restricted to admin accounts.', rateInfo), true;
       }
 
       /* GET /api/v1/tab/meetings */
@@ -772,8 +827,8 @@ function createApiHandler(deps) {
         const result = await tabFetch('/racing/meetings', {
           date_from: date, date_to: date, country, type, limit, offset
         });
-        if (!result.ok) return apiError(res, 502, result.error, result.message, rateInfo), true;
-        return apiJson(res, {
+        if (!result.ok) return apiError(req, res, 502, result.error, result.message, rateInfo), true;
+        return apiJson(req, res, {
           ok: true,
           api_version: API_VERSION,
           source: 'tab_nz_affiliates',
@@ -793,8 +848,8 @@ function createApiHandler(deps) {
           with_tote_trends_data: 'true',
           present_overlay: 'false'
         });
-        if (!result.ok) return apiError(res, 502, result.error, result.message, rateInfo), true;
-        return apiJson(res, {
+        if (!result.ok) return apiError(req, res, 502, result.error, result.message, rateInfo), true;
+        return apiJson(req, res, {
           ok: true,
           api_version: API_VERSION,
           source: 'tab_nz_affiliates',
@@ -809,8 +864,8 @@ function createApiHandler(deps) {
         const date = String(url.searchParams.get('date') || 'today');
         const type = String(url.searchParams.get('type') || 'T');
         const result = await tabFetch('/racing/races', { channel, type, date });
-        if (!result.ok) return apiError(res, 502, result.error, result.message, rateInfo), true;
-        return apiJson(res, {
+        if (!result.ok) return apiError(req, res, 502, result.error, result.message, rateInfo), true;
+        return apiJson(req, res, {
           ok: true,
           api_version: API_VERSION,
           source: 'tab_nz_affiliates',
@@ -819,7 +874,7 @@ function createApiHandler(deps) {
         }, 200, rateInfo), true;
       }
 
-      return apiError(res, 404, 'not_found', `TAB API endpoint not found: ${route}`, rateInfo), true;
+      return apiError(req, res, 404, 'not_found', `TAB API endpoint not found: ${route}`, rateInfo), true;
     }
 
     /* ── Admin: API key management ────────────────────────────────── */
@@ -837,7 +892,7 @@ function createApiHandler(deps) {
             allKeys.push({ username: u.username, role: u.role || 'user', label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null });
           });
         });
-        return apiJson(res, { ok: true, api_version: API_VERSION, keys: allKeys }, 200, rateInfo), true;
+        return apiJson(req, res, { ok: true, api_version: API_VERSION, keys: allKeys }, 200, rateInfo), true;
       } else {
         const userRec = (state.users || []).find(u => u.username === principal.username);
         const keys = (userRec?.apiKeys || []).map(k => ({
@@ -846,7 +901,7 @@ function createApiHandler(deps) {
           active: k.active !== false,
           createdAt: k.createdAt || null
         }));
-        return apiJson(res, { ok: true, api_version: API_VERSION, keys }, 200, rateInfo), true;
+        return apiJson(req, res, { ok: true, api_version: API_VERSION, keys }, 200, rateInfo), true;
       }
     }
 
@@ -858,7 +913,7 @@ function createApiHandler(deps) {
         req.on('end', () => {
           let payload;
           try { payload = body ? JSON.parse(body) : {}; } catch {
-            apiError(res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);
+            apiError(req, res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);
             return resolve(true);
           }
           const label = String(payload.label || 'API Key').trim().slice(0, 100);
@@ -880,7 +935,7 @@ function createApiHandler(deps) {
 
           if (isAdminUser) {
             if (!principal.isAdmin) {
-              apiError(res, 403, 'forbidden', 'Cannot create keys for admin account.', rateInfo);
+              apiError(req, res, 403, 'forbidden', 'Cannot create keys for admin account.', rateInfo);
               return resolve(true);
             }
             const adminKeys = state.adminApiKeys || [];
@@ -890,7 +945,7 @@ function createApiHandler(deps) {
             const users = [...(state.users || [])];
             const idx = users.findIndex(u => u.username === targetUser);
             if (idx < 0) {
-              apiError(res, 404, 'user_not_found', `User "${targetUser}" not found.`, rateInfo);
+              apiError(req, res, 404, 'user_not_found', `User "${targetUser}" not found.`, rateInfo);
               return resolve(true);
             }
             const userKeys = users[idx].apiKeys || [];
@@ -899,7 +954,7 @@ function createApiHandler(deps) {
             persistAuthState({ ...state, users });
           }
 
-          apiJson(res, {
+          apiJson(req, res, {
             ok: true,
             api_version: API_VERSION,
             message: 'API key created. Store the key securely — it cannot be retrieved again.',
@@ -923,14 +978,14 @@ function createApiHandler(deps) {
         req.on('end', () => {
           let payload;
           try { payload = body ? JSON.parse(body) : {}; } catch {
-            apiError(res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);
+            apiError(req, res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);
             return resolve(true);
           }
           const keyPrefix = String(payload.keyPrefix || '').trim();
           const keyFull = String(payload.key || '').trim();
 
           if (!keyPrefix && !keyFull) {
-            apiError(res, 400, 'missing_key', 'Provide "key" (full key) or "keyPrefix" to identify the key to revoke.', rateInfo);
+            apiError(req, res, 400, 'missing_key', 'Provide "key" (full key) or "keyPrefix" to identify the key to revoke.', rateInfo);
             return resolve(true);
           }
 
@@ -962,7 +1017,7 @@ function createApiHandler(deps) {
               const kidx = userKeys.findIndex(matchKey);
               if (kidx >= 0) {
                 if (!principal.isAdmin && users[i].username !== principal.username) {
-                  apiError(res, 403, 'forbidden', 'You can only revoke your own API keys.', rateInfo);
+                  apiError(req, res, 403, 'forbidden', 'You can only revoke your own API keys.', rateInfo);
                   return resolve(true);
                 }
                 userKeys[kidx].active = false;
@@ -976,18 +1031,18 @@ function createApiHandler(deps) {
           }
 
           if (!found) {
-            apiError(res, 404, 'key_not_found', 'No matching active API key found.', rateInfo);
+            apiError(req, res, 404, 'key_not_found', 'No matching active API key found.', rateInfo);
             return resolve(true);
           }
 
-          apiJson(res, { ok: true, api_version: API_VERSION, message: 'API key revoked.' }, 200, rateInfo);
+          apiJson(req, res, { ok: true, api_version: API_VERSION, message: 'API key revoked.' }, 200, rateInfo);
           resolve(true);
         });
       });
     }
 
     /* ── 404 for unmatched /api/v1/* routes ────────────────────────── */
-    return apiError(res, 404, 'not_found', `Endpoint not found: ${req.method} ${p}`, rateInfo), true;
+    return apiError(req, res, 404, 'not_found', `Endpoint not found: ${req.method} ${p}`, rateInfo), true;
   }
 
   return handle;

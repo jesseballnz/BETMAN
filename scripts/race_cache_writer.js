@@ -8,7 +8,11 @@ function loadJson(p, fallback){
 }
 
 const ROOT = path.resolve(__dirname, '..');
-const statePath = path.join(ROOT, 'memory', 'racing-poll-state.json');
+const tenantId = String(process.env.TENANT_ID || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
+const isDefaultTenant = tenantId === 'default';
+const tenantDataDir = path.join(ROOT, 'memory', 'tenants', tenantId, 'frontend-data');
+const tenantMemoryDir = path.join(ROOT, 'memory', 'tenants', tenantId);
+const statePath = isDefaultTenant ? path.join(ROOT, 'memory', 'racing-poll-state.json') : path.join(tenantMemoryDir, 'racing-poll-state.json');
 const state = loadJson(statePath, null);
 if (!state) process.exit(1);
 
@@ -47,7 +51,7 @@ function extractRacingAusMetrics(runner = {}) {
   };
 }
 
-const statusPath = path.join(ROOT, 'frontend', 'data', 'status.json');
+const statusPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'status.json') : path.join(tenantDataDir, 'status.json');
 const status = loadJson(statusPath, {});
 const loveracingCachePath = path.join(ROOT, 'memory', 'loveracing_horse_cache.json');
 const loveracingCache = loadJson(loveracingCachePath, {});
@@ -140,14 +144,15 @@ const races = Object.entries(state.races || {})
     })
   }));
 
-const outDir = path.join(ROOT, 'frontend', 'data');
+const outDir = isDefaultTenant ? path.join(ROOT, 'frontend', 'data') : tenantDataDir;
 const outPath = path.join(outDir, 'races.json');
 const datedPath = path.join(outDir, `races-${state.date}.json`);
+fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(outPath, JSON.stringify({ updatedAt: state.ts, date: state.date, races }, null, 2));
 fs.writeFileSync(datedPath, JSON.stringify({ updatedAt: state.ts, date: state.date, races }, null, 2));
-console.log('races.json updated');
+console.log(`races.json updated for tenant=${tenantId}`);
 
 if (process.env.DATABASE_URL || process.env.BETMAN_DATABASE_URL) {
   const { spawnSync } = require('child_process');
-  spawnSync('node', [path.join(ROOT, 'scripts', 'db_sync.js'), '--tenant=default', `--keys=races.json,races-${state.date}.json`, '--audit=none'], { stdio: 'ignore' });
+  spawnSync('node', [path.join(ROOT, 'scripts', 'db_sync.js'), `--tenant=${tenantId}`, `--keys=races.json,races-${state.date}.json`, '--audit=none'], { stdio: 'ignore' });
 }

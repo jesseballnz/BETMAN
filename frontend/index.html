@@ -255,6 +255,14 @@
         </div>
       </div>
       <div id="roiAdminHint" class="perf-hint" style="display:none">ROI figures are visible to admin only.</div>
+      <div class="btn-row" style="margin:10px 0 16px 0;flex-wrap:wrap;gap:8px">
+        <button class="btn btn-ghost compact-btn perf-subtab active" data-perf-tab="overview">Overview</button>
+        <button class="btn btn-ghost compact-btn perf-subtab" data-perf-tab="learnings">Learnings</button>
+        <button class="btn btn-ghost compact-btn perf-subtab" data-perf-tab="returns">Returns</button>
+        <button class="btn btn-ghost compact-btn perf-subtab" data-perf-tab="breakdown">Breakdown</button>
+        <button class="btn btn-ghost compact-btn perf-subtab" data-perf-tab="bets">Bet Search</button>
+      </div>
+      <div class="perf-subpanel active" data-perf-panel="overview">
       <div class="perf-section perf-wide">
         <h4>Runtime Health</h4>
         <div id="runtimeHealthPanel" class="perf-kpis perf-kpis-secondary"><div class="sub">Loading runtime health…</div></div>
@@ -396,8 +404,58 @@
             <h4>30 Day Best BETMAN Strategy (Win / Odds Runner / EW)</h4>
             <div id="perfBestStrategy" class="table"></div>
           </div>
+          <div class="perf-section win">
+            <h4>BETMAN Learnings</h4>
+            <div id="perfLearningsSummary" class="table"></div>
+          </div>
+          <div class="perf-section win">
+            <h4>Recommended Changes</h4>
+            <div id="perfLearningsRecommendations" class="table"></div>
+          </div>
+          <div class="perf-section win">
+            <h4>AUTOTUNE</h4>
+            <div id="perfAutotuneControl" class="table"></div>
+          </div>
         </div>
       </div>
+      </div>
+      <div class="perf-subpanel" data-perf-panel="learnings">
+      <div class="perf-grid">
+        <div class="perf-section">
+          <h4>Edge Sources</h4>
+          <div id="perfLearningsEdgeTable" class="table"></div>
+        </div>
+        <div class="perf-section">
+          <h4>Leak Sources</h4>
+          <div id="perfLearningsLeakTable" class="table"></div>
+        </div>
+        <div class="perf-section">
+          <h4>Best Meetings</h4>
+          <div id="perfLearningsBestMeetings" class="table"></div>
+        </div>
+        <div class="perf-section">
+          <h4>Worst Meetings</h4>
+          <div id="perfLearningsWorstMeetings" class="table"></div>
+        </div>
+        <div class="perf-section">
+          <h4>Best Odds Bands</h4>
+          <div id="perfLearningsBestBands" class="table"></div>
+        </div>
+        <div class="perf-section">
+          <h4>Worst Odds Bands</h4>
+          <div id="perfLearningsWorstBands" class="table"></div>
+        </div>
+        <div class="perf-section perf-wide">
+          <h4>Top Bets</h4>
+          <div id="perfLearningsTopBets" class="table"></div>
+        </div>
+        <div class="perf-section perf-wide">
+          <h4>Worst Bets</h4>
+          <div id="perfLearningsWorstBets" class="table"></div>
+        </div>
+      </div>
+      </div>
+      <div class="perf-subpanel" data-perf-panel="returns">
       <div class="perf-section perf-return">
         <div class="perf-logo-line">
           <img src="assets/logo.png" alt="BETMAN" />
@@ -432,6 +490,8 @@
           <div id="betmanReturnTable" class="table" style="margin-top:12px"></div>
         </div>
       </div>
+      </div>
+      <div class="perf-subpanel" data-perf-panel="breakdown">
       <div class="perf-grid">
         <div class="perf-section perf-wide" data-roi-only>
           <h4>Bet Plans ROI (AI choices)</h4>
@@ -511,6 +571,81 @@
           <h4>Exotic Breakdown (latest day)</h4>
           <div id="perfExoticTable" class="table"></div>
         </div>
+      </div>
+      </div>
+      <div class="perf-subpanel" data-perf-panel="bets">
+        <div class="perf-section perf-wide">
+          <h4>Settled Bets</h4>
+          <div class="sub">Search and filter settled bets from the last 7 days with result, return, profit, and ROI.</div>
+          <div class="perf-kpis perf-kpis-secondary" style="margin:10px 0 12px 0;gap:10px;align-items:end">
+            <div class="perf-card" style="min-width:220px;flex:2">
+              <div class="label">Search</div>
+              <input id="perfSettledSearch" type="text" placeholder="Horse, meeting, race, result, type…" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none" />
+            </div>
+            <div class="perf-card" style="min-width:150px;flex:1">
+              <div class="label">From</div>
+              <input id="perfSettledDateFrom" type="date" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none" />
+            </div>
+            <div class="perf-card" style="min-width:150px;flex:1">
+              <div class="label">To</div>
+              <input id="perfSettledDateTo" type="date" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none" />
+            </div>
+            <div class="perf-card" style="min-width:180px;flex:1">
+              <div class="label">Meeting</div>
+              <select id="perfSettledMeetingFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none">
+                <option value="all">All meetings</option>
+              </select>
+            </div>
+            <div class="perf-card" style="min-width:140px;flex:1">
+              <div class="label">Result</div>
+              <select id="perfSettledResultFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none">
+                <option value="all">All</option>
+                <option value="win">Win</option>
+                <option value="loss">Loss</option>
+                <option value="ew_win">EW Win</option>
+                <option value="ew_place">EW Place</option>
+                <option value="ew_loss">EW Loss</option>
+              </select>
+            </div>
+            <div class="perf-card" style="min-width:140px;flex:1">
+              <div class="label">Type</div>
+              <select id="perfSettledTypeFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none">
+                <option value="all">All</option>
+                <option value="win">Win</option>
+                <option value="odds_runner">Odds Runner</option>
+                <option value="ew">EW</option>
+              </select>
+            </div>
+            <div class="perf-card" style="min-width:140px;flex:1">
+              <div class="label">Sort</div>
+              <select id="perfSettledSort" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none">
+                <option value="date_desc">Newest</option>
+                <option value="date_asc">Oldest</option>
+                <option value="profit_desc">Best P/L</option>
+                <option value="profit_asc">Worst P/L</option>
+                <option value="roi_desc">Best ROI</option>
+                <option value="roi_asc">Worst ROI</option>
+                <option value="return_desc">Best Return</option>
+                <option value="return_asc">Worst Return</option>
+              </select>
+            </div>
+            <div class="perf-card" style="min-width:140px;flex:0 0 auto">
+              <div class="label">Search</div>
+              <button id="perfSettledSearchBtn" class="btn" style="margin-top:6px;width:100%">Search Bets</button>
+            </div>
+            <div class="perf-card" style="min-width:140px;flex:0 0 auto">
+              <div class="label">Reset</div>
+              <button id="perfSettledClearBtn" class="btn btn-ghost" style="margin-top:6px;width:100%">Clear Filters</button>
+            </div>
+            <div class="perf-card" style="min-width:140px;flex:0 0 auto">
+              <div class="label">Export</div>
+              <button id="perfSettledExportCsv" class="btn" style="margin-top:6px;width:100%">Export CSV</button>
+            </div>
+          </div>
+          <div id="perfSettledSummary" class="sub" style="margin-bottom:8px"></div>
+          <div id="perfSettledBetsTable" class="table"></div>
+        </div>
+      </div>
       </div>
     </section>
 
