@@ -4,6 +4,7 @@ body:not(.landing-page){background:linear-gradient(180deg,rgba(12,17,24,.92),rgb
 .hidden{display:none !important}
 
 body[data-theme="light"]{--bg:#eef4fb;--card:#ffffff;--card2:#f7fbff;--muted:#5f7390;--text:#10243b;--accent:#2b8cff;--accent2:#5ec8ff;--danger:#d94a4a;--shadow:0 8px 24px rgba(16,36,59,.12);background:var(--bg)}
+body[data-theme="light"]:not(.landing-page){background:linear-gradient(180deg,rgba(238,244,251,.82),rgba(238,244,251,.88)),url('assets/background.jpg') center/cover fixed}
 body[data-theme="light"] .topbar{border-color:#c7d9ed;background:linear-gradient(180deg,#ffffff 0%,#f3f8ff 100%)}
 body[data-theme="light"] .status-pill{background:#edf5ff;border-color:#c8dcef}
 #authUserPill{cursor:pointer}
@@ -773,9 +774,6 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
   --border:#2b343f;
   --border-soft:rgba(56,68,82,.45);
   --shadow:0 4px 14px rgba(0,0,0,.24);
-}
-body:not(.landing-page){
-  background:linear-gradient(180deg,#101317 0%,#121820 100%);
 }
 .card,.section,.row,.race-card,.analysis-block,.strategy-pick{box-shadow:var(--shadow)}
 .btn,.bet-btn,.analysis-drag-btn,.btn-ghost{ text-transform:none; letter-spacing:.01em }

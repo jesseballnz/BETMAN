@@ -740,6 +740,55 @@ function setActivePerformanceTab(tab){
   });
 }
 
+function setActiveAlertsTab(tab){
+  document.querySelectorAll('.alerts-subtab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.alertsTab === tab);
+  });
+  document.querySelectorAll('.alerts-subpanel').forEach(panel => {
+    const active = panel.dataset.alertsPanel === tab;
+    panel.style.display = active ? '' : 'none';
+    panel.classList.toggle('active', active);
+  });
+}
+
+async function renderAlertsShell(){
+  const live = $('alertsLiveTable');
+  const hist = $('alertsHistoryTable');
+  const cfg = $('alertsConfigPanel');
+  const feed = await fetchLocal('./data/alerts_feed.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] }));
+  const history = await fetchLocal('./data/alerts_history.json', { cache: 'no-store' }).then(r => r.json()).catch(() => []);
+  const alerts = Array.isArray(feed?.alerts) ? feed.alerts : [];
+  const critical = alerts.filter(a => String(a?.severity || '') === 'CRITICAL').length;
+  const hot = alerts.filter(a => String(a?.severity || '') === 'HOT').length;
+  $('alertsHotCount') && ($('alertsHotCount').textContent = String(hot));
+  $('alertsCriticalCount') && ($('alertsCriticalCount').textContent = String(critical));
+  $('alertsLiveCount') && ($('alertsLiveCount').textContent = String(alerts.length));
+  if (live) {
+    live.innerHTML = alerts.length
+      ? `<div class='row header'><div>Severity</div><div>Type</div><div>Race</div><div>Runner</div><div>Move</div><div class='right'>Action</div></div>` + alerts.map(a => `<div class='row'>
+          <div>${escapeHtml(String(a?.severity || '—'))}</div>
+          <div>${escapeHtml(String(a?.type || '—'))}</div>
+          <div>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))}</div>
+          <div>${escapeHtml(String(a?.selection || '—'))}<div class='sub'>${escapeHtml(String(a?.betmanRole || 'market'))}</div></div>
+          <div>${escapeHtml(String(a?.fromOdds ?? '—'))} → ${escapeHtml(String(a?.toOdds ?? '—'))}<div class='sub'>${escapeHtml(String(a?.movePct ?? ''))}% · ${escapeHtml(String(a?.minsToJump ?? '—'))}m</div></div>
+          <div class='right'>${escapeHtml(String(a?.action || 'Watch'))}</div>
+        </div>`).join('')
+      : `<div class='row'><div style='grid-column:1/-1'>No live alerts yet</div></div>`;
+  }
+  if (hist) {
+    hist.innerHTML = Array.isArray(history) && history.length
+      ? `<div class='row header'><div>When</div><div>Severity</div><div>Race</div><div>Runner</div><div class='right'>Status</div></div>` + history.slice(0,50).map(a => `<div class='row'>
+          <div>${escapeHtml(String(a?.ts || '—'))}</div>
+          <div>${escapeHtml(String(a?.severity || '—'))}</div>
+          <div>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))}</div>
+          <div>${escapeHtml(String(a?.selection || '—'))}</div>
+          <div class='right'>${escapeHtml(String(a?.status || '—'))}</div>
+        </div>`).join('')
+      : `<div class='row'><div style='grid-column:1/-1'>No alert history yet</div></div>`;
+  }
+  if (cfg) cfg.innerHTML = `<div class='row'><div style='grid-column:1/-1'><b>BETMAN Pulse Alerts v1</b> now renders live feed from market movers. Next layer: configurable thresholds, routing, and conflict alerts.</div></div>`;
+}
+
 function setActivePage(page){
   if ((page === 'bakeoff' || page === 'performance') && !isAdminUser) page = 'workspace';
   if (page !== 'workspace' && selectedMeeting === 'ALL') {
@@ -758,6 +807,10 @@ function setActivePage(page){
     setActivePerformanceTab('overview');
     loadPerformance();
     loadRuntimeHealth();
+  }
+  if (page === 'alerts') {
+    setActiveAlertsTab('live');
+    renderAlertsShell();
   }
   if (page === 'autobet') {
     loadPerformance();
@@ -6026,8 +6079,10 @@ function hydrateSettledMeetingFilter(rows){
 
 function renderBetProfile(race, runner, bet){
   const safeRace = race || { meeting: bet?.meeting, race_number: bet?.race, distance: '—', track_condition: '—' };
-  const silk = runner?.silk_url_128x128 || runner?.silk_url_64x64 || '';
-  const silkImg = silk ? `<img class='silk-img' src='${silk}' alt='Silks for ${escapeHtml(runner?.name || runner?.runner_name || bet?.selection || '')}' />` : `<div class='silk-img' style='display:flex;align-items:center;justify-content:center;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#8ea0b5'>—</div>`;
+  const silk = runner?.silk_url_128x128 || runner?.alt_silk_url_128x128 || runner?.silk_url_64x64 || runner?.alt_silk_url_64x64 || '';
+  const silkAlt = escapeHtml(runner?.name || runner?.runner_name || bet?.selection || 'runner');
+  const silkFallback = `<div class='silk-img' style='display:flex;align-items:center;justify-content:center;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#8ea0b5'>—</div>`;
+  const silkImg = silk ? `<img class='silk-img' src='${silk}' alt='Silks for ${silkAlt}' referrerpolicy='no-referrer' onerror="this.outerHTML=${JSON.stringify(silkFallback)}" />` : silkFallback;
   const result = String(bet?.result || 'pending');
   const resultTag = result === 'win' ? `<span class='tag win'>WIN</span>`
     : result === 'loss' ? `<span class='tag'>LOSS</span>`
@@ -10376,6 +10431,10 @@ $('refreshPerformanceBtn')?.addEventListener('click', ()=> triggerPerformancePol
 document.querySelectorAll('.perf-subtab').forEach(btn => {
   btn.addEventListener('click', () => setActivePerformanceTab(btn.dataset.perfTab || 'overview'));
 });
+document.querySelectorAll('.alerts-subtab').forEach(btn => {
+  btn.addEventListener('click', () => setActiveAlertsTab(btn.dataset.alertsTab || 'live'));
+});
+$('refreshAlertsBtn')?.addEventListener('click', () => renderAlertsShell());
 $('trainModelsBtn')?.addEventListener('click', ()=> triggerModelTraining());
 setActivePage(activePage);
 

@@ -750,6 +750,147 @@ status.marketOddsSnapshot = nextSnap;
 status.marketOddsHistory = nextHistory;
 status.marketOddsOpening = nextOpening;
 
+function runnerRoleForAlert(meeting, race, runner) {
+  const m = String(meeting || '').trim().toLowerCase();
+  const r = String(race || '').replace(/^R/i,'').trim();
+  const n = String(runner || '').trim().toLowerCase();
+  const suggested = (status.suggestedBets || []).find(x =>
+    String(x?.meeting || '').trim().toLowerCase() === m &&
+    String(x?.race || '').replace(/^R/i,'').trim() === r &&
+    String(x?.selection || '').trim().toLowerCase() === n
+  );
+  if (suggested) return String(suggested.type || 'suggested').toLowerCase();
+  const interesting = (status.interestingRunners || []).find(x =>
+    String(x?.meeting || '').trim().toLowerCase() === m &&
+    String(x?.race || '').replace(/^R/i,'').trim() === r &&
+    String(x?.selection || x?.runner || '').trim().toLowerCase() === n
+  );
+  if (interesting) return 'interesting';
+  return 'market';
+}
+
+const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
+  const move = Number(x?.pctMove || 0);
+  const minsToJump = Number(x?.minsToJump);
+  const absMove = Math.abs(move);
+  const role = runnerRoleForAlert(x.meeting, x.race, x.runner);
+  const hot = absMove >= 15 || (Number.isFinite(minsToJump) && minsToJump <= 15 && absMove >= 10);
+  const critical = absMove >= 25 || (Number.isFinite(minsToJump) && minsToJump <= 10 && absMove >= 20);
+  const severity = critical ? 'CRITICAL' : (hot ? 'HOT' : 'WATCH');
+  const type = move < 0 ? 'hot_plunge' : 'hot_drift';
+  const interpretation = move < 0
+    ? (role !== 'market' ? `Market support building for ${role}` : 'Market support building')
+    : (role !== 'market' ? `Market moving against ${role}` : 'Market drifting away');
+  const action = critical ? 'Review immediately' : (hot ? 'Monitor closely' : 'Watch');
+  return {
+    id: `${String(x?.meeting || '').toLowerCase()}|${String(x?.race || '')}|${String(x?.runner || '').toLowerCase()}|${type}`,
+    ts: new Date().toISOString(),
+    tenantId,
+    scope: tenantId === 'default' ? 'SYSTEM' : 'TENANT',
+    type,
+    severity,
+    title: `${severity} ${move < 0 ? 'Plunge' : 'Drift'} — ${x.meeting} R${x.race}`,
+    message: `${x.runner} ${Number(x?.fromOdds).toFixed(2)} → ${Number(x?.toOdds).toFixed(2)} (${move.toFixed(1)}%)`,
+    status: 'live',
+    meeting: x.meeting,
+    race: String(x.race),
+    selection: x.runner,
+    betmanRole: role,
+    fromOdds: x.fromOdds,
+    toOdds: x.toOdds,
+    movePct: move,
+    minsToJump: Number.isFinite(minsToJump) ? minsToJump : null,
+    interpretation,
+    action
+  };
+});
+
+const conflictAlerts = basePulseAlerts.flatMap((a) => {
+  const move = Number(a?.movePct || 0);
+  const absMove = Math.abs(move);
+  const role = String(a?.betmanRole || 'market');
+  const conflictType = (role === 'win' && move > 0 && absMove >= 10)
+    ? 'market_conflict'
+    : ((role === 'odds_runner' && move < 0 && absMove >= 10)
+      ? 'market_conflict'
+      : ((role === 'ew' && move < 0 && absMove >= 12)
+        ? 'market_conflict'
+        : ''));
+  if (!conflictType) return [];
+  const severity = absMove >= 20 ? 'CRITICAL' : 'HOT';
+  const interpretation = role === 'win'
+    ? 'Market attacking BETMAN recommendation'
+    : (role === 'odds_runner'
+      ? 'Market confirming BETMAN odds runner'
+      : 'Market validating BETMAN each-way angle');
+  const action = severity === 'CRITICAL' ? 'Review race now' : 'Re-check thesis';
+  return [{
+    ...a,
+    id: `${a.id}|conflict`,
+    type: conflictType,
+    severity,
+    title: `${severity} Conflict — ${a.meeting} R${a.race}`,
+    interpretation,
+    action
+  }];
+});
+
+function buildSelectionMap(rows) {
+  const out = new Map();
+  for (const x of (rows || [])) {
+    const type = String(x?.type || '').toLowerCase();
+    if (!['win','odds_runner','ew'].includes(type)) continue;
+    const key = `${String(x?.meeting || '').trim().toLowerCase()}|${String(x?.race || '').replace(/^R/i,'').trim()}|${type}`;
+    if (!out.has(key)) out.set(key, x);
+  }
+  return out;
+}
+
+const prevSelectionMap = buildSelectionMap(prevStatus?.suggestedBets || []);
+const nextSelectionMap = buildSelectionMap(status.suggestedBets || []);
+const selectionFlipAlerts = [];
+for (const [key, nextSel] of nextSelectionMap.entries()) {
+  const prevSel = prevSelectionMap.get(key);
+  if (!prevSel) continue;
+  const prevName = String(prevSel?.selection || '').trim();
+  const nextName = String(nextSel?.selection || '').trim();
+  if (!prevName || !nextName || prevName.toLowerCase() === nextName.toLowerCase()) continue;
+  const [meeting, race, type] = key.split('|');
+  const severity = type === 'win' ? 'CRITICAL' : 'HOT';
+  selectionFlipAlerts.push({
+    id: `${key}|flip|${prevName.toLowerCase()}|${nextName.toLowerCase()}`,
+    ts: new Date().toISOString(),
+    tenantId,
+    scope: tenantId === 'default' ? 'SYSTEM' : 'TENANT',
+    type: type === 'win' ? 'selection_flip_recommended' : (type === 'odds_runner' ? 'selection_flip_odds_runner' : 'selection_flip_ew'),
+    severity,
+    title: `${severity} Selection Flip — ${nextSel.meeting} R${nextSel.race}`,
+    message: `${type.toUpperCase()} changed: ${prevName} → ${nextName}`,
+    status: 'live',
+    meeting: nextSel.meeting,
+    race: String(nextSel.race),
+    selection: nextName,
+    previousSelection: prevName,
+    betmanRole: type,
+    minsToJump: null,
+    interpretation: type === 'win' ? 'BETMAN top thesis changed' : `BETMAN ${type} angle changed`,
+    action: severity === 'CRITICAL' ? 'Review immediately' : 'Re-check race'
+  });
+}
+
+const pulseAlerts = [...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts].sort((a,b) => {
+  const sev = { CRITICAL: 3, HOT: 2, WATCH: 1 };
+  if (sev[b.severity] !== sev[a.severity]) return sev[b.severity] - sev[a.severity];
+  return Math.abs(Number(b.movePct || 0)) - Math.abs(Number(a.movePct || 0));
+}).slice(0, 60);
+
+const alertsFeedPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'alerts_feed.json') : path.join(tenantDataDir, 'alerts_feed.json');
+const alertsHistoryPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'alerts_history.json') : path.join(tenantDataDir, 'alerts_history.json');
+const priorAlerts = loadJson(alertsHistoryPath, []);
+const mergedAlerts = [...pulseAlerts, ...priorAlerts].slice(0, 200);
+fs.writeFileSync(alertsFeedPath, JSON.stringify({ updatedAt: new Date().toISOString(), alerts: pulseAlerts }, null, 2));
+fs.writeFileSync(alertsHistoryPath, JSON.stringify(mergedAlerts, null, 2));
+
 const CONFIDENCE_SIGNAL_THRESHOLD = 40;
 const CONFIDENCE_FRINGE_BAND = 5;
 const fringeSignals = (status.suggestedBets || [])

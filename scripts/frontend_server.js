@@ -5668,6 +5668,32 @@ if (url.pathname === '/api/ask-selection') {
     });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/v1/alerts-feed') {
+    const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
+    const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'alerts_feed.json'), 'alerts_feed.json');
+    const payload = loadJson(p, { updatedAt: null, alerts: [] });
+    return okJson(res, payload);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/alerts-history') {
+    const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
+    const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'alerts_history.json'), 'alerts_history.json');
+    const payload = loadJson(p, []);
+    return okJson(res, payload);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/settled-bets') {
+    const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json');
+    const payload = loadJson(p, []);
+    return okJson(res, payload);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/learnings-report') {
+    const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'learnings_report.json'), 'learnings_report.json');
+    const payload = loadJson(p, {});
+    return okJson(res, payload);
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/interesting-runners') {
     const limit = toInt(url.searchParams.get('limit'), 50);
     const offset = toInt(url.searchParams.get('offset'), 0);
