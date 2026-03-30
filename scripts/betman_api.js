@@ -368,12 +368,16 @@ function createApiHandler(deps) {
       const smallModels = new Set(['deepseek-r1:8b', 'llama3.1:8b', 'llama3.2:3b', 'qwen2.5:1.5b', 'qwen2.5:3b']);
       const allModels = [
         ...ollamaModels.map(m => ({
+          id: m,
           name: m,
+          label: m,
           provider: 'ollama',
           profile: smallModels.has(m) ? 'small' : 'large'
         })),
         ...openaiModels.map(m => ({
+          id: m,
           name: m,
+          label: m,
           provider: 'openai',
           profile: 'large'
         }))
