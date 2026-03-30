@@ -123,6 +123,8 @@
       <button class="page-tab" data-page="strategy" title="Build strategy sets and export.">Strategy</button>
       <button class="page-tab" data-page="bakeoff" title="Model comparison and bakeoff runs.">Model Bakeoff</button>
       <button class="page-tab" data-page="performance" title="ROI, win-rate, and KPIs.">Performance</button>
+      <button class="page-tab" data-page="tracked" title="Tracked runners, active positions, and settled outcomes.">Tracked</button>
+      <button class="page-tab" data-page="heatmap" title="Thermal intake and horse heat observations.">Heatmap</button>
       <button class="page-tab" data-page="alerts" title="Pulse alerts, heat, plunges, drifts, and conflicts.">Alerts</button>
     </nav>
 
@@ -730,6 +732,29 @@
         </ul>
 
         <p class="sub" style="margin-top:10px">Decision standard: <b>Verdict → Evidence → Risk → Action/Pass.</b> If edge is weak, data is noisy, or the bucket is blocked, BETMAN should pass.</p>
+      </div>
+    </section>
+
+    <section class="section page-section" data-page="tracked" style="display:none">
+      <div class="section-head">
+        <h3>Tracked Runners</h3>
+        <div class="section-actions">
+          <button id="refreshTrackedBtn" class="btn btn-ghost compact-btn">Refresh</button>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-bottom:10px">
+        <button class="btn btn-ghost compact-btn tracked-subtab active" data-tracked-tab="active">Active</button>
+        <button class="btn btn-ghost compact-btn tracked-subtab" data-tracked-tab="settled">Settled</button>
+      </div>
+      <div id="trackedTable" class="table"></div>
+    </section>
+
+    <section class="section page-section" data-page="heatmap" style="display:none">
+      <div class="section-head">
+        <h3>BETMAN Heatmap</h3>
+      </div>
+      <div class="analysis-body" id="heatmapPanel">
+        Heatmap plumbing scaffold is in place. Future automation will ingest saddle cloth reads and infrared image sets here.
       </div>
     </section>
 

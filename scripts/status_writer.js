@@ -38,8 +38,10 @@ function parseReasonWinProb(reason){
 }
 
 function inferSignalPct(row){
-  const direct = Number(row?.confidenceSignalPct ?? row?.win_p ?? row?.signal_score);
-  if (Number.isFinite(direct)) return direct;
+  const explicitProb = Number(row?.aiWinProb ?? row?.winProb ?? row?.win_prob ?? row?.win_p);
+  if (Number.isFinite(explicitProb)) return explicitProb;
+  const explicitConfidence = Number(row?.confidenceSignalPct);
+  if (Number.isFinite(explicitConfidence)) return explicitConfidence;
   const parsed = parseReasonWinProb(row?.reason);
   if (Number.isFinite(parsed)) return parsed;
   return NaN;
@@ -297,6 +299,126 @@ function computeFallbackSignalScore(odds){
   return clamp(Math.round(25 + (implied * 1.1)), 25, 80);
 }
 
+function normalizeBetType(type){
+  const t = String(type || '').trim().toLowerCase();
+  if (!t) return 'win';
+  if (t === 'each-way') return 'ew';
+  return t.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '_');
+}
+
+function round2(v){
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+}
+
+function deriveEdgePct(winProbPct, odds){
+  const p = Number(winProbPct);
+  const o = Number(odds);
+  if (!Number.isFinite(p) || !Number.isFinite(o) || o <= 0) return null;
+  const implied = 100 / o;
+  return round2(p - implied);
+}
+
+function deriveKellyFraction(winProbPct, odds){
+  const pRaw = Number(winProbPct);
+  const o = Number(odds);
+  if (!Number.isFinite(pRaw) || !Number.isFinite(o) || o <= 1) return null;
+  const p = pRaw / 100;
+  const b = o - 1;
+  const q = 1 - p;
+  const k = ((b * p) - q) / b;
+  return round2(Math.max(0, Math.min(k, 1)));
+}
+
+function buildExecutionMeta(entry = {}){
+  const type = normalizeBetType(entry.type || entry.bet_type);
+  const edgePct = Number.isFinite(Number(entry.edge ?? entry.edgePct ?? entry.edge_pct))
+    ? Number(entry.edge ?? entry.edgePct ?? entry.edge_pct)
+    : deriveEdgePct(entry.aiWinProb ?? entry.win_prob ?? entry.confidenceSignalPct, entry.odds);
+  const signalPct = inferSignalPct(entry);
+  const odds = Number(entry.odds);
+  const isExotic = ['top2','top3','top4','trifecta','multi'].includes(type);
+  const strong = isStrongSignal(entry);
+
+  const mainWinEligible = Number.isFinite(signalPct) && Number.isFinite(edgePct) && signalPct >= 65 && edgePct >= 6;
+  const secondaryWinEligible = Number.isFinite(signalPct) && Number.isFinite(edgePct) && signalPct >= 58 && edgePct >= 4;
+  const toxicLowEdge = Number.isFinite(edgePct) && edgePct >= 0 && edgePct < 2;
+  const toxicMidOddsLowEdge = Number.isFinite(odds) && odds >= 5 && odds <= 8 && Number.isFinite(edgePct) && edgePct >= 2 && edgePct < 4;
+  const toxicModelBand = Number.isFinite(signalPct) && signalPct >= 20 && signalPct <= 25;
+
+  const eligible = isExotic
+    ? (Number(entry.stake || 0) > 0)
+    : (mainWinEligible || secondaryWinEligible) && !toxicLowEdge && !toxicMidOddsLowEdge && !toxicModelBand;
+
+  let executionRoute = 'NO_BET';
+  let executionRouteConfidence = 'low';
+  let recommendedAction = eligible ? 'WATCH' : 'NO_BET';
+  let executionBlockReason = null;
+
+  if (eligible) {
+    if (isExotic) {
+      executionRoute = 'EXOTIC';
+      executionRouteConfidence = strong ? 'high' : 'medium';
+      recommendedAction = 'QUEUE';
+    } else if (odds >= 8 && type === 'ew') {
+      executionRoute = 'FIXED';
+      executionRouteConfidence = 'medium';
+      recommendedAction = strong ? 'BET_NOW' : 'QUEUE';
+    } else if (odds > 0) {
+      executionRoute = odds <= 3.5 ? 'TOTE' : 'FIXED';
+      executionRouteConfidence = mainWinEligible ? 'high' : 'medium';
+      recommendedAction = mainWinEligible ? 'BET_NOW' : 'QUEUE';
+    }
+  } else {
+    if (!Number.isFinite(signalPct) || signalPct < 58) executionBlockReason = 'signal_below_threshold';
+    else if (!Number.isFinite(edgePct) || edgePct < 4) executionBlockReason = 'edge_below_threshold';
+    else if (toxicLowEdge) executionBlockReason = 'toxic_low_edge_bucket';
+    else if (toxicMidOddsLowEdge) executionBlockReason = 'toxic_mid_odds_low_edge_bucket';
+    else if (toxicModelBand) executionBlockReason = 'toxic_model_band_20_25';
+    else executionBlockReason = 'policy_blocked';
+  }
+
+  return {
+    betType: type,
+    edge: round2(edgePct),
+    kellyFraction: deriveKellyFraction(entry.aiWinProb ?? entry.win_prob ?? entry.confidenceSignalPct, entry.odds),
+    executionEligible: !!eligible,
+    recommendedAction,
+    executionRoute,
+    executionRouteConfidence,
+    executionBlockReason
+  };
+}
+
+function enrichSuggestedEntry(entry = {}){
+  const meta = buildExecutionMeta(entry);
+  const raceNumber = entry.raceNumber ?? entry.race ?? null;
+  const type = meta.betType;
+  let capitalTier = 'blocked';
+  let capitalIntent = 'Blocked';
+  if (meta.recommendedAction === 'BET_NOW') {
+    capitalTier = 'bet_now';
+    capitalIntent = 'Bet Now';
+  } else if (meta.recommendedAction === 'QUEUE') {
+    capitalTier = 'queue';
+    capitalIntent = 'Queue';
+  } else if (entry.interesting || meta.recommendedAction === 'WATCH') {
+    capitalTier = 'watchlist';
+    capitalIntent = 'Watchlist';
+  }
+  return {
+    ...entry,
+    race: raceNumber,
+    raceNumber,
+    type,
+    betType: type,
+    confidenceSignalPct: Number.isFinite(Number(entry.confidenceSignalPct)) ? Number(entry.confidenceSignalPct) : inferSignalPct(entry),
+    capitalTier,
+    capitalIntent,
+    ...meta
+  };
+}
+
 function computeExoticSignalScore(plan){
   const selections = Array.isArray(plan?.selections) ? plan.selections : [];
   const probs = selections
@@ -417,13 +539,25 @@ const exoticSuggested = (state.exotic_plans || []).map(x => {
 });
 
 status.suggestedBets = [...suggested, ...exoticSuggested].map(x => {
-  const withC = withCountry(x);
-  const k = `${String(withC.meeting || '').trim().toLowerCase()}|${String(withC.race || '').trim()}|${String(withC.selection || '').trim().toLowerCase()}`;
+  const withCBase = withCountry(x);
+  const k = `${String(withCBase.meeting || '').trim().toLowerCase()}|${String(withCBase.race || '').trim()}|${String(withCBase.selection || '').trim().toLowerCase()}`;
   const isInteresting = interestingKeySet.has(k);
-  return isInteresting
-    ? { ...withC, interesting: true, interestingReason: 'matched interesting runner profile' }
-    : withC;
-}).filter(x => String(x?.country || '').trim());
+  const decorated = isInteresting
+    ? { ...withCBase, interesting: true, interestingReason: 'matched interesting runner profile' }
+    : withCBase;
+  return enrichSuggestedEntry(decorated);
+}).filter(x => String(x?.country || '').trim())
+  .filter(x => {
+    if (['top2','top3','top4','trifecta','multi'].includes(String(x?.betType || x?.type || '').toLowerCase())) return true;
+    if (x.executionEligible) return true;
+    return !!x.interesting;
+  });
+
+status.noBetPolicy = 'Main bet = edge ≥ 6 pts and confidence ≥ 65. Secondary bet = edge ≥ 4 pts and confidence ≥ 58. Toxic low-edge and unstable 20–25% model bands are blocked.';
+const nonExoticSuggested = (status.suggestedBets || []).filter(x => !['top2','top3','top4','trifecta','multi'].includes(String(x?.betType || x?.type || '').toLowerCase()));
+status.noBetCount = nonExoticSuggested.filter(x => !x.executionEligible).length;
+status.betAllowedCount = nonExoticSuggested.filter(x => x.executionEligible).length;
+status.exoticAllowedCount = (status.suggestedBets || []).filter(x => ['top2','top3','top4','trifecta','multi'].includes(String(x?.betType || x?.type || '').toLowerCase()) && x.executionEligible).length;
 status.feelMeter = feelData;
 
 const raceByKey = Object.fromEntries(Object.entries(state.races || {}).map(([k,v])=>[`${v.meeting}:R${v.race_number}`, v]));
@@ -774,14 +908,20 @@ const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
   const minsToJump = Number(x?.minsToJump);
   const absMove = Math.abs(move);
   const role = runnerRoleForAlert(x.meeting, x.race, x.runner);
+  const linkedSuggested = (status.suggestedBets || []).find(s =>
+    String(s?.meeting || '').trim().toLowerCase() === String(x?.meeting || '').trim().toLowerCase() &&
+    String(s?.race || '').replace(/^R/i,'').trim() === String(x?.race || '').replace(/^R/i,'').trim() &&
+    String(s?.selection || '').trim().toLowerCase() === String(x?.runner || '').trim().toLowerCase()
+  );
+  const executable = !!linkedSuggested?.executionEligible;
   const hot = absMove >= 15 || (Number.isFinite(minsToJump) && minsToJump <= 15 && absMove >= 10);
   const critical = absMove >= 25 || (Number.isFinite(minsToJump) && minsToJump <= 10 && absMove >= 20);
-  const severity = critical ? 'CRITICAL' : (hot ? 'HOT' : 'WATCH');
+  const severity = executable && critical ? 'ACTION' : (hot ? 'WATCH' : 'INFO');
   const type = move < 0 ? 'hot_plunge' : 'hot_drift';
   const interpretation = move < 0
     ? (role !== 'market' ? `Market support building for ${role}` : 'Market support building')
     : (role !== 'market' ? `Market moving against ${role}` : 'Market drifting away');
-  const action = critical ? 'Review immediately' : (hot ? 'Monitor closely' : 'Watch');
+  const action = executable ? (critical ? 'BET_NOW' : 'QUEUE') : (hot ? 'WATCH' : 'IGNORE');
   return {
     id: `${String(x?.meeting || '').toLowerCase()}|${String(x?.race || '')}|${String(x?.runner || '').toLowerCase()}|${type}`,
     ts: new Date().toISOString(),
@@ -879,10 +1019,10 @@ for (const [key, nextSel] of nextSelectionMap.entries()) {
 }
 
 const pulseAlerts = [...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts].sort((a,b) => {
-  const sev = { CRITICAL: 3, HOT: 2, WATCH: 1 };
+  const sev = { ACTION: 4, CRITICAL: 3, HOT: 2, WATCH: 1, INFO: 0 };
   if (sev[b.severity] !== sev[a.severity]) return sev[b.severity] - sev[a.severity];
   return Math.abs(Number(b.movePct || 0)) - Math.abs(Number(a.movePct || 0));
-}).slice(0, 60);
+}).filter(a => ['ACTION','CRITICAL','HOT'].includes(String(a.severity || ''))).slice(0, 24);
 
 const alertsFeedPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'alerts_feed.json') : path.join(tenantDataDir, 'alerts_feed.json');
 const alertsHistoryPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'alerts_history.json') : path.join(tenantDataDir, 'alerts_history.json');

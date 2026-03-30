@@ -719,7 +719,7 @@ function refreshTabAccess(){
       btn.title = isAdminUser ? '' : 'Admin only';
       return;
     }
-    if (p === 'workspace' || p === 'help' || p === 'autobet') {
+    if (p === 'workspace' || p === 'help' || p === 'autobet' || p === 'tracked' || p === 'heatmap') {
       btn.disabled = false;
       btn.title = '';
       return;
@@ -759,6 +759,8 @@ function setActivePerformanceTab(tab){
   });
 }
 
+let trackedTab = 'active';
+
 function setActiveAlertsTab(tab){
   document.querySelectorAll('.alerts-subtab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.alertsTab === tab);
@@ -768,6 +770,61 @@ function setActiveAlertsTab(tab){
     panel.style.display = active ? '' : 'none';
     panel.classList.toggle('active', active);
   });
+}
+
+function setActiveTrackedTab(tab){
+  trackedTab = tab || 'active';
+  document.querySelectorAll('.tracked-subtab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.trackedTab === trackedTab);
+  });
+}
+
+async function renderTrackedShell(){
+  const table = $('trackedTable');
+  if (!table) return;
+  const payload = await fetchLocal('./api/v1/tracked-bets', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ trackedBets: [] }));
+  const rows = Array.isArray(payload?.trackedBets) ? payload.trackedBets : [];
+  const filtered = rows.filter(r => trackedTab === 'settled' ? String(r.status) === 'settled' : String(r.status) !== 'settled');
+  if (!filtered.length) {
+    table.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No ${trackedTab} tracked runners</div></div>`;
+    return;
+  }
+  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Result</div><div class='right'>Actions</div></div>` + filtered.map(r => {
+    const result = String(r.result || 'pending').toLowerCase();
+    const badge = result === 'won' ? 'value' : (result === 'lost' ? 'danger' : 'ew');
+    return `<div class='row tracked-row' data-id='${escapeAttr(String(r.id || ''))}' data-meeting='${escapeAttr(String(r.meeting || ''))}' data-race='${escapeAttr(String(r.race || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>
+      <div><span class='badge'>${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || ''))}</div>
+      <div>${escapeHtml(String(r.selection || ''))}<div class='sub'>${escapeHtml(String(r.betType || 'Win'))}</div></div>
+      <div>${escapeHtml(String(r.status || 'active'))}</div>
+      <div><span class='tag ${badge}'>${escapeHtml(result.toUpperCase())}</span></div>
+      <div class='right'>
+        <button class='btn btn-ghost compact-btn tracked-edit-btn' data-id='${escapeAttr(String(r.id || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>Edit</button>
+        <button class='btn btn-ghost compact-btn tracked-remove-btn' data-id='${escapeAttr(String(r.id || ''))}'>Untrack</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  table.querySelectorAll('.tracked-remove-btn').forEach(btn => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const id = btn.getAttribute('data-id');
+    if (!id) return;
+    await fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    renderTrackedShell();
+  }));
+
+  table.querySelectorAll('.tracked-edit-btn').forEach(btn => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const id = btn.getAttribute('data-id');
+    const currentSelection = btn.getAttribute('data-selection') || '';
+    const nextSelection = window.prompt('Edit tracked selection', currentSelection);
+    if (!id || !nextSelection || nextSelection === currentSelection) return;
+    await fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selection: nextSelection })
+    }).catch(() => null);
+    renderTrackedShell();
+  }));
 }
 
 async function hydrateAlertsMeetingFilter(alerts){
@@ -811,7 +868,9 @@ async function renderAlertsShell(){
           const movePct = `${escapeHtml(String(a?.movePct ?? ''))}%`;
           const mins = `${escapeHtml(String(a?.minsToJump ?? '—'))}m`;
           const signalImg = alertTypeImage(a?.type);
-          return `<div class='alert-card ${sev} alert-row' data-meeting='${escapeAttr(String(a?.meeting || ''))}' data-race='${escapeAttr(String(a?.race || ''))}' style='cursor:pointer'>
+          const typeLower = String(a?.type || '').toLowerCase();
+          const directionClass = typeLower === 'hot_plunge' ? 'comp-green' : (typeLower === 'hot_drift' ? 'comp-red' : '');
+          return `<div class='alert-card ${sev} ${directionClass} alert-row' data-meeting='${escapeAttr(String(a?.meeting || ''))}' data-race='${escapeAttr(String(a?.race || ''))}' style='cursor:pointer'>
             <div class='alert-card-hero'>
               ${signalImg ? `<img class='alert-signal-img' src='${signalImg}' alt='${escapeHtml(alertTypeTag(a?.type))}' />` : `<div class='alert-signal-img'></div>`}
               <div>
@@ -893,6 +952,10 @@ function setActivePage(page){
   if (page === 'alerts') {
     setActiveAlertsTab('live');
     renderAlertsShell();
+  }
+  if (page === 'tracked') {
+    setActiveTrackedTab(trackedTab || 'active');
+    renderTrackedShell();
   }
   if (page === 'autobet') {
     loadPerformance();
@@ -2709,12 +2772,30 @@ function renderSuggested(rows){
 
   const header = document.createElement('div');
   header.className='row header';
-  header.innerHTML = `<div>Race</div><div>Selection</div><div>Type</div><div>Odds</div><div class='right'>Why</div>`;
+  header.innerHTML = `<div>Race</div><div>Selection</div><div>Type</div><div>Intent</div><div class='right'>Why</div>`;
   table.appendChild(header);
 
   const norm = (s)=>String(s||'').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+  const tierOrder = { bet_now: 0, queue: 1, watchlist: 2, blocked: 3 };
+  const groupedRows = mainRows.slice().sort((a,b) => {
+    const at = tierOrder[String(a.capitalTier || 'blocked')] ?? 9;
+    const bt = tierOrder[String(b.capitalTier || 'blocked')] ?? 9;
+    if (at !== bt) return at - bt;
+    return jumpsInToMinutes(a.jumpsIn || a.eta) - jumpsInToMinutes(b.jumpsIn || b.eta);
+  });
+  let lastTier = null;
 
-  mainRows.forEach(r=>{
+  groupedRows.forEach(r=>{
+    const tier = String(r.capitalTier || 'blocked');
+    if (tier !== lastTier) {
+      const tierRow = document.createElement('div');
+      tierRow.className = 'row header';
+      const title = tier === 'bet_now' ? 'Bet Now' : tier === 'queue' ? 'Queue' : tier === 'watchlist' ? 'Watchlist' : 'Blocked';
+      tierRow.innerHTML = `<div style='grid-column:1/-1'>${title}</div>`;
+      table.appendChild(tierRow);
+      lastTier = tier;
+    }
+
     const row = document.createElement('div');
     row.className='row';
 
@@ -2731,6 +2812,10 @@ function renderSuggested(rows){
     const t = String(r.type || '').toLowerCase();
     if (r.interesting && !inheritedInteresting.length) tagPool.push(`<span class='tag ew'>interesting</span>`);
     if (t === 'top4') tagPool.push(`<span class='tag top4'>TOP4</span>`);
+    if (tier === 'bet_now') tagPool.push(`<span class='tag strong'>BET NOW</span>`);
+    else if (tier === 'queue') tagPool.push(`<span class='tag value'>QUEUE</span>`);
+    else if (tier === 'watchlist') tagPool.push(`<span class='tag ew'>WATCH</span>`);
+    else tagPool.push(`<span class='tag'>BLOCKED</span>`);
     tagPool.push(...inheritedInteresting, ...moverTags);
     const seenTags = new Set();
     const tags = tagPool.filter(tag => {
@@ -2740,16 +2825,18 @@ function renderSuggested(rows){
     });
     const tag = tags.length ? ` ${tags.join(' ')}` : '';
 
-    const odds = parseReasonOdds(r.reason);
+    const odds = Number.isFinite(Number(r.odds)) ? Number(r.odds) : parseReasonOdds(r.reason);
     const suggestedSignalRaw = Number(r.signal_score);
     const suggestedSignal = Number.isFinite(suggestedSignalRaw)
       ? suggestedSignalRaw
       : (isMultiType(r.type) ? exoticSignalScore(r) : signalScore(r.reason, r.type, r.selection));
+    const intentText = escapeHtml(r.capitalIntent || 'Blocked');
+    const actionNote = r.executionBlockReason ? `Blocked: ${escapeHtml(String(r.executionBlockReason).replace(/_/g,' '))}` : escapeHtml(r.recommendedAction || '');
     row.innerHTML = `
       <div><button class='bet-btn race-cell-btn suggested-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
       <div><button class='bet-btn suggested-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-selection='${escapeAttr(cleanRunnerText(r.selection))}' data-reason='${escapeAttr(r.reason||'')}'><span class='bet-icon'>💡</span>${escapeHtml(cleanRunnerText(r.selection))}${tag}</button></div>
       <div>${r.type}</div>
-      <div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</div><div class='sub'>${marketEdgeText(r)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
+      <div><div><b>${intentText}</b></div><div class='sub'>${actionNote}</div><div class='sub'>Odds: ${Number.isFinite(odds) ? odds.toFixed(2) : '—'} · ${marketEdgeText(r)}</div>${buildJumpCell(r.meeting, r.race, r.jumpsIn || 'upcoming')}</div>
       <div class='right'>${signalMeterFromScore(suggestedSignal)}<div class='sub suggested-note' style='margin-top:6px'>${reasonToEnglish(r.reason)}</div></div>
     `;
     table.appendChild(row);
@@ -8108,6 +8195,18 @@ function sanitizeSuggestedRow(x){
   out.confidenceSignalPct = confidenceSignalPct(out);
   out.confidenceBoost = isConfidenceBoostCandidate(out);
   out.stakeBoostMultiplier = 1;
+  if (!out.capitalTier) {
+    if (String(out.recommendedAction || '').toUpperCase() === 'BET_NOW') out.capitalTier = 'bet_now';
+    else if (String(out.recommendedAction || '').toUpperCase() === 'QUEUE') out.capitalTier = 'queue';
+    else if (out.interesting || String(out.recommendedAction || '').toUpperCase() === 'WATCH') out.capitalTier = 'watchlist';
+    else out.capitalTier = 'blocked';
+  }
+  if (!out.capitalIntent) {
+    out.capitalIntent = out.capitalTier === 'bet_now' ? 'Bet Now'
+      : out.capitalTier === 'queue' ? 'Queue'
+      : out.capitalTier === 'watchlist' ? 'Watchlist'
+      : 'Blocked';
+  }
   return out;
 }
 
@@ -10518,6 +10617,13 @@ document.querySelectorAll('.alerts-subtab').forEach(btn => {
 });
 $('refreshAlertsBtn')?.addEventListener('click', () => renderAlertsShell());
 $('alertsMeetingFilter')?.addEventListener('change', () => renderAlertsShell());
+$('refreshTrackedBtn')?.addEventListener('click', () => renderTrackedShell());
+document.querySelectorAll('.tracked-subtab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    setActiveTrackedTab(btn.dataset.trackedTab || 'active');
+    renderTrackedShell();
+  });
+});
 $('trainModelsBtn')?.addEventListener('click', ()=> triggerModelTraining());
 setActivePage(activePage);
 

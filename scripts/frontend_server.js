@@ -274,6 +274,14 @@ function loadAuthState(){
 }
 let authState = loadAuthState();
 
+function refreshAuthStateFromDisk(){
+  try {
+    const fresh = loadAuthState();
+    if (fresh?.username) authState = fresh;
+  } catch {}
+  return authState;
+}
+
 async function initAuthPersistence(){
   const pool = getPgPool();
   if (!pool) return;
@@ -342,6 +350,11 @@ function appendJson(filePath, payload){
 
 function loadJson(filePath, fallback){
   try { return JSON.parse(fs.readFileSync(filePath,'utf8')); } catch { return fallback; }
+}
+
+function writeJson(filePath, payload){
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
 }
 
 function safeSlug(s){
@@ -775,9 +788,7 @@ function createSession(principal){
   return sid;
 }
 
-function getSessionPrincipal(req){
-  const cookies = parseCookies(req);
-  const sid = cookies.betman_session;
+function getSessionPrincipalById(sid){
   if (!sid) return null;
   const row = sessions.get(sid);
   if (!row) return null;
@@ -790,6 +801,13 @@ function getSessionPrincipal(req){
     row.principal.effectiveTenantId = effectiveTenantId(row.principal);
   }
   return row.principal;
+}
+
+function getSessionPrincipal(req){
+  const cookies = parseCookies(req);
+  const sid = cookies.betman_session;
+  if (!sid) return null;
+  return getSessionPrincipalById(sid);
 }
 
 function validateCredentials(username, password){
@@ -817,8 +835,22 @@ function validateCredentials(username, password){
 }
 
 function getAuthPrincipal(req){
+  refreshAuthStateFromDisk();
   const sessionPrincipal = getSessionPrincipal(req);
   if (sessionPrincipal) return sessionPrincipal;
+
+  const auth = String(req?.headers?.authorization || '');
+  const bearer = auth.match(/^Bearer\s+(.+)$/i);
+  if (bearer?.[1]) {
+    const principal = getSessionPrincipalById(String(bearer[1]).trim());
+    if (principal) return principal;
+  }
+
+  const xApiKey = String(req?.headers?.['x-api-key'] || '').trim();
+  if (xApiKey) {
+    const principal = validateCredentials(authState.username, xApiKey);
+    if (principal) return principal;
+  }
 
   const creds = parseBasicAuth(req);
   if (!creds) return null;
@@ -3532,9 +3564,18 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     }
 
     if (!answer) {
-      throw lastError || new Error('ollama_unavailable');
+      const openAiKeyAvailable = !!(process.env.OPENAI_API_KEY || process.env.BETMAN_OPENAI_API_KEY || process.env.OPEN_AI_KEY);
+      if (openAiKeyAvailable) {
+        console.error('ollama_unavailable_fallback_openai', lastError?.message || lastError || 'ollama_unavailable');
+        provider = 'openai';
+        effectiveModel = process.env.BETMAN_OPENAI_MODEL || process.env.BETMAN_CHAT_MODEL || 'gpt-4o-mini';
+      } else {
+        throw lastError || new Error('ollama_unavailable');
+      }
     }
-  } else {
+  }
+
+  if (provider === 'openai') {
     const useResponsesApi = openAiUsesCompletionTokens(effectiveModel);
     if (useResponsesApi) {
       const transcript = messages.map(m => `${String(m.role || 'user').toUpperCase()}:\n${String(m.content || '')}`).join('\n\n');
@@ -3652,10 +3693,12 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
 /* ── BETMAN Commercial API v1 handler ──────────────────────────────── */
 const betmanApiHandler = createApiHandler({
-  getAuthState: () => authState,
+  getAuthState: () => refreshAuthStateFromDisk(),
   saveAuthState: (next) => saveAuthState(next),
   loadJson,
   resolveTenantPath,
+  getSessionPrincipal: (req) => getAuthPrincipal(req),
+  resolveTenantPathById,
   dataDir: path.join(process.cwd(), 'frontend', 'data'),
   rootDir: process.cwd()
 });
@@ -4638,7 +4681,7 @@ if (req.method === 'GET' && url.pathname === '/api/race-analysis') {
   return okJson(res, { ok: true, ...cached, cached: true });
 }
 
-if (url.pathname === '/api/ask-selection') {
+if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman') {
   let body='';
   req.on('data', c=>body+=c);
   req.on('end', async ()=>{
@@ -5687,6 +5730,109 @@ if (url.pathname === '/api/ask-selection') {
     const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json');
     const payload = loadJson(p, []);
     return okJson(res, payload);
+  }
+
+  if (url.pathname === '/api/v1/tracked-bets') {
+    const principal = req.authPrincipal;
+    if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
+    const tenantId = principal.effectiveTenantId || 'default';
+    const trackedPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
+    const settledPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json');
+    const username = normalizeUsername(principal.username || 'unknown');
+
+    const allTracked = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
+    const settled = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
+    const norm = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+
+    const resolveTrackedBet = (row) => {
+      const hit = settled.find(s =>
+        norm(s.meeting) === norm(row.meeting) &&
+        String(s.race || '').replace(/^R/i, '') === String(row.race || '').replace(/^R/i, '') &&
+        norm(s.selection) === norm(row.selection) &&
+        norm(s.type) === norm(row.betType)
+      );
+      if (!hit) return row;
+      return {
+        ...row,
+        status: 'settled',
+        result: String(hit.result || 'pending').toLowerCase(),
+        settledAt: hit.settledAt || row.settledAt || null,
+        payout: hit.payout ?? row.payout ?? null,
+      };
+    };
+
+    if (req.method === 'GET') {
+      const mine = allTracked
+        .filter(row => normalizeUsername(row.username || '') === username)
+        .map(resolveTrackedBet)
+        .sort((a,b) => String(b.trackedAt || '').localeCompare(String(a.trackedAt || '')));
+      if (JSON.stringify(mine) !== JSON.stringify(allTracked.filter(row => normalizeUsername(row.username || '') === username))) {
+        const others = allTracked.filter(row => normalizeUsername(row.username || '') !== username);
+        writeJson(trackedPath, [...others, ...mine]);
+      }
+      return okJson(res, { ok: true, trackedBets: mine }, 200, req);
+    }
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        let payload = {};
+        try { payload = body ? JSON.parse(body) : {}; } catch {}
+        const next = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2,9)}`,
+          username,
+          meeting: payload.meeting,
+          race: String(payload.race || ''),
+          selection: payload.selection,
+          betType: payload.betType || payload.type || 'Win',
+          odds: payload.odds ?? null,
+          source: payload.source || 'manual',
+          trackedAt: new Date().toISOString(),
+          status: 'active',
+          result: 'pending',
+          settledAt: null,
+        };
+        if (!next.meeting || !next.race || !next.selection) return okJson(res, { ok: false, error: 'invalid_payload' }, 400, req);
+        writeJson(trackedPath, [next, ...allTracked]);
+        return okJson(res, { ok: true, trackedBet: next }, 200, req);
+      });
+      return;
+    }
+  }
+
+  if (url.pathname.startsWith('/api/v1/tracked-bets/')) {
+    const principal = req.authPrincipal;
+    if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
+    const tenantId = principal.effectiveTenantId || 'default';
+    const trackedPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
+    const username = normalizeUsername(principal.username || 'unknown');
+    const trackedId = decodeURIComponent(url.pathname.split('/').pop() || '');
+    const rows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
+
+    if (req.method === 'PATCH') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        let payload = {};
+        try { payload = body ? JSON.parse(body) : {}; } catch {}
+        const updated = rows.map(row => {
+          if (String(row.id) !== trackedId) return row;
+          if (normalizeUsername(row.username || '') !== username && !principal.isAdmin) return row;
+          return { ...row, ...payload, id: row.id, username: row.username };
+        });
+        writeJson(trackedPath, updated);
+        const trackedBet = updated.find(row => String(row.id) === trackedId) || null;
+        return okJson(res, { ok: true, trackedBet }, 200, req);
+      });
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      const updated = rows.filter(row => !(String(row.id) === trackedId && (normalizeUsername(row.username || '') === username || principal.isAdmin)));
+      writeJson(trackedPath, updated);
+      return okJson(res, { ok: true }, 200, req);
+    }
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/learnings-report') {

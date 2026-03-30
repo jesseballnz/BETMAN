@@ -6,7 +6,8 @@
  * Provides AI-powered race analysis, suggested bets, market movers,
  * and (for admin accounts) direct TAB API proxy access.
  *
- * Authentication: API key via X-API-Key header or ?api_key query parameter.
+ * Authentication: API key via X-API-Key header or ?api_key query parameter,
+ * or a trusted session principal injected by the frontend server.
  * Rate limiting: Configurable per-key sliding window.
  */
 'use strict';
@@ -161,7 +162,9 @@ function createApiHandler(deps) {
     loadJson,
     resolveTenantPath,
     dataDir,
-    rootDir
+    rootDir,
+    getSessionPrincipal,
+    resolveTenantPathById
   } = deps;
 
   function sha256(value) {
@@ -228,6 +231,21 @@ function createApiHandler(deps) {
   }
 
   function requireApiAuth(req, res, url) {
+    const sessionPrincipal = typeof getSessionPrincipal === 'function' ? getSessionPrincipal(req) : null;
+    if (sessionPrincipal) {
+      req.apiPrincipal = {
+        username: sessionPrincipal.username,
+        role: sessionPrincipal.role || 'user',
+        isAdmin: !!sessionPrincipal.isAdmin,
+        tenantId: sessionPrincipal.tenantId || 'default',
+        effectiveTenantId: sessionPrincipal.effectiveTenantId || sessionPrincipal.tenantId || 'default',
+        planType: sessionPrincipal.planType || (sessionPrincipal.isAdmin ? 'admin' : 'single'),
+        source: 'session'
+      };
+      req.apiRateInfo = null;
+      return req.apiPrincipal;
+    }
+
     const rawKey = extractApiKey(req, url);
     if (!rawKey) {
       apiError(req, res, 401, 'api_key_required', 'Provide an API key via X-API-Key header or api_key query parameter.');
@@ -550,6 +568,192 @@ function createApiHandler(deps) {
           magnitude: m.magnitude || m.pctMove || null,
           pctSource: m.pctSource || null
         }))
+      }, 200, rateInfo), true;
+    }
+
+    /* ── GET/POST /api/v1/tracked-bets ───────────────────────────── */
+    if (route === '/tracked-bets') {
+      const tenantId = principal.effectiveTenantId || principal.tenantId || 'default';
+      const trackedPath = resolveTenantPathById
+        ? resolveTenantPathById(tenantId, path.join(rootDir, 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json')
+        : path.join(rootDir, 'frontend', 'data', 'tracked_bets.json');
+      const settledPath = resolveTenantPathById
+        ? resolveTenantPathById(tenantId, path.join(rootDir, 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json')
+        : path.join(rootDir, 'frontend', 'data', 'settled_bets.json');
+      const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
+      const settledRows = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
+      const normalize = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+      const mine = trackedRows.filter((row) => normalize(row.username) === normalize(principal.username));
+      const resolved = mine.map((row) => {
+        const hit = settledRows.find((s) =>
+          normalize(s.meeting) === normalize(row.meeting) &&
+          String(s.race || '').replace(/^R/i, '') === String(row.race || '').replace(/^R/i, '') &&
+          normalize(s.selection) === normalize(row.selection) &&
+          normalize(s.type) === normalize(row.betType)
+        );
+        if (!hit) return row;
+        return {
+          ...row,
+          status: 'settled',
+          result: String(hit.result || 'pending').toLowerCase(),
+          settledAt: hit.settledAt || row.settledAt || null,
+          payout: hit.payout ?? row.payout ?? null,
+        };
+      });
+
+      if (req.method === 'GET') {
+        return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBets: resolved }, 200, rateInfo), true;
+      }
+
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+          let payload = {};
+          try { payload = body ? JSON.parse(body) : {}; } catch {}
+          const next = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2,9)}`,
+            username: principal.username,
+            meeting: payload.meeting,
+            race: String(payload.race || ''),
+            selection: payload.selection,
+            betType: payload.betType || payload.type || 'Win',
+            odds: payload.odds ?? null,
+            source: payload.source || 'manual',
+            trackedAt: new Date().toISOString(),
+            status: 'active',
+            result: 'pending',
+            settledAt: null,
+          };
+          if (!next.meeting || !next.race || !next.selection) return apiError(req, res, 400, 'invalid_payload', 'meeting, race, and selection are required.', rateInfo);
+          fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
+          fs.writeFileSync(trackedPath, JSON.stringify([next, ...trackedRows], null, 2));
+          return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: next }, 200, rateInfo);
+        });
+        return true;
+      }
+    }
+
+    if (route.startsWith('/tracked-bets/')) {
+      const tenantId = principal.effectiveTenantId || principal.tenantId || 'default';
+      const trackedPath = resolveTenantPathById
+        ? resolveTenantPathById(tenantId, path.join(rootDir, 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json')
+        : path.join(rootDir, 'frontend', 'data', 'tracked_bets.json');
+      const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
+      const trackedId = decodeURIComponent(route.split('/').pop() || '');
+      const normalize = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+
+      if (req.method === 'PATCH') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+          let payload = {};
+          try { payload = body ? JSON.parse(body) : {}; } catch {}
+          const updated = trackedRows.map((row) => {
+            if (String(row.id) !== trackedId) return row;
+            if (!principal.isAdmin && normalize(row.username) !== normalize(principal.username)) return row;
+            return { ...row, ...payload, id: row.id, username: row.username };
+          });
+          fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
+          fs.writeFileSync(trackedPath, JSON.stringify(updated, null, 2));
+          return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: updated.find((r) => String(r.id) === trackedId) || null }, 200, rateInfo);
+        });
+        return true;
+      }
+
+      if (req.method === 'DELETE') {
+        const updated = trackedRows.filter((row) => !(String(row.id) === trackedId && (principal.isAdmin || normalize(row.username) === normalize(principal.username))));
+        fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
+        fs.writeFileSync(trackedPath, JSON.stringify(updated, null, 2));
+        return apiJson(req, res, { ok: true, api_version: API_VERSION }, 200, rateInfo), true;
+      }
+    }
+
+    /* ── GET/POST /api/v1/heatmap + detail placeholders ───────────── */
+    if (req.method === 'GET' && route === '/heatmap') {
+      const data = readDataFile('heatmap_observations.json', { observations: [] });
+      return apiJson(req, res, {
+        ok: true,
+        api_version: API_VERSION,
+        automationReady: true,
+        observations: Array.isArray(data.observations) ? data.observations : []
+      }, 200, rateInfo), true;
+    }
+
+    if (req.method === 'POST' && route === '/heatmap/intake') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        let payload = {};
+        try { payload = body ? JSON.parse(body) : {}; } catch {}
+        const existing = readDataFile('heatmap_observations.json', { observations: [] });
+        const observation = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2,9)}`,
+          meeting: payload.meeting || null,
+          race: payload.race || null,
+          horseNumber: payload.horseNumber || payload.saddleClothRead || null,
+          runnerName: payload.runnerName || null,
+          capturedAt: payload.capturedAt || new Date().toISOString(),
+          sourceDevice: payload.sourceDevice || null,
+          saddleClothRead: payload.saddleClothRead || null,
+          imageRefs: Array.isArray(payload.imageRefs) ? payload.imageRefs : [],
+          infraredImageCount: Array.isArray(payload.imageRefs) ? payload.imageRefs.length : Number(payload.infraredImageCount || 0),
+          status: 'pending',
+          heatScore: null,
+          riskLevel: null,
+          zones: [],
+          notes: payload.notes || null,
+          metadata: payload.metadata || {}
+        };
+        const next = {
+          observations: [observation, ...((Array.isArray(existing.observations) ? existing.observations : []))]
+        };
+        fs.writeFileSync(path.join(dataDir, 'heatmap_observations.json'), JSON.stringify(next, null, 2));
+        return apiJson(req, res, { ok: true, api_version: API_VERSION, observation }, 200, rateInfo);
+      });
+      return true;
+    }
+
+    if (req.method === 'GET' && route.startsWith('/heatmap/')) {
+      const parts = route.split('/').filter(Boolean);
+      const data = readDataFile('heatmap_observations.json', { observations: [] });
+      const rows = Array.isArray(data.observations) ? data.observations : [];
+      if (parts.length >= 3) {
+        const [, meeting, race] = parts;
+        const horseNumber = parts[3] || null;
+        const filtered = rows.filter((r) => String(r.meeting || '').toLowerCase() === decodeURIComponent(meeting).toLowerCase() && String(r.race || '') === decodeURIComponent(race) && (!horseNumber || String(r.horseNumber || '') === decodeURIComponent(horseNumber)));
+        return apiJson(req, res, { ok: true, api_version: API_VERSION, observations: filtered, automationReady: true }, 200, rateInfo), true;
+      }
+    }
+
+    /* ── GET /api/v1/alerts-feed ───────────────────────────────────── */
+    if (req.method === 'GET' && route === '/alerts-feed') {
+      const data = readDataFile('alerts_feed.json', { updatedAt: null, alerts: [] });
+      return apiJson(req, res, {
+        ok: true,
+        api_version: API_VERSION,
+        updatedAt: data.updatedAt || null,
+        alerts: Array.isArray(data.alerts) ? data.alerts : []
+      }, 200, rateInfo), true;
+    }
+
+    /* ── GET /api/v1/alerts-history ────────────────────────────────── */
+    if (req.method === 'GET' && route === '/alerts-history') {
+      const data = readDataFile('alerts_history.json', []);
+      return apiJson(req, res, {
+        ok: true,
+        api_version: API_VERSION,
+        alerts: Array.isArray(data) ? data : []
+      }, 200, rateInfo), true;
+    }
+
+    /* ── GET /api/v1/learnings-report ──────────────────────────────── */
+    if (req.method === 'GET' && route === '/learnings-report') {
+      const data = readDataFile('learnings_report.json', {});
+      return apiJson(req, res, {
+        ok: true,
+        api_version: API_VERSION,
+        ...data
       }, 200, rateInfo), true;
     }
 

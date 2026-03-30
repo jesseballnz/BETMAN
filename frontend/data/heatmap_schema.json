@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "description": "BETMAN Heatmap observation schema scaffold",
+  "observation": {
+    "id": "string",
+    "meeting": "string",
+    "race": "string",
+    "horseNumber": "string",
+    "runnerName": "string|null",
+    "capturedAt": "ISO-8601 string",
+    "sourceDevice": "string|null",
+    "saddleClothRead": "string|null",
+    "imageRefs": ["string"],
+    "infraredImageCount": "number",
+    "status": "pending|processed|failed",
+    "heatScore": "number|null",
+    "riskLevel": "none|watch|warning|critical|null",
+    "zones": [],
+    "notes": "string|null",
+    "metadata": {}
+  }
+}
