@@ -623,6 +623,9 @@ function createApiHandler(deps) {
             selection: payload.selection,
             betType: payload.betType || payload.type || 'Win',
             odds: payload.odds ?? null,
+            stake: payload.stake ?? null,
+            jumpsIn: payload.jumpsIn ?? null,
+            note: payload.note ?? null,
             source: payload.source || 'manual',
             trackedAt: new Date().toISOString(),
             status: 'active',
@@ -753,7 +756,11 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/learnings-report ──────────────────────────────── */
     if (req.method === 'GET' && route === '/learnings-report') {
-      const data = readDataFile('learnings_report.json', {});
+      const tenantId = principal.effectiveTenantId || principal.tenantId || 'default';
+      const learningsPath = resolveTenantPathById
+        ? resolveTenantPathById(tenantId, path.join(rootDir, 'frontend', 'data', 'learnings_report.json'), 'learnings_report.json')
+        : path.join(rootDir, 'frontend', 'data', 'learnings_report.json');
+      const data = loadJson(learningsPath, {});
       return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
