@@ -881,6 +881,11 @@ let trackedTab = 'active';
 let trackedBetsCache = [];
 let trackedBetsCacheLoadedAt = 0;
 
+function formatTrackedOddsValue(value){
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num.toFixed(2) : '—';
+}
+
 async function loadTrackedBetsCache(force = false){
   if (!force && trackedBetsCacheLoadedAt && (Date.now() - trackedBetsCacheLoadedAt) < 15_000) return trackedBetsCache;
   try {
@@ -965,11 +970,14 @@ function buildTrackedEditorHtml(row){
   const race = escapeHtml(String(row?.race || '—'));
   const status = escapeHtml(String(row?.status || 'active'));
   const result = escapeHtml(String(row?.result || 'pending').toUpperCase());
+  const currentOdds = formatTrackedOddsValue(row?.currentOdds);
+  const currentOddsMeta = row?.currentOddsSource ? ` <span class='sub'>(${escapeHtml(String(row.currentOddsSource))})</span>` : '';
   return `
     <div class='tracked-editor' data-tracked-edit-root='1' data-id='${escapeAttr(String(row?.id || ''))}'>
       <div class='horse-meta' style='margin-bottom:12px'>
         <div><b>Race:</b> ${meeting} R${race}</div>
         <div><b>Status:</b> ${status} · <b>Result:</b> ${result}</div>
+        <div><b>Current Odds:</b> ${currentOdds}${currentOddsMeta}</div>
       </div>
       <div class='filters' style='align-items:flex-end'>
         <label style='display:flex;flex-direction:column;gap:6px;min-width:180px'>
@@ -978,7 +986,7 @@ function buildTrackedEditorHtml(row){
         </label>
         <label style='display:flex;flex-direction:column;gap:6px;min-width:110px'>
           <span class='sub'>Entry Odds</span>
-          <input data-field='odds' type='number' min='0' step='0.01' value='${escapeAttr(row?.odds ?? row?.entryOdds ?? '')}' />
+          <input data-field='entryOdds' type='number' min='0' step='0.01' value='${escapeAttr(row?.entryOdds ?? row?.odds ?? '')}' />
         </label>
         <label style='display:flex;flex-direction:column;gap:6px;min-width:110px'>
           <span class='sub'>Stake</span>
@@ -1005,7 +1013,7 @@ function bindTrackedEditor(root, row){
   const readField = (name) => root.querySelector(`[data-field='${name}']`);
   root.querySelector('[data-tracked-save="1"]')?.addEventListener('click', async () => {
     const selection = String(readField('selection')?.value || '').trim();
-    const oddsRaw = String(readField('odds')?.value || '').trim();
+    const oddsRaw = String(readField('entryOdds')?.value || '').trim();
     const stakeRaw = String(readField('stake')?.value || '').trim();
     const jumpsIn = String(readField('jumpsIn')?.value || '').trim();
     const note = String(readField('note')?.value || '').trim();
@@ -1069,14 +1077,19 @@ async function renderTrackedShell(){
     table.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No ${trackedTab} tracked runners</div></div>`;
     return;
   }
-  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Entry</div><div class='right'>Stake / Actions</div></div>` + filtered.map(r => {
+  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Odds</div><div class='right'>Stake / Actions</div></div>` + filtered.map(r => {
     const result = String(r.result || 'pending').toLowerCase();
     const badge = result === 'won' ? 'value' : (result === 'lost' ? 'danger' : 'ew');
+    const entryOdds = formatTrackedOddsValue(r.entryOdds ?? r.odds);
+    const currentOdds = formatTrackedOddsValue(r.currentOdds);
+    const currentSub = r.currentOddsSource
+      ? `Current ${currentOdds} · ${escapeHtml(String(r.currentOddsSource))}`
+      : `Current ${currentOdds}`;
     return `<div class='row tracked-row' data-id='${escapeAttr(String(r.id || ''))}' data-meeting='${escapeAttr(String(r.meeting || ''))}' data-race='${escapeAttr(String(r.race || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>
       <div><span class='badge'>${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || ''))}</div>
       <div>${escapeHtml(String(r.selection || ''))}<div class='sub'>${escapeHtml(String(r.betType || 'Win'))}${r.jumpsIn ? ` · ${escapeHtml(String(r.jumpsIn))}` : ''}</div></div>
       <div>${escapeHtml(String(r.status || 'active'))}<div class='sub'><span class='tag ${badge}'>${escapeHtml(result.toUpperCase())}</span></div></div>
-      <div>Odds ${r.odds != null ? escapeHtml(Number(r.odds).toFixed(2)) : '—'}<div class='sub'>Source ${escapeHtml(String(r.source || 'manual'))}</div></div>
+      <div>Entry ${entryOdds}<div class='sub'>${currentSub}</div></div>
       <div class='right'>
         <div>${r.stake != null ? escapeHtml(String(r.stake)) : '—'}<div class='sub'>stake</div></div>
         <button class='btn btn-ghost compact-btn tracked-edit-btn' data-id='${escapeAttr(String(r.id || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>Edit</button>

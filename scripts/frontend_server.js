@@ -6,6 +6,7 @@ const path = require('path');
 const dns = require('dns');
 const { mergePublicStatusLists } = require('./status_snapshot_merge');
 const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
+const { matchSettledBet } = require('./tracked_bet_matching');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -979,6 +980,26 @@ function normalizeRunnerName(name){
   return String(name || '').replace(/^[0-9]+\.\s*/, '').trim().toLowerCase();
 }
 
+function normalizeMeetingName(name){
+  return String(name || '').trim().toLowerCase();
+}
+
+function normalizeRaceValue(value){
+  return String(value || '').replace(/^R/i, '').trim();
+}
+
+function normalizeTrackedKey(meeting, race, selection){
+  return `${normalizeMeetingName(meeting)}|${normalizeRaceValue(race)}|${normalizeRunnerName(selection)}`;
+}
+
+function toPositiveOddsValue(...values){
+  for (const raw of values) {
+    const num = Number(raw);
+    if (Number.isFinite(num) && num > 0) return Number(num.toFixed(2));
+  }
+  return null;
+}
+
 function formatRunnerCallout(selection, suggested = []){
   const name = String(selection?.selection || selection?.runner || '').trim();
   if (!name) return '';
@@ -1386,6 +1407,97 @@ function mergeSelections(explicit = [], inferred = []){
 }
 
 const FINISHED_RACE_STATUSES = new Set(['final', 'closed', 'abandoned', 'resulted']);
+
+function buildTrackedBetLiveContext(tenantId = 'default') {
+  const status = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json'), {});
+  const racesData = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), {});
+  const allRaces = Array.isArray(racesData?.races) ? racesData.races : [];
+  const raceMap = new Map();
+  const runnerMap = new Map();
+  const moverMap = new Map();
+  const suggestedMap = new Map();
+
+  for (const race of allRaces) {
+    const raceKey = `${normalizeMeetingName(race?.meeting)}|${normalizeRaceValue(race?.race_number)}`;
+    if (!raceMap.has(raceKey)) raceMap.set(raceKey, race);
+    const raceFinished = FINISHED_RACE_STATUSES.has(String(race?.race_status || '').toLowerCase());
+    if (!Array.isArray(race?.runners) || raceFinished) continue;
+    for (const runner of race.runners) {
+      const key = normalizeTrackedKey(race?.meeting, race?.race_number, runner?.name || runner?.runner_name || runner?.selection);
+      if (!key.endsWith('|')) {
+        runnerMap.set(key, {
+          currentOdds: toPositiveOddsValue(runner?.odds, runner?.fixed_win, runner?.tote_win, runner?.price, runner?.win),
+          raceStatus: race?.race_status || null,
+          source: 'races',
+        });
+      }
+    }
+  }
+
+  for (const mover of Array.isArray(status?.marketMovers) ? status.marketMovers : []) {
+    const key = normalizeTrackedKey(mover?.meeting, mover?.race, mover?.runner || mover?.selection || mover?.name);
+    moverMap.set(key, {
+      currentOdds: toPositiveOddsValue(mover?.currentOdds, mover?.toOdds, mover?.odds),
+      raceStatus: mover?.raceStatus || null,
+      source: 'market-movers',
+    });
+  }
+
+  for (const bet of Array.isArray(status?.suggestedBets) ? status.suggestedBets : []) {
+    const key = normalizeTrackedKey(bet?.meeting, bet?.race, bet?.selection || bet?.runner || bet?.name);
+    if (!suggestedMap.has(key)) {
+      suggestedMap.set(key, {
+        currentOdds: toPositiveOddsValue(bet?.odds, parseReasonOdds(bet?.reason)),
+        source: 'suggested-bets',
+      });
+    }
+  }
+
+  return { raceMap, runnerMap, moverMap, suggestedMap };
+}
+
+function enrichTrackedBetWithCurrentOdds(row, liveContext) {
+  const entryOdds = toPositiveOddsValue(row?.entryOdds, row?.odds);
+  const raceKey = `${normalizeMeetingName(row?.meeting)}|${normalizeRaceValue(row?.race)}`;
+  const trackedKey = normalizeTrackedKey(row?.meeting, row?.race, row?.selection);
+  const race = liveContext?.raceMap?.get(raceKey) || null;
+  const raceStatus = race?.race_status || null;
+  const raceFinished = FINISHED_RACE_STATUSES.has(String(raceStatus || '').toLowerCase());
+
+  let currentOdds = null;
+  let currentOddsSource = null;
+
+  const runnerHit = liveContext?.runnerMap?.get(trackedKey);
+  if (runnerHit && Number.isFinite(Number(runnerHit.currentOdds)) && Number(runnerHit.currentOdds) > 0) {
+    currentOdds = Number(Number(runnerHit.currentOdds).toFixed(2));
+    currentOddsSource = runnerHit.source || 'races';
+  }
+
+  if (currentOdds == null && !raceFinished) {
+    const moverHit = liveContext?.moverMap?.get(trackedKey);
+    if (moverHit && Number.isFinite(Number(moverHit.currentOdds)) && Number(moverHit.currentOdds) > 0) {
+      currentOdds = Number(Number(moverHit.currentOdds).toFixed(2));
+      currentOddsSource = moverHit.source || 'market-movers';
+    }
+  }
+
+  if (currentOdds == null && !raceFinished) {
+    const suggestedHit = liveContext?.suggestedMap?.get(trackedKey);
+    if (suggestedHit && Number.isFinite(Number(suggestedHit.currentOdds)) && Number(suggestedHit.currentOdds) > 0) {
+      currentOdds = Number(Number(suggestedHit.currentOdds).toFixed(2));
+      currentOddsSource = suggestedHit.source || 'suggested-bets';
+    }
+  }
+
+  return {
+    ...row,
+    odds: entryOdds,
+    entryOdds,
+    currentOdds,
+    currentOddsSource,
+    raceStatus,
+  };
+}
 
 /** Return true when `entry` (any object with meeting + race/race_number) does NOT
  *  belong to a race whose status is in FINISHED_RACE_STATUSES.  Entries that have
@@ -5817,14 +5929,10 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const allTracked = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
     const settled = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
     const norm = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+    const liveContext = buildTrackedBetLiveContext(tenantId);
 
     const resolveTrackedBet = (row) => {
-      const hit = settled.find(s =>
-        norm(s.meeting) === norm(row.meeting) &&
-        String(s.race || '').replace(/^R/i, '') === String(row.race || '').replace(/^R/i, '') &&
-        norm(s.selection) === norm(row.selection) &&
-        norm(s.type) === norm(row.betType)
-      );
+      const hit = matchSettledBet(row, settled);
       if (!hit) return row;
       return {
         ...row,
@@ -5836,13 +5944,14 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     };
 
     if (req.method === 'GET') {
-      const mine = allTracked
+      const mineResolved = allTracked
         .filter(row => normalizeUsername(row.username || '') === username)
         .map(resolveTrackedBet)
         .sort((a,b) => String(b.trackedAt || '').localeCompare(String(a.trackedAt || '')));
-      if (JSON.stringify(mine) !== JSON.stringify(allTracked.filter(row => normalizeUsername(row.username || '') === username))) {
+      const mine = mineResolved.map(row => enrichTrackedBetWithCurrentOdds(row, liveContext));
+      if (JSON.stringify(mineResolved) !== JSON.stringify(allTracked.filter(row => normalizeUsername(row.username || '') === username))) {
         const others = allTracked.filter(row => normalizeUsername(row.username || '') !== username);
-        writeJson(trackedPath, [...others, ...mine]);
+        writeJson(trackedPath, [...others, ...mineResolved]);
       }
       return okJson(res, { ok: true, trackedBets: mine }, 200, req);
     }
@@ -5897,7 +6006,13 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         const updated = rows.map(row => {
           if (String(row.id) !== trackedId) return row;
           if (normalizeUsername(row.username || '') !== username && !principal.isAdmin) return row;
-          return { ...row, ...payload, id: row.id, username: row.username };
+          const safePayload = { ...payload };
+          delete safePayload.currentOdds;
+          delete safePayload.currentOddsSource;
+          delete safePayload.raceStatus;
+          if ('entryOdds' in safePayload && !('odds' in safePayload)) safePayload.odds = safePayload.entryOdds;
+          if ('odds' in safePayload && !('entryOdds' in safePayload)) safePayload.entryOdds = safePayload.odds;
+          return { ...row, ...safePayload, id: row.id, username: row.username };
         });
         writeJson(trackedPath, updated);
         const trackedBet = updated.find(row => String(row.id) === trackedId) || null;
