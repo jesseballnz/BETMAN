@@ -935,7 +935,7 @@ async function refreshTrackedUi(opts = {}){
     attachAnalysisSelectionHandlers(selectedRace);
     makeSelectionsDraggable();
   }
-  if (rerenderTracked && currentPage === 'tracked') {
+  if (rerenderTracked && activePage === 'tracked') {
     renderTrackedShell();
   }
 }

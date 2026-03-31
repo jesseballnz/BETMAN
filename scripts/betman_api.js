@@ -623,6 +623,7 @@ function createApiHandler(deps) {
             selection: payload.selection,
             betType: payload.betType || payload.type || 'Win',
             odds: payload.odds ?? null,
+            entryOdds: payload.entryOdds ?? payload.odds ?? null,
             stake: payload.stake ?? null,
             jumpsIn: payload.jumpsIn ?? null,
             note: payload.note ?? null,
