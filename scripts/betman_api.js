@@ -533,6 +533,21 @@ function createApiHandler(deps) {
     return principal?.effectiveTenantId || principal?.tenantId || 'default';
   }
 
+  function resolveTenantOwnedDataPath(tenantId = 'default', filename) {
+    if (resolveTenantPathById) {
+      const normalized = String(tenantId || 'default').trim() || 'default';
+      if (normalized !== 'default') {
+        const tenantRoot = path.join(rootDir, 'memory', 'tenants', normalized, 'frontend-data');
+        return path.join(tenantRoot, filename);
+      }
+    }
+    return path.join(rootDir, 'frontend', 'data', filename);
+  }
+
+  function isPrivateTenantPrincipal(principal = null) {
+    return !!principal && !principal.isAdmin && effectiveTenantId(principal) !== 'default';
+  }
+
   function loadPulseConfigForTenant(tenantId = 'default') {
     const filePath = resolveTenantPathById
       ? resolveTenantPathById(tenantId, path.join(dataDir, PULSE_CONFIG_FILE), PULSE_CONFIG_FILE)
@@ -855,24 +870,28 @@ function createApiHandler(deps) {
     /* ── GET/POST /api/v1/tracked-bets ───────────────────────────── */
     if (route === '/tracked-bets') {
       const tenantId = principal.effectiveTenantId || principal.tenantId || 'default';
-      const trackedPath = resolveTenantPathById
-        ? resolveTenantPathById(tenantId, path.join(rootDir, 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json')
-        : path.join(rootDir, 'frontend', 'data', 'tracked_bets.json');
-      const settledPath = resolveTenantPathById
-        ? resolveTenantPathById(tenantId, path.join(rootDir, 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json')
-        : path.join(rootDir, 'frontend', 'data', 'settled_bets.json');
+      const trackedPath = resolveTenantOwnedDataPath(tenantId, 'tracked_bets.json');
+      const settledPath = resolveTenantOwnedDataPath(tenantId, 'settled_bets.json');
       const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
       const settledRows = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
       const raceResultIndex = buildRaceResultIndex(settledRows);
       const normalize = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
-      const mine = trackedRows.filter((row) => normalize(row.username) === normalize(principal.username));
-      const resolved = mine.map((row) => resolveTrackedBet(row, settledRows, raceResultIndex));
+      const privateTenantScope = isPrivateTenantPrincipal(principal);
+      const visibleTracked = privateTenantScope
+        ? trackedRows
+        : trackedRows.filter((row) => normalize(row.username) === normalize(principal.username));
+      const resolved = visibleTracked.map((row) => resolveTrackedBet(row, settledRows, raceResultIndex));
 
       if (req.method === 'GET') {
-        if (JSON.stringify(mine) !== JSON.stringify(resolved)) {
-          const others = trackedRows.filter((row) => normalize(row.username) !== normalize(principal.username));
-          fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
-          fs.writeFileSync(trackedPath, JSON.stringify([...others, ...resolved], null, 2));
+        if (JSON.stringify(visibleTracked) !== JSON.stringify(resolved)) {
+          if (privateTenantScope) {
+            fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
+            fs.writeFileSync(trackedPath, JSON.stringify(resolved, null, 2));
+          } else {
+            const others = trackedRows.filter((row) => normalize(row.username) !== normalize(principal.username));
+            fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
+            fs.writeFileSync(trackedPath, JSON.stringify([...others, ...resolved], null, 2));
+          }
         }
         return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBets: resolved }, 200, rateInfo), true;
       }
@@ -916,12 +935,11 @@ function createApiHandler(deps) {
 
     if (route.startsWith('/tracked-bets/')) {
       const tenantId = principal.effectiveTenantId || principal.tenantId || 'default';
-      const trackedPath = resolveTenantPathById
-        ? resolveTenantPathById(tenantId, path.join(rootDir, 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json')
-        : path.join(rootDir, 'frontend', 'data', 'tracked_bets.json');
+      const trackedPath = resolveTenantOwnedDataPath(tenantId, 'tracked_bets.json');
       const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
       const trackedId = decodeURIComponent(route.split('/').pop() || '');
       const normalize = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+      const privateTenantScope = isPrivateTenantPrincipal(principal);
 
       if (req.method === 'PATCH') {
         let body = '';
@@ -931,7 +949,7 @@ function createApiHandler(deps) {
           try { payload = body ? JSON.parse(body) : {}; } catch {}
           const updated = trackedRows.map((row) => {
             if (String(row.id) !== trackedId) return row;
-            if (!principal.isAdmin && normalize(row.username) !== normalize(principal.username)) return row;
+            if (!privateTenantScope && !principal.isAdmin && normalize(row.username) !== normalize(principal.username)) return row;
             return {
               ...row,
               ...payload,
@@ -950,7 +968,11 @@ function createApiHandler(deps) {
       }
 
       if (req.method === 'DELETE') {
-        const updated = trackedRows.filter((row) => !(String(row.id) === trackedId && (principal.isAdmin || normalize(row.username) === normalize(principal.username))));
+        const updated = trackedRows.filter((row) => {
+          if (String(row.id) !== trackedId) return true;
+          if (privateTenantScope || principal.isAdmin) return false;
+          return normalize(row.username) !== normalize(principal.username);
+        });
         fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
         fs.writeFileSync(trackedPath, JSON.stringify(updated, null, 2));
         return apiJson(req, res, { ok: true, api_version: API_VERSION }, 200, rateInfo), true;

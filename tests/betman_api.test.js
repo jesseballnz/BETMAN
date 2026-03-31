@@ -549,7 +549,42 @@ asyncTests.push((async () => {
   console.log('  ✓ tracked-bets endpoint resolves race-result-first fallbacks');
 })());
 
-// 22. Models endpoint
+// 22. tracked-bets endpoint uses tenant-owned files for private tenants and ignores shared default fixtures
+asyncTests.push((async () => {
+  const handler = makeHandler({
+    rootDir: ROOT,
+    resolveTenantPathById: (tenantId, defaultPath, filename) => defaultPath,
+    loadJson: (p, f) => {
+      if (p.includes(path.join('memory', 'tenants', 'acct_private-user-test', 'frontend-data', 'tracked_bets.json'))) {
+        return [
+          { id: 'tenant-1', username: 'other-device', meeting: 'Tauranga', race: '6', selection: 'Silkdegrees', betType: 'Win', status: 'active', result: 'pending' },
+        ];
+      }
+      if (p.includes(path.join('memory', 'tenants', 'acct_private-user-test', 'frontend-data', 'settled_bets.json'))) {
+        return [];
+      }
+      if (p.includes(path.join('frontend', 'data', 'tracked_bets.json'))) {
+        return [
+          { id: 'shared-fixture', username: 'alice', meeting: 'Newcastle', race: '1', selection: 'Cavalry', betType: 'Win', status: 'active', result: 'pending' },
+        ];
+      }
+      return f;
+    },
+    getSessionPrincipal: () => ({ username: 'private.user@test', tenantId: 'acct_private-user-test', effectiveTenantId: 'acct_private-user-test' }),
+  });
+  const req = fakeReq('GET', '/api/v1/tracked-bets');
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/tracked-bets');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.trackedBets.length, 1);
+  assert.strictEqual(parsed.trackedBets[0].selection, 'Silkdegrees');
+  assert.strictEqual(parsed.trackedBets[0].id, 'tenant-1');
+  console.log('  ✓ tracked-bets private tenant uses tenant-owned files');
+})());
+
+// 23. Models endpoint
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({

@@ -307,9 +307,12 @@ function normalizeUserKey(value) {
 
 function buildVisibleSettledRows(principal = {}, trackedRows = [], settledRows = [], raceResultIndex = null) {
   const username = normalizeUserKey(principal.username || '');
+  const privateTenantScope = !principal?.isAdmin && String(principal?.effectiveTenantId || principal?.tenantId || 'default') !== 'default';
   const raceMap = raceResultIndex instanceof Map ? raceResultIndex : buildRaceResultIndex(settledRows);
-  const trackedSettledRows = (Array.isArray(trackedRows) ? trackedRows : [])
-    .filter((row) => normalizeUserKey(row.username || '') === username)
+  const visibleTrackedRows = privateTenantScope
+    ? (Array.isArray(trackedRows) ? trackedRows : [])
+    : (Array.isArray(trackedRows) ? trackedRows : []).filter((row) => normalizeUserKey(row.username || '') === username);
+  const trackedSettledRows = visibleTrackedRows
     .map((row) => {
       const hit = matchSettledBet(row, settledRows, raceMap);
       return hit ? buildTrackedSettledBetRow(row, hit) : null;
@@ -319,7 +322,8 @@ function buildVisibleSettledRows(principal = {}, trackedRows = [], settledRows =
   const directSettledRows = (Array.isArray(settledRows) ? settledRows : []).filter((row) => {
     if (principal?.isAdmin) return true;
     const rowUser = normalizeUserKey(row.username || row.user || row.userId || row.owner || '');
-    return rowUser && rowUser === username;
+    if (rowUser) return rowUser === username;
+    return privateTenantScope;
   });
 
   const seen = new Set();

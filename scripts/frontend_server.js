@@ -1634,7 +1634,7 @@ function mergeSelections(explicit = [], inferred = []){
   return merged;
 }
 
-const FINISHED_RACE_STATUSES = new Set(['final', 'closed', 'abandoned', 'resulted']);
+const FINISHED_RACE_STATUSES = new Set(['final', 'abandoned', 'resulted']);
 
 function buildTrackedBetLiveContext(tenantId = 'default') {
   const status = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json'), {});
@@ -6145,8 +6145,8 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const principal = req.authPrincipal;
     if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
     const tenantId = principal.effectiveTenantId || 'default';
-    const settledPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json');
-    const trackedPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
+    const settledPath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json');
+    const trackedPath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
     const settledRows = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
     const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
     const raceResultIndex = buildRaceResultIndex(settledRows);
@@ -6157,9 +6157,10 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const principal = req.authPrincipal;
     if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
     const tenantId = principal.effectiveTenantId || 'default';
-    const trackedPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
-    const settledPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json');
+    const trackedPath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
+    const settledPath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json');
     const username = normalizeUsername(principal.username || 'unknown');
+    const privateTenantScope = isPrivateTenantPrincipal(principal);
 
     const allTracked = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
     const settled = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
@@ -6167,14 +6168,20 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const liveContext = buildTrackedBetLiveContext(tenantId);
 
     if (req.method === 'GET') {
-      const mineResolved = allTracked
-        .filter(row => normalizeUsername(row.username || '') === username)
+      const visibleTracked = privateTenantScope
+        ? allTracked
+        : allTracked.filter(row => normalizeUsername(row.username || '') === username);
+      const visibleResolved = visibleTracked
         .map(row => resolveTrackedBet(row, settled, raceResultIndex))
         .sort((a,b) => String(b.trackedAt || '').localeCompare(String(a.trackedAt || '')));
-      const mine = mineResolved.map(row => enrichTrackedBetWithCurrentOdds(row, liveContext));
-      if (JSON.stringify(mineResolved) !== JSON.stringify(allTracked.filter(row => normalizeUsername(row.username || '') === username))) {
-        const others = allTracked.filter(row => normalizeUsername(row.username || '') !== username);
-        writeJson(trackedPath, [...others, ...mineResolved]);
+      const mine = visibleResolved.map(row => enrichTrackedBetWithCurrentOdds(row, liveContext));
+      if (JSON.stringify(visibleResolved) !== JSON.stringify(visibleTracked)) {
+        if (privateTenantScope) {
+          writeJson(trackedPath, visibleResolved);
+        } else {
+          const others = allTracked.filter(row => normalizeUsername(row.username || '') !== username);
+          writeJson(trackedPath, [...others, ...visibleResolved]);
+        }
       }
       return okJson(res, { ok: true, trackedBets: mine }, 200, req);
     }
@@ -6217,8 +6224,9 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const principal = req.authPrincipal;
     if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
     const tenantId = principal.effectiveTenantId || 'default';
-    const trackedPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
+    const trackedPath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
     const username = normalizeUsername(principal.username || 'unknown');
+    const privateTenantScope = isPrivateTenantPrincipal(principal);
     const trackedId = decodeURIComponent(url.pathname.split('/').pop() || '');
     const rows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
 
@@ -6230,6 +6238,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         try { payload = body ? JSON.parse(body) : {}; } catch {}
         const updated = rows.map(row => {
           if (String(row.id) !== trackedId) return row;
+          if (!privateTenantScope && !principal.isAdmin && normalizeUsername(row.username || '') !== username) return row;
           const safePayload = { ...payload, trackedBy: username };
           delete safePayload.currentOdds;
           delete safePayload.currentOddsSource;
@@ -6246,7 +6255,11 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     }
 
     if (req.method === 'DELETE') {
-      const updated = rows.filter(row => !(String(row.id) === trackedId && (normalizeUsername(row.username || '') === username || principal.isAdmin)));
+      const updated = rows.filter(row => {
+        if (String(row.id) !== trackedId) return true;
+        if (privateTenantScope || principal.isAdmin) return false;
+        return normalizeUsername(row.username || '') !== username;
+      });
       writeJson(trackedPath, updated);
       return okJson(res, { ok: true }, 200, req);
     }
