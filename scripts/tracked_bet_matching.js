@@ -163,6 +163,40 @@ function buildTrackedSettlement(row = {}, fallback = {}) {
   };
 }
 
+function toSettledResult(result) {
+  const canonical = canonicalTrackedResult(result);
+  if (canonical === 'won') return 'win';
+  if (canonical === 'lost') return 'loss';
+  return canonical;
+}
+
+function buildTrackedSettledBetRow(trackedRow = {}, settledRow = {}) {
+  const settlement = buildTrackedSettlement(settledRow, trackedRow);
+  if (settlement.status !== 'settled') return null;
+  const settledAt = settlement.settledAt || trackedRow.settledAt || trackedRow.trackedAt || null;
+  return {
+    id: trackedRow.id || null,
+    source: 'tracked',
+    date: settledAt ? String(settledAt).slice(0, 10) : null,
+    settled_at: settledAt,
+    meeting: trackedRow.meeting || settledRow.meeting || null,
+    race: String(trackedRow.race || settledRow.race || '').replace(/^R/i, ''),
+    selection: trackedRow.selection || settledRow.selection || null,
+    type: normalizeBetType(trackedRow.betType || trackedRow.type || settledRow.type),
+    result: toSettledResult(settlement.result),
+    position: settlement.position,
+    winner: settlement.winner,
+    odds: toFiniteNumber(trackedRow.entryOdds ?? trackedRow.odds ?? settledRow.odds),
+    place_odds: toFiniteNumber(settledRow.place_odds ?? settledRow.placeOdds),
+    stake_units: toFiniteNumber(trackedRow.stake ?? trackedRow.stake_units),
+    return_units: settlement.payout,
+    profit_units: settlement.profit,
+    roi: settlement.roi,
+    tracked_at: trackedRow.trackedAt || null,
+    betType: trackedRow.betType || trackedRow.type || null,
+  };
+}
+
 module.exports = {
   normalizeText,
   normalizeMeeting,
@@ -175,4 +209,5 @@ module.exports = {
   buildSettledBetKey,
   canonicalTrackedResult,
   buildTrackedSettlement,
+  buildTrackedSettledBetRow,
 };

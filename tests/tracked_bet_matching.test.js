@@ -9,6 +9,7 @@ const {
   buildSettledBetKey,
   canonicalTrackedResult,
   buildTrackedSettlement,
+  buildTrackedSettledBetRow,
 } = require('../scripts/tracked_bet_matching');
 
 assert.strictEqual(normalizeSelection('7. Cavalry'), 'cavalry');
@@ -94,6 +95,57 @@ assert.deepStrictEqual(
     roi: -1,
     position: null,
     winner: null,
+  }
+);
+
+assert.deepStrictEqual(
+  buildTrackedSettledBetRow(
+    {
+      id: 'tracked-1',
+      meeting: 'Newcastle',
+      race: 'R1',
+      selection: 'Cavalry',
+      betType: 'Win',
+      entryOdds: 3.3,
+      stake: 5,
+      trackedAt: '2026-03-31T03:00:00.000Z',
+    },
+    {
+      meeting: 'Newcastle',
+      race: '1',
+      selection: '7. Cavalry',
+      type: 'win',
+      result: 'win',
+      settled_at: '2026-03-31T04:05:06.000Z',
+      odds: 3.3,
+      stake_units: 1,
+      return_units: 3.3,
+      profit_units: 2.3,
+      roi: 2.3,
+      winner: 'Cavalry',
+      position: 1,
+    }
+  ),
+  {
+    id: 'tracked-1',
+    source: 'tracked',
+    date: '2026-03-31',
+    settled_at: '2026-03-31T04:05:06.000Z',
+    meeting: 'Newcastle',
+    race: '1',
+    selection: 'Cavalry',
+    type: 'win',
+    result: 'win',
+    position: 1,
+    winner: 'Cavalry',
+    odds: 3.3,
+    place_odds: null,
+    stake_units: 5,
+    return_units: 16.5,
+    profit_units: 11.5,
+    roi: 2.3,
+    tracked_at: '2026-03-31T03:00:00.000Z',
+    betType: 'Win',
   }
 );
 

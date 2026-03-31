@@ -6923,7 +6923,7 @@ async function loadPerformance(){
   const daily = await fetchLocal('./data/success_daily.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const weekly = await fetchLocal('./data/success_weekly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   const monthly = await fetchLocal('./data/success_monthly.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
-  const settledBets = await fetchLocal('./data/settled_bets.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>[]);
+  const settledBets = await fetchLocal('./api/v1/settled-bets', { cache: 'no-store' }).then(r=>r.json()).catch(()=>[]);
   const learningsReport = await fetchLocal('./data/learnings_report.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
   signalThresholdAuditCache = await fetchLocal('./data/signal_threshold_audit_v2.json', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
 
