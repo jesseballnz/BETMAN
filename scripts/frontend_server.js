@@ -5873,14 +5873,19 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
     const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'alerts_feed.json'), 'alerts_feed.json');
     const payload = loadJson(p, { updatedAt: null, alerts: [] });
-    return okJson(res, payload);
+    pulseConfigState = loadPulseConfig(tenantId);
+    return okJson(res, {
+      updatedAt: payload?.updatedAt || null,
+      alerts: filterPulseAlerts(Array.isArray(payload?.alerts) ? payload.alerts : []),
+    });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/alerts-history') {
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
     const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'alerts_history.json'), 'alerts_history.json');
     const payload = loadJson(p, []);
-    return okJson(res, payload);
+    pulseConfigState = loadPulseConfig(tenantId);
+    return okJson(res, filterPulseAlerts(Array.isArray(payload) ? payload : []));
   }
 
   if (url.pathname === '/api/v1/pulse-config') {
