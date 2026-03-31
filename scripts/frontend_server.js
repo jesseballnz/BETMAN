@@ -99,6 +99,8 @@ const PERFORMANCE_POLL_COOLDOWN_MS = 5 * 60 * 1000;
 let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null, signal: null, error: null, log: 'logs/bakeoff-run.log', tail: [] };
 let aiModelsCache = { ts: 0, payload: null };
 
+const PULSE_SEVERITY_LEVELS = Object.freeze(['WATCH', 'HOT', 'CRITICAL', 'ACTION']);
+
 const DEFAULT_PULSE_CONFIG = Object.freeze({
   alertTypes: {
     plunges: true,
@@ -107,9 +109,60 @@ const DEFAULT_PULSE_CONFIG = Object.freeze({
     selectionFlips: true,
     preJumpHeat: true,
   },
+  thresholds: {
+    minSeverity: 'HOT',
+    maxMinsToJump: null,
+    minMovePct: null,
+    trackedRunnerOverride: true,
+  },
   updatedAt: null,
   updatedBy: null,
 });
+
+function normalizePulseSeverity(value){
+  const upper = String(value || '').trim().toUpperCase();
+  return PULSE_SEVERITY_LEVELS.includes(upper) ? upper : DEFAULT_PULSE_CONFIG.thresholds.minSeverity;
+}
+
+function normalizePulseThresholds(raw = {}){
+  const maxMinsToJump = Number(raw?.maxMinsToJump);
+  const minMovePct = Number(raw?.minMovePct);
+  return {
+    minSeverity: normalizePulseSeverity(raw?.minSeverity),
+    maxMinsToJump: Number.isFinite(maxMinsToJump) && maxMinsToJump >= 0 ? maxMinsToJump : null,
+    minMovePct: Number.isFinite(minMovePct) && minMovePct >= 0 ? minMovePct : null,
+    trackedRunnerOverride: raw?.trackedRunnerOverride !== false,
+  };
+}
+
+function pulseSeverityRank(value){
+  return PULSE_SEVERITY_LEVELS.indexOf(normalizePulseSeverity(value));
+}
+
+function pulseAlertPassesThresholds(row, config){
+  const thresholds = normalizePulseThresholds(config?.thresholds || {});
+  if (thresholds.trackedRunnerOverride && row?.trackedRunner) return true;
+  if (pulseSeverityRank(row?.severity) < pulseSeverityRank(thresholds.minSeverity)) return false;
+
+  const maxMinsToJump = Number(thresholds.maxMinsToJump);
+  const minsToJump = Number(row?.minsToJump);
+  if (Number.isFinite(maxMinsToJump) && Number.isFinite(minsToJump) && minsToJump >= 0 && minsToJump > maxMinsToJump) return false;
+
+  const minMovePct = Number(thresholds.minMovePct);
+  const movePct = Math.abs(Number(row?.movePct));
+  if (Number.isFinite(minMovePct) && Number.isFinite(movePct) && movePct < minMovePct) return false;
+
+  return true;
+}
+
+function filterPulseAlerts(rows, config = pulseConfigState){
+  const enabled = config?.alertTypes || DEFAULT_PULSE_CONFIG.alertTypes;
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const key = pulseConfigKeyForAlertType(row?.type);
+    if (key && enabled[key] === false) return false;
+    return pulseAlertPassesThresholds(row, config);
+  });
+}
 
 function normalizePulseConfig(raw = {}, principal = null){
   const alertTypes = raw && typeof raw.alertTypes === 'object' ? raw.alertTypes : {};
@@ -121,9 +174,22 @@ function normalizePulseConfig(raw = {}, principal = null){
       selectionFlips: alertTypes.selectionFlips !== false,
       preJumpHeat: alertTypes.preJumpHeat !== false,
     },
+    thresholds: normalizePulseThresholds(raw?.thresholds || {}),
     updatedAt: raw?.updatedAt || null,
     updatedBy: raw?.updatedBy || principal?.username || null,
   };
+}
+
+let pulseConfigState = normalizePulseConfig(DEFAULT_PULSE_CONFIG);
+
+function pulseConfigKeyForAlertType(type){
+  const t = String(type || '').trim().toLowerCase();
+  if (t === 'hot_plunge') return 'plunges';
+  if (t === 'hot_drift') return 'drifts';
+  if (t === 'market_conflict') return 'conflicts';
+  if (t === 'selection_flip_recommended' || t === 'selection_flip_odds_runner' || t === 'selection_flip_ew') return 'selectionFlips';
+  if (t === 'prejump_heat') return 'preJumpHeat';
+  return null;
 }
 
 function loadPulseConfig(tenantId = 'default'){
@@ -5909,6 +5975,10 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
           alertTypes: {
             ...current.alertTypes,
             ...(payload?.alertTypes || {}),
+          },
+          thresholds: {
+            ...current.thresholds,
+            ...(payload?.thresholds || {}),
           }
         }, principal);
         return okJson(res, { ok: true, config: next }, 200, req);

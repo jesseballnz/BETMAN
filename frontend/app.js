@@ -754,6 +754,8 @@ function marketMoverImage(row){
   return move < 0 ? '/assets/firming.png' : '/assets/drifting.png';
 }
 
+const PULSE_SEVERITY_LEVELS = ['WATCH', 'HOT', 'CRITICAL', 'ACTION'];
+
 const DEFAULT_PULSE_CONFIG = {
   alertTypes: {
     plunges: true,
@@ -762,11 +764,42 @@ const DEFAULT_PULSE_CONFIG = {
     selectionFlips: true,
     preJumpHeat: true,
   },
+  thresholds: {
+    minSeverity: 'HOT',
+    maxMinsToJump: null,
+    minMovePct: null,
+    trackedRunnerOverride: true,
+  },
   updatedAt: null,
   updatedBy: null,
 };
 
-let pulseConfigState = { ...DEFAULT_PULSE_CONFIG, alertTypes: { ...DEFAULT_PULSE_CONFIG.alertTypes } };
+let pulseConfigState = {
+  ...DEFAULT_PULSE_CONFIG,
+  alertTypes: { ...DEFAULT_PULSE_CONFIG.alertTypes },
+  thresholds: { ...DEFAULT_PULSE_CONFIG.thresholds },
+};
+
+function normalizePulseSeverity(value){
+  const upper = String(value || '').trim().toUpperCase();
+  return PULSE_SEVERITY_LEVELS.includes(upper) ? upper : DEFAULT_PULSE_CONFIG.thresholds.minSeverity;
+}
+
+function normalizePulseThresholds(payload){
+  const thresholds = payload && typeof payload.thresholds === 'object' ? payload.thresholds : payload || {};
+  const maxMinsToJump = Number(thresholds?.maxMinsToJump);
+  const minMovePct = Number(thresholds?.minMovePct);
+  return {
+    minSeverity: normalizePulseSeverity(thresholds?.minSeverity),
+    maxMinsToJump: Number.isFinite(maxMinsToJump) && maxMinsToJump >= 0 ? maxMinsToJump : null,
+    minMovePct: Number.isFinite(minMovePct) && minMovePct >= 0 ? minMovePct : null,
+    trackedRunnerOverride: thresholds?.trackedRunnerOverride !== false,
+  };
+}
+
+function pulseSeverityRank(value){
+  return PULSE_SEVERITY_LEVELS.indexOf(normalizePulseSeverity(value));
+}
 
 function normalizePulseConfig(payload){
   const alertTypes = payload && typeof payload.alertTypes === 'object' ? payload.alertTypes : {};
@@ -778,6 +811,7 @@ function normalizePulseConfig(payload){
       selectionFlips: alertTypes.selectionFlips !== false,
       preJumpHeat: alertTypes.preJumpHeat !== false,
     },
+    thresholds: normalizePulseThresholds(payload),
     updatedAt: payload?.updatedAt || null,
     updatedBy: payload?.updatedBy || null,
   };
@@ -793,11 +827,27 @@ function pulseConfigKeyForAlertType(type){
   return null;
 }
 
+function pulseAlertPassesThresholds(row){
+  const thresholds = normalizePulseThresholds(pulseConfigState?.thresholds || {});
+  if (thresholds.trackedRunnerOverride && row?.trackedRunner) return true;
+  if (pulseSeverityRank(row?.severity) < pulseSeverityRank(thresholds.minSeverity)) return false;
+
+  const maxMinsToJump = Number(thresholds.maxMinsToJump);
+  const minsToJump = Number(row?.minsToJump);
+  if (Number.isFinite(maxMinsToJump) && Number.isFinite(minsToJump) && minsToJump >= 0 && minsToJump > maxMinsToJump) return false;
+
+  const minMovePct = Number(thresholds.minMovePct);
+  const movePct = Math.abs(Number(row?.movePct));
+  if (Number.isFinite(minMovePct) && Number.isFinite(movePct) && movePct < minMovePct) return false;
+
+  return true;
+}
+
 function filterPulseAlerts(rows){
   return (Array.isArray(rows) ? rows : []).filter(row => {
     const key = pulseConfigKeyForAlertType(row?.type);
-    if (!key) return true;
-    return pulseConfigState?.alertTypes?.[key] !== false;
+    if (key && pulseConfigState?.alertTypes?.[key] === false) return false;
+    return pulseAlertPassesThresholds(row);
   });
 }
 
@@ -808,11 +858,15 @@ async function loadPulseConfig(){
   return pulseConfigState;
 }
 
-async function savePulseConfig(nextAlertTypes = {}){
+async function savePulseConfig(next = {}){
   const payload = {
     alertTypes: {
       ...pulseConfigState.alertTypes,
-      ...nextAlertTypes,
+      ...(next.alertTypes || {}),
+    },
+    thresholds: {
+      ...pulseConfigState.thresholds,
+      ...(next.thresholds || {}),
     }
   };
   const res = await fetchLocal('./api/v1/pulse-config', {
@@ -839,6 +893,7 @@ function renderPulseConfigPanel(){
   const cfg = $('alertsConfigPanel');
   if (!cfg) return;
   const meta = pulseTypeMeta();
+  const thresholds = normalizePulseThresholds(pulseConfigState.thresholds || {});
   const updatedMeta = pulseConfigState.updatedAt
     ? `Saved ${new Date(pulseConfigState.updatedAt).toLocaleString()}${pulseConfigState.updatedBy ? ` by ${escapeHtml(String(pulseConfigState.updatedBy))}` : ''}`
     : 'Using default pulse config';
@@ -859,27 +914,59 @@ function renderPulseConfigPanel(){
         </div>
       </label>
     `).join('')}
+    <div class='row' style='grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px'>
+      <label>
+        <div><b>Minimum severity</b></div>
+        <div class='sub'>Hide lower-severity alerts unless tracked-runner override applies.</div>
+        <select id='pulseThresholdSeverity'>
+          ${PULSE_SEVERITY_LEVELS.map(level => `<option value='${level}' ${thresholds.minSeverity === level ? 'selected' : ''}>${level}</option>`).join('')}
+        </select>
+      </label>
+      <label>
+        <div><b>Max minutes to jump</b></div>
+        <div class='sub'>Blank = no time gate.</div>
+        <input id='pulseThresholdMinutes' type='number' min='0' step='1' value='${thresholds.maxMinsToJump ?? ''}' />
+      </label>
+      <label>
+        <div><b>Minimum move %</b></div>
+        <div class='sub'>Blank = no percentage gate.</div>
+        <input id='pulseThresholdMovePct' type='number' min='0' step='0.1' value='${thresholds.minMovePct ?? ''}' />
+      </label>
+      <label class='row' style='grid-template-columns:auto 1fr;align-items:center;gap:12px;margin-top:20px'>
+        <input id='pulseThresholdTrackedOverride' type='checkbox' ${thresholds.trackedRunnerOverride ? 'checked' : ''} />
+        <div>
+          <div><b>Tracked runner override</b></div>
+          <div class='sub'>Let tracked runners bypass severity / time / move gates.</div>
+        </div>
+      </label>
+    </div>
     <div class='row' style='grid-template-columns:auto 1fr;gap:10px;align-items:center'>
       <button id='savePulseConfigBtn' class='btn'>Save Pulse Config</button>
       <div id='pulseConfigStatus' class='sub'>Changes are shared per tenant.</div>
     </div>`;
 
   const status = $('pulseConfigStatus');
-  cfg.querySelectorAll('.pulse-config-toggle').forEach(input => {
+  cfg.querySelectorAll('.pulse-config-toggle, #pulseThresholdSeverity, #pulseThresholdMinutes, #pulseThresholdMovePct, #pulseThresholdTrackedOverride').forEach(input => {
     input.addEventListener('change', () => {
       if (status) status.textContent = 'Unsaved changes';
     });
   });
   $('savePulseConfigBtn')?.addEventListener('click', async () => {
     const btn = $('savePulseConfigBtn');
-    const next = {};
+    const nextAlertTypes = {};
     cfg.querySelectorAll('.pulse-config-toggle').forEach(input => {
-      next[input.dataset.key] = !!input.checked;
+      nextAlertTypes[input.dataset.key] = !!input.checked;
     });
+    const nextThresholds = {
+      minSeverity: $('pulseThresholdSeverity')?.value || thresholds.minSeverity,
+      maxMinsToJump: $('pulseThresholdMinutes')?.value === '' ? null : Number($('pulseThresholdMinutes')?.value),
+      minMovePct: $('pulseThresholdMovePct')?.value === '' ? null : Number($('pulseThresholdMovePct')?.value),
+      trackedRunnerOverride: !!$('pulseThresholdTrackedOverride')?.checked,
+    };
     if (btn) btn.disabled = true;
     if (status) status.textContent = 'Saving…';
     try {
-      await savePulseConfig(next);
+      await savePulseConfig({ alertTypes: nextAlertTypes, thresholds: nextThresholds });
       renderPulseConfigPanel();
       if ($('pulseConfigStatus')) $('pulseConfigStatus').textContent = 'Saved';
     } catch (err) {

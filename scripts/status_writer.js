@@ -8,6 +8,8 @@ function loadJson(p, fallback){
   try { return JSON.parse(fs.readFileSync(p,'utf8')); } catch { return fallback; }
 }
 
+const PULSE_SEVERITY_LEVELS = Object.freeze(['WATCH', 'HOT', 'CRITICAL', 'ACTION']);
+
 const DEFAULT_PULSE_CONFIG = Object.freeze({
   alertTypes: {
     plunges: true,
@@ -16,9 +18,31 @@ const DEFAULT_PULSE_CONFIG = Object.freeze({
     selectionFlips: true,
     preJumpHeat: true,
   },
+  thresholds: {
+    minSeverity: 'HOT',
+    maxMinsToJump: null,
+    minMovePct: null,
+    trackedRunnerOverride: true,
+  },
   updatedAt: null,
   updatedBy: null,
 });
+
+function normalizePulseSeverity(value) {
+  const upper = String(value || '').trim().toUpperCase();
+  return PULSE_SEVERITY_LEVELS.includes(upper) ? upper : DEFAULT_PULSE_CONFIG.thresholds.minSeverity;
+}
+
+function normalizePulseThresholds(raw = {}) {
+  const maxMinsToJump = Number(raw?.maxMinsToJump);
+  const minMovePct = Number(raw?.minMovePct);
+  return {
+    minSeverity: normalizePulseSeverity(raw?.minSeverity),
+    maxMinsToJump: Number.isFinite(maxMinsToJump) && maxMinsToJump >= 0 ? maxMinsToJump : null,
+    minMovePct: Number.isFinite(minMovePct) && minMovePct >= 0 ? minMovePct : null,
+    trackedRunnerOverride: raw?.trackedRunnerOverride !== false,
+  };
+}
 
 function normalizePulseConfig(raw = {}) {
   const alertTypes = raw && typeof raw.alertTypes === 'object' ? raw.alertTypes : {};
@@ -30,6 +54,7 @@ function normalizePulseConfig(raw = {}) {
       selectionFlips: alertTypes.selectionFlips !== false,
       preJumpHeat: alertTypes.preJumpHeat !== false,
     },
+    thresholds: normalizePulseThresholds(raw?.thresholds || {}),
     updatedAt: raw?.updatedAt || null,
     updatedBy: raw?.updatedBy || null,
   };
@@ -45,12 +70,33 @@ function pulseConfigKeyForAlertType(type) {
   return null;
 }
 
+function pulseSeverityRank(value) {
+  return PULSE_SEVERITY_LEVELS.indexOf(normalizePulseSeverity(value));
+}
+
+function pulseAlertPassesThresholds(row, config) {
+  const thresholds = normalizePulseThresholds(config?.thresholds || {});
+  if (thresholds.trackedRunnerOverride && row?.trackedRunner) return true;
+
+  if (pulseSeverityRank(row?.severity) < pulseSeverityRank(thresholds.minSeverity)) return false;
+
+  const maxMinsToJump = Number(thresholds.maxMinsToJump);
+  const minsToJump = Number(row?.minsToJump);
+  if (Number.isFinite(maxMinsToJump) && Number.isFinite(minsToJump) && minsToJump >= 0 && minsToJump > maxMinsToJump) return false;
+
+  const minMovePct = Number(thresholds.minMovePct);
+  const movePct = Math.abs(Number(row?.movePct));
+  if (Number.isFinite(minMovePct) && Number.isFinite(movePct) && movePct < minMovePct) return false;
+
+  return true;
+}
+
 function filterPulseAlerts(rows, config) {
   const enabled = config?.alertTypes || DEFAULT_PULSE_CONFIG.alertTypes;
   return (Array.isArray(rows) ? rows : []).filter((row) => {
     const key = pulseConfigKeyForAlertType(row?.type);
-    if (!key) return true;
-    return enabled[key] !== false;
+    if (key && enabled[key] === false) return false;
+    return pulseAlertPassesThresholds(row, config);
   });
 }
 

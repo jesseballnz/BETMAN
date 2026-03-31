@@ -268,9 +268,10 @@ asyncTests.push((async () => {
   fs.writeFileSync(path.join(tenantDir, 'alerts_feed.json'), JSON.stringify({
     updatedAt: '2026-03-31T00:00:00.000Z',
     alerts: [
-      { id: '1', type: 'hot_plunge', selection: 'A' },
-      { id: '2', type: 'hot_drift', selection: 'B' },
-      { id: '3', type: 'market_conflict', selection: 'C' }
+      { id: '1', type: 'hot_plunge', selection: 'A', severity: 'CRITICAL', movePct: -12, minsToJump: 8 },
+      { id: '2', type: 'hot_drift', selection: 'B', severity: 'HOT', movePct: 6, minsToJump: 8 },
+      { id: '3', type: 'market_conflict', selection: 'C', severity: 'CRITICAL', minsToJump: 25 },
+      { id: '4', type: 'hot_plunge', selection: 'Tracked D', severity: 'WATCH', movePct: 3, minsToJump: 40, trackedRunner: true }
     ]
   }, null, 2));
 
@@ -290,22 +291,35 @@ asyncTests.push((async () => {
     resolveTenantPathById,
   });
 
-  const putReq = fakePutReq('/api/v1/pulse-config', { alertTypes: { drifts: false } });
+  const principal = { username: 'alice', tenantId: 'acct_test', effectiveTenantId: 'acct_test' };
+  const putReq = fakePutReq('/api/v1/pulse-config', {
+    alertTypes: { drifts: false },
+    thresholds: { minSeverity: 'CRITICAL', maxMinsToJump: 10, minMovePct: 10, trackedRunnerOverride: true }
+  });
+  putReq.authPrincipal = principal;
   const putRes = fakeRes();
   await handler(putReq, putRes, new URL('http://localhost/api/v1/pulse-config'));
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.strictEqual(putRes.statusCode, 200);
   const saved = JSON.parse(putRes.body);
   assert.strictEqual(saved.config.alertTypes.drifts, false);
+  assert.strictEqual(saved.config.thresholds.minSeverity, 'CRITICAL');
+  assert.strictEqual(saved.config.thresholds.maxMinsToJump, 10);
+  assert.strictEqual(saved.config.thresholds.minMovePct, 10);
+  assert.strictEqual(saved.config.thresholds.trackedRunnerOverride, true);
 
   const getReq = fakeReq('GET', '/api/v1/alerts-feed');
+  getReq.authPrincipal = principal;
   const getRes = fakeRes();
   await handler(getReq, getRes, new URL('http://localhost/api/v1/alerts-feed'));
   assert.strictEqual(getRes.statusCode, 200);
   const feed = JSON.parse(getRes.body);
   assert.strictEqual(feed.alerts.length, 2);
-  assert.strictEqual(feed.alerts.some((row) => row.type === 'hot_drift'), false);
-  console.log('  ✓ Pulse config route persists and filters tenant alerts');
+  assert.strictEqual(feed.alerts.some((row) => row.selection === 'B'), false);
+  assert.strictEqual(feed.alerts.some((row) => row.selection === 'C'), false);
+  assert.strictEqual(feed.alerts.some((row) => row.selection === 'A'), true);
+  assert.strictEqual(feed.alerts.some((row) => row.selection === 'Tracked D'), true);
+  console.log('  ✓ Pulse config route persists and filters tenant alerts + thresholds');
 })());
 
 // 13. Race detail endpoint
