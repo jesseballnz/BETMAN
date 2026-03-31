@@ -748,6 +748,124 @@ function alertTypeImage(type){
   return '';
 }
 
+const DEFAULT_PULSE_CONFIG = {
+  alertTypes: {
+    plunges: true,
+    drifts: true,
+    conflicts: true,
+    selectionFlips: true,
+    preJumpHeat: true,
+  },
+  updatedAt: null,
+  updatedBy: null,
+};
+
+let pulseConfigState = { ...DEFAULT_PULSE_CONFIG, alertTypes: { ...DEFAULT_PULSE_CONFIG.alertTypes } };
+
+function normalizePulseConfig(payload){
+  const alertTypes = payload && typeof payload.alertTypes === 'object' ? payload.alertTypes : {};
+  return {
+    alertTypes: {
+      plunges: alertTypes.plunges !== false,
+      drifts: alertTypes.drifts !== false,
+      conflicts: alertTypes.conflicts !== false,
+      selectionFlips: alertTypes.selectionFlips !== false,
+      preJumpHeat: alertTypes.preJumpHeat !== false,
+    },
+    updatedAt: payload?.updatedAt || null,
+    updatedBy: payload?.updatedBy || null,
+  };
+}
+
+async function loadPulseConfig(){
+  const res = await fetchLocal('./api/v1/pulse-config', { cache: 'no-store' });
+  const payload = await res.json().catch(() => ({}));
+  pulseConfigState = normalizePulseConfig(payload?.config || payload || {});
+  return pulseConfigState;
+}
+
+async function savePulseConfig(nextAlertTypes = {}){
+  const payload = {
+    alertTypes: {
+      ...pulseConfigState.alertTypes,
+      ...nextAlertTypes,
+    }
+  };
+  const res = await fetchLocal('./api/v1/pulse-config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(() => ({}));
+  pulseConfigState = normalizePulseConfig(data?.config || payload);
+  return pulseConfigState;
+}
+
+function pulseTypeMeta(){
+  return [
+    { key: 'plunges', label: 'Plunges', desc: 'Hot plunges / firming moves.' },
+    { key: 'drifts', label: 'Drifts', desc: 'Hot drifts / late weakness.' },
+    { key: 'conflicts', label: 'Conflicts', desc: 'Market conflict alerts.' },
+    { key: 'selectionFlips', label: 'Selection flips', desc: 'Recommended / odds runner / EW flips.' },
+    { key: 'preJumpHeat', label: 'Pre-jump heat', desc: 'Late pre-jump heat signals.' },
+  ];
+}
+
+function renderPulseConfigPanel(){
+  const cfg = $('alertsConfigPanel');
+  if (!cfg) return;
+  const meta = pulseTypeMeta();
+  const updatedMeta = pulseConfigState.updatedAt
+    ? `Saved ${new Date(pulseConfigState.updatedAt).toLocaleString()}${pulseConfigState.updatedBy ? ` by ${escapeHtml(String(pulseConfigState.updatedBy))}` : ''}`
+    : 'Using default pulse config';
+  cfg.innerHTML = `
+    <div class='row' style='grid-template-columns:1fr'>
+      <div>
+        <div><b>Shared Pulse Config</b></div>
+        <div class='sub' style='margin-top:4px'>Tenant-scoped server config. Toggle alert families on/off for BETMAN web and mobile.</div>
+        <div class='sub' style='margin-top:4px'>${updatedMeta}</div>
+      </div>
+    </div>
+    ${meta.map(item => `
+      <label class='row' style='grid-template-columns:auto 1fr;align-items:center;gap:12px'>
+        <input type='checkbox' class='pulse-config-toggle' data-key='${item.key}' ${pulseConfigState.alertTypes[item.key] ? 'checked' : ''} />
+        <div>
+          <div><b>${item.label}</b></div>
+          <div class='sub'>${item.desc}</div>
+        </div>
+      </label>
+    `).join('')}
+    <div class='row' style='grid-template-columns:auto 1fr;gap:10px;align-items:center'>
+      <button id='savePulseConfigBtn' class='btn'>Save Pulse Config</button>
+      <div id='pulseConfigStatus' class='sub'>Changes are shared per tenant.</div>
+    </div>`;
+
+  const status = $('pulseConfigStatus');
+  cfg.querySelectorAll('.pulse-config-toggle').forEach(input => {
+    input.addEventListener('change', () => {
+      if (status) status.textContent = 'Unsaved changes';
+    });
+  });
+  $('savePulseConfigBtn')?.addEventListener('click', async () => {
+    const btn = $('savePulseConfigBtn');
+    const next = {};
+    cfg.querySelectorAll('.pulse-config-toggle').forEach(input => {
+      next[input.dataset.key] = !!input.checked;
+    });
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'Saving…';
+    try {
+      await savePulseConfig(next);
+      renderPulseConfigPanel();
+      if ($('pulseConfigStatus')) $('pulseConfigStatus').textContent = 'Saved';
+    } catch (err) {
+      if (status) status.textContent = `Save failed: ${err?.message || 'unknown error'}`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+}
+
 function setActivePerformanceTab(tab){
   document.querySelectorAll('.perf-subtab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.perfTab === tab);
@@ -760,6 +878,169 @@ function setActivePerformanceTab(tab){
 }
 
 let trackedTab = 'active';
+let trackedBetsCache = [];
+let trackedBetsCacheLoadedAt = 0;
+
+async function loadTrackedBetsCache(force = false){
+  if (!force && trackedBetsCacheLoadedAt && (Date.now() - trackedBetsCacheLoadedAt) < 15_000) return trackedBetsCache;
+  try {
+    const payload = await fetchLocal('./api/v1/tracked-bets', { cache: 'no-store' }).then(r => r.json());
+    trackedBetsCache = Array.isArray(payload?.trackedBets) ? payload.trackedBets : [];
+    trackedBetsCacheLoadedAt = Date.now();
+  } catch {
+    trackedBetsCache = [];
+    trackedBetsCacheLoadedAt = Date.now();
+  }
+  return trackedBetsCache;
+}
+
+function findTrackedBet(meeting, race, selection){
+  const meetingKey = normalizeMeetingKey(meeting || '');
+  const raceKey = normalizeRaceNumberValue(race || '');
+  const selectionKey = normalizeRunnerName(selection || '');
+  if (!meetingKey || !raceKey || !selectionKey) return null;
+  return (trackedBetsCache || []).find(row =>
+    normalizeMeetingKey(row?.meeting || '') === meetingKey &&
+    normalizeRaceNumberValue(row?.race || '') === raceKey &&
+    normalizeRunnerName(row?.selection || '') === selectionKey
+  ) || null;
+}
+
+function computeTrackRunnerPayload(race, runner, extras = {}){
+  const runnerName = cleanRunnerText(runner?.name || runner?.runner_name || runner?.selection || extras.selection || '');
+  const raceNo = String(race?.race_number || race?.race || extras.race || '').replace(/^R/i, '').trim();
+  const winOdds = Number(runner?.odds || runner?.fixed_win || runner?.tote_win || extras.odds || 0);
+  const entryOdds = Number.isFinite(winOdds) && winOdds > 0 ? Number(winOdds.toFixed(2)) : null;
+  const eta = computeRaceEta(race).eta;
+  return {
+    meeting: race?.meeting || extras.meeting || '',
+    race: raceNo,
+    selection: runnerName,
+    betType: extras.betType || 'Win',
+    odds: entryOdds,
+    entryOdds,
+    stake: extras.stake ?? null,
+    jumpsIn: eta && eta !== '—' ? eta : (extras.jumpsIn ?? null),
+    note: extras.note ?? null,
+    source: extras.source || 'web-runner'
+  };
+}
+
+async function refreshTrackedUi(opts = {}){
+  const { force = true, rerenderAnalysis = true, rerenderTracked = true } = opts;
+  await loadTrackedBetsCache(force);
+  if (rerenderAnalysis && selectedRace && $('analysisBody')) {
+    $('analysisBody').innerHTML = renderAnalysis(selectedRace, analysisViewMode || 'engine');
+    updateAnalysisAiModelNote();
+    attachAnalysisSelectionHandlers(selectedRace);
+    makeSelectionsDraggable();
+  }
+  if (rerenderTracked && currentPage === 'tracked') {
+    renderTrackedShell();
+  }
+}
+
+async function toggleTrackedRunner(race, runner, opts = {}){
+  if (!race || !runner) return null;
+  const payload = computeTrackRunnerPayload(race, runner, opts);
+  if (!payload.meeting || !payload.race || !payload.selection) return null;
+  const existing = findTrackedBet(payload.meeting, payload.race, payload.selection);
+  if (existing) {
+    await fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(existing.id)}`, { method: 'DELETE' }).catch(() => null);
+    await refreshTrackedUi({ force: true });
+    return { action: 'untracked', trackedBet: existing };
+  }
+  const res = await fetchLocal('./api/v1/tracked-bets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(() => null);
+  const trackedBet = res ? await res.json().catch(() => null) : null;
+  await refreshTrackedUi({ force: true });
+  return { action: 'tracked', trackedBet: trackedBet?.trackedBet || null };
+}
+
+function buildTrackedEditorHtml(row){
+  const meeting = escapeHtml(String(row?.meeting || '—'));
+  const race = escapeHtml(String(row?.race || '—'));
+  const status = escapeHtml(String(row?.status || 'active'));
+  const result = escapeHtml(String(row?.result || 'pending').toUpperCase());
+  return `
+    <div class='tracked-editor' data-tracked-edit-root='1' data-id='${escapeAttr(String(row?.id || ''))}'>
+      <div class='horse-meta' style='margin-bottom:12px'>
+        <div><b>Race:</b> ${meeting} R${race}</div>
+        <div><b>Status:</b> ${status} · <b>Result:</b> ${result}</div>
+      </div>
+      <div class='filters' style='align-items:flex-end'>
+        <label style='display:flex;flex-direction:column;gap:6px;min-width:180px'>
+          <span class='sub'>Selection</span>
+          <input data-field='selection' type='text' value='${escapeAttr(String(row?.selection || ''))}' />
+        </label>
+        <label style='display:flex;flex-direction:column;gap:6px;min-width:110px'>
+          <span class='sub'>Entry Odds</span>
+          <input data-field='odds' type='number' min='0' step='0.01' value='${escapeAttr(row?.odds ?? row?.entryOdds ?? '')}' />
+        </label>
+        <label style='display:flex;flex-direction:column;gap:6px;min-width:110px'>
+          <span class='sub'>Stake</span>
+          <input data-field='stake' type='number' min='0' step='0.01' value='${escapeAttr(row?.stake ?? '')}' />
+        </label>
+        <label style='display:flex;flex-direction:column;gap:6px;min-width:140px;flex:1 1 160px'>
+          <span class='sub'>Jumps In</span>
+          <input data-field='jumpsIn' type='text' value='${escapeAttr(String(row?.jumpsIn || ''))}' />
+        </label>
+      </div>
+      <label style='display:flex;flex-direction:column;gap:6px;margin-top:12px'>
+        <span class='sub'>Note</span>
+        <textarea data-field='note' rows='3' placeholder='Optional note'>${escapeHtml(String(row?.note || ''))}</textarea>
+      </label>
+      <div class='btn-row' style='margin-top:12px'>
+        <button class='btn' type='button' data-tracked-save='1'>Save</button>
+        <button class='btn btn-ghost' type='button' data-tracked-untrack='1'>Untrack</button>
+      </div>
+    </div>`;
+}
+
+function bindTrackedEditor(root, row){
+  if (!root || !row?.id) return;
+  const readField = (name) => root.querySelector(`[data-field='${name}']`);
+  root.querySelector('[data-tracked-save="1"]')?.addEventListener('click', async () => {
+    const selection = String(readField('selection')?.value || '').trim();
+    const oddsRaw = String(readField('odds')?.value || '').trim();
+    const stakeRaw = String(readField('stake')?.value || '').trim();
+    const jumpsIn = String(readField('jumpsIn')?.value || '').trim();
+    const note = String(readField('note')?.value || '').trim();
+    const odds = oddsRaw === '' ? null : Number(oddsRaw);
+    const stake = stakeRaw === '' ? null : Number(stakeRaw);
+    await fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(row.id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        selection: selection || row.selection,
+        odds: Number.isFinite(odds) ? odds : null,
+        entryOdds: Number.isFinite(odds) ? odds : null,
+        stake: Number.isFinite(stake) ? stake : null,
+        jumpsIn: jumpsIn || null,
+        note: note || null
+      })
+    }).catch(() => null);
+    closeSummaryPopup();
+    await refreshTrackedUi({ force: true });
+  });
+  root.querySelector('[data-tracked-untrack="1"]')?.addEventListener('click', async () => {
+    await fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(row.id)}`, { method: 'DELETE' }).catch(() => null);
+    closeSummaryPopup();
+    await refreshTrackedUi({ force: true });
+  });
+}
+
+async function openTrackedEditorById(id){
+  if (!id) return;
+  const rows = await loadTrackedBetsCache(true);
+  const row = (rows || []).find(x => String(x?.id || '') === String(id));
+  if (!row) return;
+  openSummaryPopup(`${row.meeting || 'Tracked'} R${row.race || '—'} — ${row.selection || 'Runner'}`, buildTrackedEditorHtml(row));
+  bindTrackedEditor(document.querySelector('[data-tracked-edit-root="1"]'), row);
+}
 
 function setActiveAlertsTab(tab){
   document.querySelectorAll('.alerts-subtab').forEach(btn => {
@@ -782,48 +1063,46 @@ function setActiveTrackedTab(tab){
 async function renderTrackedShell(){
   const table = $('trackedTable');
   if (!table) return;
-  const payload = await fetchLocal('./api/v1/tracked-bets', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ trackedBets: [] }));
-  const rows = Array.isArray(payload?.trackedBets) ? payload.trackedBets : [];
+  const rows = await loadTrackedBetsCache(true);
   const filtered = rows.filter(r => trackedTab === 'settled' ? String(r.status) === 'settled' : String(r.status) !== 'settled');
   if (!filtered.length) {
     table.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No ${trackedTab} tracked runners</div></div>`;
     return;
   }
-  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Result</div><div class='right'>Actions</div></div>` + filtered.map(r => {
+  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Entry</div><div class='right'>Stake / Actions</div></div>` + filtered.map(r => {
     const result = String(r.result || 'pending').toLowerCase();
     const badge = result === 'won' ? 'value' : (result === 'lost' ? 'danger' : 'ew');
     return `<div class='row tracked-row' data-id='${escapeAttr(String(r.id || ''))}' data-meeting='${escapeAttr(String(r.meeting || ''))}' data-race='${escapeAttr(String(r.race || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>
       <div><span class='badge'>${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || ''))}</div>
-      <div>${escapeHtml(String(r.selection || ''))}<div class='sub'>${escapeHtml(String(r.betType || 'Win'))}</div></div>
-      <div>${escapeHtml(String(r.status || 'active'))}</div>
-      <div><span class='tag ${badge}'>${escapeHtml(result.toUpperCase())}</span></div>
+      <div>${escapeHtml(String(r.selection || ''))}<div class='sub'>${escapeHtml(String(r.betType || 'Win'))}${r.jumpsIn ? ` · ${escapeHtml(String(r.jumpsIn))}` : ''}</div></div>
+      <div>${escapeHtml(String(r.status || 'active'))}<div class='sub'><span class='tag ${badge}'>${escapeHtml(result.toUpperCase())}</span></div></div>
+      <div>Odds ${r.odds != null ? escapeHtml(Number(r.odds).toFixed(2)) : '—'}<div class='sub'>Source ${escapeHtml(String(r.source || 'manual'))}</div></div>
       <div class='right'>
+        <div>${r.stake != null ? escapeHtml(String(r.stake)) : '—'}<div class='sub'>stake</div></div>
         <button class='btn btn-ghost compact-btn tracked-edit-btn' data-id='${escapeAttr(String(r.id || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>Edit</button>
         <button class='btn btn-ghost compact-btn tracked-remove-btn' data-id='${escapeAttr(String(r.id || ''))}'>Untrack</button>
       </div>
     </div>`;
   }).join('');
 
+  table.querySelectorAll('.tracked-row').forEach(row => row.addEventListener('click', async () => {
+    const id = row.getAttribute('data-id');
+    if (!id) return;
+    await openTrackedEditorById(id);
+  }));
+
   table.querySelectorAll('.tracked-remove-btn').forEach(btn => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const id = btn.getAttribute('data-id');
     if (!id) return;
     await fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
-    renderTrackedShell();
+    await refreshTrackedUi({ force: true, rerenderAnalysis: false, rerenderTracked: true });
   }));
 
   table.querySelectorAll('.tracked-edit-btn').forEach(btn => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const id = btn.getAttribute('data-id');
-    const currentSelection = btn.getAttribute('data-selection') || '';
-    const nextSelection = window.prompt('Edit tracked selection', currentSelection);
-    if (!id || !nextSelection || nextSelection === currentSelection) return;
-    await fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ selection: nextSelection })
-    }).catch(() => null);
-    renderTrackedShell();
+    await openTrackedEditorById(id);
   }));
 }
 
@@ -840,6 +1119,9 @@ async function renderAlertsShell(){
   const live = $('alertsLiveTable');
   const hist = $('alertsHistoryTable');
   const cfg = $('alertsConfigPanel');
+  try {
+    await loadPulseConfig();
+  } catch {}
   const feed = await fetchLocal('./data/alerts_feed.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] }));
   const history = await fetchLocal('./data/alerts_history.json', { cache: 'no-store' }).then(r => r.json()).catch(() => []);
   const allAlerts = Array.isArray(feed?.alerts) ? feed.alerts : [];
@@ -927,7 +1209,7 @@ async function renderAlertsShell(){
         </div>`).join('')
       : `<div class='row'><div style='grid-column:1/-1'>No alert history yet</div></div>`;
   }
-  if (cfg) cfg.innerHTML = `<div class='row'><div style='grid-column:1/-1'><b>BETMAN Pulse Alerts v1</b> now renders live feed from market movers. Next layer: configurable thresholds, routing, and conflict alerts.</div></div>`;
+  if (cfg) renderPulseConfigPanel();
 }
 
 function setActivePage(page){
@@ -7100,6 +7382,7 @@ $('pickAiMulti4Btn')?.addEventListener('click', async ()=> openAIMultiPreview(4)
 
 async function selectRace(key, fallbackMeeting = null, fallbackRace = null){
   if (!racesCache.length) await loadRaces();
+  await loadTrackedBetsCache();
   let race = key ? racesCache.find(r=>r.key === key) : null;
   if (!race && fallbackMeeting) {
     race = getRaceFromCache(fallbackMeeting, fallbackRace);
@@ -8326,6 +8609,7 @@ function buildRunnerSignalTags(race, runner, featured){
 }
 
 function renderHorseAnalysis(race, runner){
+  const trackedBet = findTrackedBet(race?.meeting, race?.race_number || race?.race, runner?.name || runner?.runner_name || runner?.selection || '');
   const ro = Number(runner?.odds || runner?.fixed_win || runner?.tote_win || 0);
   const p = ro > 0 ? (100/ro) : null;
   const raceRows = (latestSuggestedBets || []).filter(x =>
@@ -8410,6 +8694,8 @@ function renderHorseAnalysis(race, runner){
   const colourText = escapeHtml(runner.colour || '—');
   const trainerLocText = escapeHtml(runner.trainer_location || '—');
   const ownersText = escapeHtml(runner.owners || '—');
+  const trackedButtonLabel = trackedBet ? 'TRACKED' : 'Track Runner';
+  const trackedButtonClass = trackedBet ? 'btn btn-ghost compact-btn track-runner-btn is-tracked' : 'btn btn-ghost compact-btn track-runner-btn';
 
   return `
     <div class='horse-summary'>
@@ -8426,6 +8712,10 @@ function renderHorseAnalysis(race, runner){
       <div><b>Gear:</b> ${formatGearText(runner.gear)} · <b>Age/Sex:</b> ${ageSexText} · <b>Colour:</b> ${colourText}</div>
       <div><b>Trainer loc:</b> ${trainerLocText} · <b>Owners:</b> ${ownersText}</div>
       <div><b>Silks:</b> ${runner.silk_colours || '—'}</div>
+    </div>
+    <div class='btn-row' style='margin-top:12px'>
+      <button class='${trackedButtonClass}' type='button' data-track-runner='1' data-meeting='${escapeAttr(String(race?.meeting || ''))}' data-race='${escapeAttr(String(race?.race_number || race?.race || ''))}' data-runner='${escapeAttr(String(runner?.name || runner?.runner_name || ''))}'>${trackedButtonLabel}</button>
+      ${trackedBet ? `<span class='tag tracked'>Entry ${trackedBet.odds != null ? escapeHtml(Number(trackedBet.odds).toFixed(2)) : '—'}${trackedBet.jumpsIn ? ` · ${escapeHtml(String(trackedBet.jumpsIn))}` : ''}</span>` : ''}
     </div>
     <table>
       <tr><th>Odds</th><th>Implied Win%</th><th>Track</th><th>Distance</th><th>Track Cond</th><th>1st Up</th><th>2nd Up</th></tr>
@@ -8481,6 +8771,7 @@ function attachAnalysisSelectionHandlers(race){
       });
       if (!runner) return;
       openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
+      bindTrackRunnerButtons(race);
     };
   });
 
@@ -8495,8 +8786,11 @@ function attachAnalysisSelectionHandlers(race){
       });
       if (!runner) return;
       openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
+      bindTrackRunnerButtons(race);
     };
   });
+
+  bindTrackRunnerButtons(race);
 
   document.querySelectorAll('[data-launch-ai]').forEach(btn => {
     btn.onclick = async () => {
@@ -8552,6 +8846,31 @@ function attachAnalysisSelectionHandlers(race){
   bindAiAnalyseButton();
   bindPollOddsButton();
   updateAnalysisToggleLabel();
+}
+
+function bindTrackRunnerButtons(race){
+  document.querySelectorAll('.track-runner-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const selRaw = String(btn.dataset.runner || '').trim();
+      if (!selRaw) return;
+      const selNorm = normalizeRunnerName(selRaw.replace(/^\d+\.\s*/, ''));
+      const runner = (race?.runners || []).find(x => {
+        const nm = normalizeRunnerName(String(x.name || x.runner_name || x.selection || '').trim());
+        return nm === selNorm || nm.includes(selNorm) || selNorm.includes(nm);
+      });
+      if (!runner) return;
+      const outcome = await toggleTrackedRunner(race, runner).catch(() => null);
+      if (!outcome) return;
+      if (outcome.action === 'tracked') {
+        openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
+        bindTrackRunnerButtons(race);
+      } else if (outcome.action === 'untracked' && !document.querySelector('[data-tracked-edit-root="1"]')) {
+        openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
+        bindTrackRunnerButtons(race);
+      }
+    };
+  });
 }
 
 function buildAiAnalysisCacheKey(overrideProvider, overrideModel){
@@ -9888,6 +10207,8 @@ function renderAnalysis(race, modeOverride){
     const norm = normalizeRunnerName(runner?.name || '');
     if (!norm) return '';
     const tags = [];
+    const trackedBet = findTrackedBet(race?.meeting, race?.race_number || race?.race, runner?.name || runner?.runner_name || runner?.selection || '');
+    if (trackedBet) tags.push(`<span class='tag tracked'>TRACKED</span>`);
     if (decisionEngine.recommended.key && norm === decisionEngine.recommended.key) {
       tags.push(`<span class='tag win'>Recommended Bet</span>`);
     }
@@ -9940,8 +10261,12 @@ function renderAnalysis(race, modeOverride){
     const winClass = oddsClasses?.win || '';
     const placeClass = oddsClasses?.place || '';
     const tags = renderRunnerTagRow(r);
+    const trackedBet = findTrackedBet(race?.meeting, race?.race_number || race?.race, r?.name || r?.runner_name || r?.selection || '');
+    const trackBtnLabel = trackedBet ? 'TRACKED' : 'Track';
+    const trackBtnClass = trackedBet ? 'btn btn-ghost compact-btn track-runner-btn is-tracked' : 'btn btn-ghost compact-btn track-runner-btn';
     const runnerBtn = `<button class='bet-btn analysis-odds-runner-btn' data-meeting='${escapeAttr(race.meeting)}' data-race='${escapeAttr(race.race_number || race.race || '')}' data-runner='${escapeAttr(cleanRunnerText(r.name))}'><span class='bet-icon'>🐎</span>${cleanRunnerText(r.name)}</button>`;
-    const runnerCell = `<div class='runner-name-cell'>${runnerBtn}${tags}</div>`;
+    const trackBtn = `<button class='${trackBtnClass}' type='button' data-track-runner='1' data-meeting='${escapeAttr(race.meeting)}' data-race='${escapeAttr(race.race_number || race.race || '')}' data-runner='${escapeAttr(cleanRunnerText(r.name))}'>${trackBtnLabel}</button>`;
+    const runnerCell = `<div class='runner-name-cell'>${runnerBtn}${trackBtn}${tags}</div>`;
     const numberRaw = r.number ?? r.runner_number ?? r.saddle_number ?? r.horse_number ?? r.program_number ?? r.tab_no ?? null;
     const runnerNumber = (numberRaw === 0 || numberRaw) ? String(numberRaw).trim() : '';
     const formSignal = runnerFormSignal(r);

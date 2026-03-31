@@ -77,6 +77,7 @@ const AUTH_FILE = path.join(process.cwd(), 'memory', 'betman-auth.json');
 const TENANTS_ROOT = path.join(process.cwd(), 'memory', 'tenants');
 const AI_INSTRUCTIONS_FILE = path.join(process.cwd(), 'instructions', 'instructions.md');
 const RACE_ANALYSIS_CACHE_FILE = 'race-analysis-cache.json';
+const PULSE_CONFIG_FILE = 'pulse_config.json';
 const AI_CACHE_ENABLED = String(process.env.AI_CACHE_ENABLED || process.env.BETMAN_AI_CACHE_ENABLED || 'true').toLowerCase() === 'true';
 const RACE_ANALYSIS_CACHE_TTL_MS = Number(process.env.RACE_ANALYSIS_CACHE_TTL_MS || (30 * 60 * 1000));
 const RACE_ANALYSIS_MIN_REFRESH_MS = Number(process.env.RACE_ANALYSIS_MIN_REFRESH_MS || (5 * 60 * 1000));
@@ -96,6 +97,50 @@ let lastPerformancePollTs = 0;
 const PERFORMANCE_POLL_COOLDOWN_MS = 5 * 60 * 1000;
 let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null, signal: null, error: null, log: 'logs/bakeoff-run.log', tail: [] };
 let aiModelsCache = { ts: 0, payload: null };
+
+const DEFAULT_PULSE_CONFIG = Object.freeze({
+  alertTypes: {
+    plunges: true,
+    drifts: true,
+    conflicts: true,
+    selectionFlips: true,
+    preJumpHeat: true,
+  },
+  updatedAt: null,
+  updatedBy: null,
+});
+
+function normalizePulseConfig(raw = {}, principal = null){
+  const alertTypes = raw && typeof raw.alertTypes === 'object' ? raw.alertTypes : {};
+  return {
+    alertTypes: {
+      plunges: alertTypes.plunges !== false,
+      drifts: alertTypes.drifts !== false,
+      conflicts: alertTypes.conflicts !== false,
+      selectionFlips: alertTypes.selectionFlips !== false,
+      preJumpHeat: alertTypes.preJumpHeat !== false,
+    },
+    updatedAt: raw?.updatedAt || null,
+    updatedBy: raw?.updatedBy || principal?.username || null,
+  };
+}
+
+function loadPulseConfig(tenantId = 'default'){
+  const filePath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', PULSE_CONFIG_FILE), PULSE_CONFIG_FILE);
+  const raw = loadJson(filePath, DEFAULT_PULSE_CONFIG);
+  return normalizePulseConfig(raw);
+}
+
+function savePulseConfig(tenantId = 'default', payload = {}, principal = null){
+  const filePath = tenantDataPath(tenantId, PULSE_CONFIG_FILE);
+  const next = normalizePulseConfig({
+    ...payload,
+    updatedAt: new Date().toISOString(),
+    updatedBy: principal?.username || payload?.updatedBy || null,
+  }, principal);
+  writeJson(filePath, next);
+  return next;
+}
 
 function normalizeTenantId(v){
   const raw = String(v || 'default').trim();
@@ -5724,6 +5769,35 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'alerts_history.json'), 'alerts_history.json');
     const payload = loadJson(p, []);
     return okJson(res, payload);
+  }
+
+  if (url.pathname === '/api/v1/pulse-config') {
+    const principal = req.authPrincipal;
+    if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
+    const tenantId = principal.effectiveTenantId || 'default';
+
+    if (req.method === 'GET') {
+      return okJson(res, { ok: true, config: loadPulseConfig(tenantId) }, 200, req);
+    }
+
+    if (req.method === 'PUT' || req.method === 'PATCH') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        let payload = {};
+        try { payload = body ? JSON.parse(body) : {}; } catch {}
+        const current = loadPulseConfig(tenantId);
+        const next = savePulseConfig(tenantId, {
+          ...current,
+          alertTypes: {
+            ...current.alertTypes,
+            ...(payload?.alertTypes || {}),
+          }
+        }, principal);
+        return okJson(res, { ok: true, config: next }, 200, req);
+      });
+      return;
+    }
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/settled-bets') {
