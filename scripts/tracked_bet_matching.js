@@ -209,11 +209,13 @@ function buildTrackedSettlement(row = {}, fallback = {}) {
   );
   const scaledPayout = shouldIgnoreSourceReturns ? null : scaleSettlementValue(rawPayout, trackedStake, unitStake);
   const scaledProfit = shouldIgnoreSourceReturns ? null : scaleSettlementValue(rawProfit, trackedStake, unitStake);
+  const rawResult = String(row.result || fallback.result || '').trim().toLowerCase();
+  const hasExplicitWinReturn = ['win', 'won', 'ew_win'].includes(rawResult);
 
   let payout = scaledPayout;
   let profit = scaledProfit;
 
-  if (!Number.isFinite(payout) && result === 'won' && Number.isFinite(trackedStake) && Number.isFinite(odds)) {
+  if (!Number.isFinite(payout) && result === 'won' && hasExplicitWinReturn && Number.isFinite(trackedStake) && Number.isFinite(odds)) {
     payout = trackedStake * odds;
   }
   if (!Number.isFinite(profit) && Number.isFinite(payout) && Number.isFinite(trackedStake)) {

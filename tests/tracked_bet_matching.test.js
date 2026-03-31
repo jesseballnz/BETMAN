@@ -186,7 +186,7 @@ assert.deepStrictEqual(
     },
     [
       { meeting: 'Newcastle', race: '1', selection: 'Cavalry', type: 'win', result: 'win', position: 1, winner: 'Cavalry', settled_at: '2026-03-31T04:05:06.000Z' },
-      { meeting: 'Newcastle', race: '1', selection: 'Dubliners', type: 'odds_runner', result: 'loss', position: 8, winner: 'Cavalry' },
+      { meeting: 'Newcastle', race: '1', selection: 'Sarapo', type: 'win', result: 'loss', position: 4, winner: 'Cavalry' },
     ]
   ),
   {
@@ -197,10 +197,15 @@ assert.deepStrictEqual(
     betType: 'Win',
     stake: 5,
     entryOdds: 3.3,
-    status: 'active',
-    result: 'pending',
-  },
-  'no direct row and no tracked position should stay unresolved'
+    status: 'settled',
+    result: 'lost',
+    settledAt: null,
+    payout: 0,
+    profit: -5,
+    roi: -1,
+    position: 4,
+    winner: 'Cavalry',
+  }
 );
 
 assert.deepStrictEqual(
