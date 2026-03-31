@@ -15,6 +15,7 @@
 const crypto = require('crypto');
 const path   = require('path');
 const fs     = require('fs');
+const { matchSettledBet } = require('./tracked_bet_matching');
 
 /* ── Configuration ─────────────────────────────────────────────────── */
 const API_VERSION = '1.0.0';
@@ -589,12 +590,7 @@ function createApiHandler(deps) {
       const normalize = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
       const mine = trackedRows.filter((row) => normalize(row.username) === normalize(principal.username));
       const resolved = mine.map((row) => {
-        const hit = settledRows.find((s) =>
-          normalize(s.meeting) === normalize(row.meeting) &&
-          String(s.race || '').replace(/^R/i, '') === String(row.race || '').replace(/^R/i, '') &&
-          normalize(s.selection) === normalize(row.selection) &&
-          normalize(s.type) === normalize(row.betType)
-        );
+        const hit = matchSettledBet(row, settledRows);
         if (!hit) return row;
         return {
           ...row,

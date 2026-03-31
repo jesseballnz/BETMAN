@@ -2,6 +2,7 @@
 /* Build frontend/data/status.json from poller state */
 const fs = require('fs');
 const path = require('path');
+const { buildSettledBetKey } = require('./tracked_bet_matching');
 
 function loadJson(p, fallback){
   try { return JSON.parse(fs.readFileSync(p,'utf8')); } catch { return fallback; }
@@ -644,7 +645,7 @@ const betResultsPath = path.join(ROOT, 'frontend', 'data', 'bet_results.json');
 const betResults = loadJson(betResultsPath, []);
 const settledBetsPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'settled_bets.json') : path.join(tenantDataDir, 'settled_bets.json');
 const settledBets = loadJson(settledBetsPath, []);
-const settledMap = new Map((settledBets || []).map(r => [`${String(r.meeting).toLowerCase()}|${String(r.race)}|${String(r.selection).toLowerCase()}|${String(r.type || '').toLowerCase()}`, r]));
+const settledMap = new Map((settledBets || []).map(r => [buildSettledBetKey(r), r]));
 const resMap = new Map((betResults || []).map(r => [`${String(r.meeting).toLowerCase()}|${String(r.race)}|${String(r.selection).toLowerCase()}`, r.result]));
 
 status.completedBets = placedRowsAll
@@ -655,8 +656,7 @@ status.completedBets = placedRowsAll
   .sort((a,b) => toMs(b.sortTime || b.eta) - toMs(a.sortTime || a.eta))
   .slice(0, 50)
   .map(x => {
-    const sk = `${String(x.meeting).toLowerCase()}|${String(x.race)}|${String(x.selection).toLowerCase()}|${String(x.type || '').toLowerCase()}`;
-    const settled = settledMap.get(sk);
+    const settled = settledMap.get(buildSettledBetKey(x));
     return {
       ...x,
       result: settled?.result || resMap.get(`${String(x.meeting).toLowerCase()}|${String(x.race)}|${String(x.selection).toLowerCase()}`) || 'pending',
