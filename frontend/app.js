@@ -2202,13 +2202,6 @@ async function loadStatus(){
     localStorage.setItem('earlyWindowMin', String(earlyWindowMin));
     localStorage.setItem('aiWindowMin', String(aiWindowMin));
 
-    const openBetsEl = $('openBets');
-    if (openBetsEl) openBetsEl.textContent = data.openBets || 0;
-    const todaysStakeEl = $('todaysStake');
-    if (todaysStakeEl) todaysStakeEl.textContent = `$${data.todaysStake || 0}`;
-    $('stakePerRace').textContent = `$${stakePerRace} / race`;
-    $('exoticStakePerRace').textContent = `Exotics: $${exoticStakePerRace} / race`;
-    $('earlyWindowMin').textContent = `Suggested window: ${earlyWindowMin}m`;
     refreshBetWindowUi();
     $('aiWindowMin') && ($('aiWindowMin').textContent = `AI Bets to Place window: ${aiWindowMin}m`);
     $('lastUpdated').textContent = `Last update ${new Date(data.updatedAt).toLocaleString()} · build ${BETMAN_BUILD}`;
@@ -2487,15 +2480,12 @@ async function loadStake(){
   const localAiWindow = parseFloat(localStorage.getItem('aiWindowMin') || '');
   if (!Number.isNaN(localStake) && localStake > 0) {
     stakePerRace = localStake;
-    $('stakePerRace').textContent = `$${stakePerRace} / race`;
   }
   if (!Number.isNaN(localExotic) && localExotic >= 0) {
     exoticStakePerRace = localExotic;
-    $('exoticStakePerRace').textContent = `Exotics: $${exoticStakePerRace} / race`;
   }
   if (!Number.isNaN(localWindow) && localWindow >= 1) {
     earlyWindowMin = localWindow;
-    $('earlyWindowMin').textContent = `Suggested window: ${earlyWindowMin}m`;
     refreshBetWindowUi();
   }
   if (!Number.isNaN(localAiWindow) && localAiWindow >= 1) {
@@ -2514,9 +2504,6 @@ async function loadStake(){
     localStorage.setItem('exoticStakePerRace', String(exoticStakePerRace));
     localStorage.setItem('earlyWindowMin', String(earlyWindowMin));
     localStorage.setItem('aiWindowMin', String(aiWindowMin));
-    $('stakePerRace').textContent = `$${stakePerRace} / race`;
-    $('exoticStakePerRace').textContent = `Exotics: $${exoticStakePerRace} / race`;
-    $('earlyWindowMin').textContent = `Suggested window: ${earlyWindowMin}m`;
     refreshBetWindowUi();
     $('aiWindowMin') && ($('aiWindowMin').textContent = `AI Bets to Place window: ${aiWindowMin}m`);
   } catch {}
@@ -7934,9 +7921,6 @@ async function enqueueRequest(type, target='main'){
     localStorage.setItem('exoticStakePerRace', String(exoticStakePerRace));
     localStorage.setItem('earlyWindowMin', String(earlyWindowMin));
     localStorage.setItem('aiWindowMin', String(aiWindowMin));
-    $('stakePerRace').textContent = `$${stakePerRace} / race`;
-    $('exoticStakePerRace').textContent = `Exotics: $${exoticStakePerRace} / race`;
-    $('earlyWindowMin').textContent = `Suggested window: ${earlyWindowMin}m`;
     refreshBetWindowUi();
     $('aiWindowMin') && ($('aiWindowMin').textContent = `AI Bets to Place window: ${aiWindowMin}m`);
 
@@ -7965,12 +7949,10 @@ async function enqueueRequest(type, target='main'){
       if (type === 'increase') exoticStakePerRace = Math.round((exoticStakePerRace + 0.5) * 100) / 100;
       if (type === 'decrease') exoticStakePerRace = Math.max(0, Math.round((exoticStakePerRace - 0.5) * 100) / 100);
       localStorage.setItem('exoticStakePerRace', String(exoticStakePerRace));
-      $('exoticStakePerRace').textContent = `Exotics: $${exoticStakePerRace} / race`;
     } else if (target === 'window') {
       if (type === 'increase') earlyWindowMin = Math.min(3600, earlyWindowMin + 30);
       if (type === 'decrease') earlyWindowMin = Math.max(1, earlyWindowMin - 30);
       localStorage.setItem('earlyWindowMin', String(earlyWindowMin));
-      $('earlyWindowMin').textContent = `Suggested window: ${earlyWindowMin}m`;
       refreshBetWindowUi();
     } else if (target === 'aiwindow') {
       if (type === 'increase') aiWindowMin = Math.min(30, aiWindowMin + 1);
@@ -7981,19 +7963,11 @@ async function enqueueRequest(type, target='main'){
       if (type === 'increase') stakePerRace += 1;
       if (type === 'decrease') stakePerRace = Math.max(1, stakePerRace - 1);
       localStorage.setItem('stakePerRace', String(stakePerRace));
-      $('stakePerRace').textContent = `$${stakePerRace} / race`;
     }
     const label = target === 'exotic' ? 'Exotic' : (target === 'window' ? 'Suggested window' : (target === 'aiwindow' ? 'AI window' : 'Main'));
     alert(`${label} ${type} executed (local).`);
   }
 }
-
-$('increaseBtn').addEventListener('click', ()=>enqueueRequest('increase', 'main'));
-$('decreaseBtn').addEventListener('click', ()=>enqueueRequest('decrease', 'main'));
-$('increaseExoticBtn').addEventListener('click', ()=>enqueueRequest('increase', 'exotic'));
-$('decreaseExoticBtn').addEventListener('click', ()=>enqueueRequest('decrease', 'exotic'));
-$('increaseWindowBtn').addEventListener('click', ()=>enqueueRequest('increase', 'window'));
-$('decreaseWindowBtn').addEventListener('click', ()=>enqueueRequest('decrease', 'window'));
 
 $('saveBetWindowBtn')?.addEventListener('click', async ()=>{
   const val = Number(($('betWindowInput')?.value || '').trim());
@@ -8001,7 +7975,6 @@ $('saveBetWindowBtn')?.addEventListener('click', async ()=>{
   const clamped = Math.max(1, Math.min(3600, Math.round(val)));
   earlyWindowMin = clamped;
   localStorage.setItem('earlyWindowMin', String(earlyWindowMin));
-  $('earlyWindowMin').textContent = `Suggested window: ${earlyWindowMin}m`;
   refreshBetWindowUi();
   try {
     const res = await fetchLocal('./api/stake', {
@@ -8012,7 +7985,6 @@ $('saveBetWindowBtn')?.addEventListener('click', async ()=>{
     const sdata = await res.json();
     earlyWindowMin = (typeof sdata.earlyWindowMin === 'number') ? sdata.earlyWindowMin : clamped;
     localStorage.setItem('earlyWindowMin', String(earlyWindowMin));
-    $('earlyWindowMin').textContent = `Suggested window: ${earlyWindowMin}m`;
     refreshBetWindowUi();
 
     // Rebuild queue immediately so Suggested/Plans reflect new window without waiting for cron.
