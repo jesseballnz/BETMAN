@@ -1001,9 +1001,19 @@ function canonicalTrackedResultLabel(value){
   const raw = String(value || 'pending').trim().toLowerCase();
   if (raw === 'win') return 'won';
   if (raw === 'loss') return 'lost';
+  if (raw === 'placed' || raw === 'place') return 'won';
   if (raw.startsWith('ew_')) return raw === 'ew_loss' ? 'lost' : 'won';
   if (raw === 'won' || raw === 'lost' || raw === 'void') return raw;
   return 'pending';
+}
+
+function normalizeSettledResultValue(value){
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'pending';
+  if (raw === 'won') return 'win';
+  if (raw === 'lost') return 'loss';
+  if (raw === 'placed' || raw === 'place') return 'ew_place';
+  return raw;
 }
 
 async function loadTrackedBetsCache(force = false){
@@ -6901,7 +6911,7 @@ function renderSettledBets(rows){
   const toDate = String(toInput?.value || latestDate || '');
 
   let filtered = allRows.filter(b => {
-    const result = String(b?.result || '').toLowerCase();
+    const result = normalizeSettledResultValue(b?.result);
     const type = String(b?.type || '').toLowerCase();
     const meeting = String(b?.meeting || '');
     const betDate = String(b?.date || '');
@@ -6918,6 +6928,8 @@ function renderSettledBets(rows){
       b?.selection,
       b?.type,
       b?.result,
+      canonicalTrackedResultLabel(b?.result),
+      normalizeSettledResultValue(b?.result),
       b?.winner,
       b?.pick_bucket
     ].map(v => String(v || '').toLowerCase()).join(' | ');
@@ -6954,7 +6966,7 @@ function renderSettledBets(rows){
     <div class='right'>ROI</div>
   </div>`;
   const body = filtered.map(b => {
-    const result = String(b?.result || 'pending');
+    const result = normalizeSettledResultValue(b?.result);
     const resultTag = result === 'win' ? `<span class='tag win'>WIN</span>`
       : result === 'loss' ? `<span class='tag'>LOSS</span>`
       : result === 'ew_win' ? `<span class='tag win'>EW WIN</span>`
@@ -7302,7 +7314,7 @@ async function loadPerformance(){
       const fromDate = String($('perfSettledDateFrom')?.value || '');
       const toDate = String($('perfSettledDateTo')?.value || '');
       (Array.isArray(settledBets) ? settledBets : []).filter(b => {
-        const result = String(b?.result || '').toLowerCase();
+        const result = normalizeSettledResultValue(b?.result);
         const type = String(b?.type || '').toLowerCase();
         const meeting = String(b?.meeting || '');
         const betDate = String(b?.date || '');
@@ -7312,7 +7324,7 @@ async function loadPerformance(){
         if (resultFilter !== 'all' && result !== resultFilter) return false;
         if (typeFilter !== 'all' && type !== typeFilter) return false;
         if (!q) return true;
-        const hay = [b?.date,b?.meeting,`r${b?.race || ''}`,b?.selection,b?.type,b?.result,b?.winner,b?.pick_bucket].map(v => String(v || '').toLowerCase()).join(' | ');
+        const hay = [b?.date,b?.meeting,`r${b?.race || ''}`,b?.selection,b?.type,b?.result,canonicalTrackedResultLabel(b?.result),normalizeSettledResultValue(b?.result),b?.winner,b?.pick_bucket].map(v => String(v || '').toLowerCase()).join(' | ');
         return hay.includes(q);
       }).forEach(b => {
         rows.push([
