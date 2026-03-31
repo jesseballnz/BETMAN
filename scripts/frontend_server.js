@@ -6130,14 +6130,16 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const liveContext = buildTrackedBetLiveContext(tenantId);
 
     if (req.method === 'GET') {
-      const resolvedTracked = allTracked
+      const mineResolved = allTracked
+        .filter(row => normalizeUsername(row.username || '') === username)
         .map(row => resolveTrackedBet(row, settled, raceResultIndex))
         .sort((a,b) => String(b.trackedAt || '').localeCompare(String(a.trackedAt || '')));
-      const tenantTracked = resolvedTracked.map(row => enrichTrackedBetWithCurrentOdds(row, liveContext));
-      if (JSON.stringify(resolvedTracked) !== JSON.stringify(allTracked)) {
-        writeJson(trackedPath, resolvedTracked);
+      const mine = mineResolved.map(row => enrichTrackedBetWithCurrentOdds(row, liveContext));
+      if (JSON.stringify(mineResolved) !== JSON.stringify(allTracked.filter(row => normalizeUsername(row.username || '') === username))) {
+        const others = allTracked.filter(row => normalizeUsername(row.username || '') !== username);
+        writeJson(trackedPath, [...others, ...mineResolved]);
       }
-      return okJson(res, { ok: true, trackedBets: tenantTracked }, 200, req);
+      return okJson(res, { ok: true, trackedBets: mine }, 200, req);
     }
 
     if (req.method === 'POST') {
@@ -6207,7 +6209,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     }
 
     if (req.method === 'DELETE') {
-      const updated = rows.filter(row => String(row.id) !== trackedId);
+      const updated = rows.filter(row => !(String(row.id) === trackedId && (normalizeUsername(row.username || '') === username || principal.isAdmin)));
       writeJson(trackedPath, updated);
       return okJson(res, { ok: true }, 200, req);
     }
