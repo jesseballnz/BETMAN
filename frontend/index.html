@@ -759,64 +759,91 @@
       </div>
     </section>
 
-    <section class="section page-section" data-page="pulse" style="display:none">
-      <div class="section-head">
-        <h3>Pulse</h3>
-        <div class="section-actions">
-          <button id="refreshPulseBtn" class="btn btn-ghost compact-btn">Refresh</button>
-        </div>
-      </div>
-      <div class="btn-row" style="margin:10px 0 10px 0;flex-wrap:wrap;gap:8px">
-        <button class="btn btn-ghost compact-btn pulse-subtab active" data-pulse-tab="live">Live Pulse</button>
-        <button class="btn btn-ghost compact-btn pulse-subtab" data-pulse-tab="history">Pulse History</button>
-        <button class="btn btn-ghost compact-btn pulse-subtab" data-pulse-tab="config">Pulse Control</button>
-      </div>
-      <div class="perf-kpis perf-kpis-secondary pulse-filter-strip" style="margin:0 0 14px 0;gap:10px;align-items:end">
-        <div class="perf-card pulse-filter-card" style="min-width:220px;flex:1">
-          <div class="label">Country</div>
-          <select id="pulseCountryFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
-            <option value="all">All countries</option>
-          </select>
-        </div>
-        <div class="perf-card pulse-filter-card" style="min-width:220px;flex:1">
-          <div class="label">Meeting</div>
-          <select id="pulseMeetingFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
-            <option value="all">All meetings</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="pulse-subpanel active" data-pulse-panel="live">
-        <div class="perf-kpis perf-kpis-secondary pulse-summary-strip">
-          <div class="perf-card"><div class="label">Hot</div><div id="pulseHotCount" class="value">0</div></div>
-          <div class="perf-card"><div class="label">Action</div><div id="pulseCriticalCount" class="value">0</div></div>
-          <div class="perf-card"><div class="label">Live</div><div id="pulseLiveCount" class="value">0</div></div>
-        </div>
-        <div class="perf-grid">
-          <div class="perf-section perf-wide pulse-feed-panel" style="margin-top:12px">
-            <h4>Live Pulse</h4>
-            <div class="sub">BETMAN Pulse surfaces premium pre-race signals: market pressure, thesis changes, and jump-timed tracked runner prompts.</div>
-            <div id="pulseLiveTable" class="table"></div>
+    <section class="section page-section pulse-page" data-page="pulse" style="display:none">
+      <div class="pulse-shell">
+        <div class="pulse-hero">
+          <div class="pulse-hero-copy">
+            <div class="pulse-kicker">Premium Intelligence</div>
+            <h3>Pulse</h3>
+            <p>Calm, curated pre-race signal flow for tracked runners, market pressure, thesis change, and jump-window intent.</p>
+          </div>
+          <div class="pulse-hero-actions">
+            <button id="refreshPulseBtn" class="btn btn-ghost compact-btn">Refresh Pulse</button>
           </div>
         </div>
-      </div>
 
-      <div class="pulse-subpanel" data-pulse-panel="history" style="display:none">
-        <div class="perf-grid">
-          <div class="perf-section perf-wide pulse-history-panel">
-            <h4>Pulse History</h4>
-            <div class="sub">Premium signal history and audit trail across tracked runners, thesis changes, and jump-timed prompts.</div>
-            <div id="pulseHistoryTable" class="table"></div>
+        <div class="pulse-toolbar">
+          <div class="pulse-subtabs" role="tablist" aria-label="Pulse sections">
+            <button class="btn btn-ghost compact-btn pulse-subtab active" data-pulse-tab="live">Live Pulse</button>
+            <button class="btn btn-ghost compact-btn pulse-subtab" data-pulse-tab="history">History</button>
+            <button class="btn btn-ghost compact-btn pulse-subtab" data-pulse-tab="config">Control</button>
+          </div>
+          <div class="pulse-watchbar">
+            <div class="pulse-watchbar-copy">
+              <div class="pulse-watchbar-label">Watch bar</div>
+              <div class="pulse-watchbar-title">Focus the feed without losing the premium feel.</div>
+            </div>
+            <div class="perf-kpis perf-kpis-secondary pulse-filter-strip">
+              <div class="perf-card pulse-filter-card pulse-filter-input-card">
+                <div class="label">Country</div>
+                <select id="pulseCountryFilter" class="pulse-filter-select">
+                  <option value="all">All countries</option>
+                </select>
+              </div>
+              <div class="perf-card pulse-filter-card pulse-filter-input-card">
+                <div class="label">Meeting</div>
+                <select id="pulseMeetingFilter" class="pulse-filter-select">
+                  <option value="all">All meetings</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="pulse-subpanel" data-pulse-panel="config" style="display:none">
-        <div class="perf-grid">
-          <div class="perf-section perf-wide pulse-config-panel">
-            <h4>Pulse Control</h4>
-            <div class="sub">Tune premium signal scope, thresholds, and delivery for BETMAN Pulse.</div>
-            <div id="pulseConfigPanel" class="table"></div>
+        <div class="pulse-subpanel active" data-pulse-panel="live">
+          <div class="perf-kpis perf-kpis-secondary pulse-summary-strip pulse-stat-strip">
+            <div class="perf-card pulse-stat-card"><div class="label">Hot setups</div><div id="pulseHotCount" class="value">0</div></div>
+            <div class="perf-card pulse-stat-card"><div class="label">Action now</div><div id="pulseCriticalCount" class="value">0</div></div>
+            <div class="perf-card pulse-stat-card"><div class="label">Live signals</div><div id="pulseLiveCount" class="value">0</div></div>
+          </div>
+          <div class="perf-grid pulse-content-grid">
+            <div class="perf-section perf-wide pulse-feed-panel pulse-surface-panel">
+              <div class="pulse-panel-head">
+                <div>
+                  <h4>Live Pulse</h4>
+                  <div class="sub">High-signal pre-race intelligence. Built to compress decision time, not create more noise.</div>
+                </div>
+              </div>
+              <div id="pulseLiveTable" class="table"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pulse-subpanel" data-pulse-panel="history" style="display:none">
+          <div class="perf-grid pulse-content-grid">
+            <div class="perf-section perf-wide pulse-history-panel pulse-surface-panel">
+              <div class="pulse-panel-head">
+                <div>
+                  <h4>Pulse History</h4>
+                  <div class="sub">Recent premium signal trail across tracked runners, thesis changes, and jump-window prompts.</div>
+                </div>
+              </div>
+              <div id="pulseHistoryTable" class="table"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pulse-subpanel" data-pulse-panel="config" style="display:none">
+          <div class="perf-grid pulse-content-grid">
+            <div class="perf-section perf-wide pulse-config-panel pulse-surface-panel">
+              <div class="pulse-panel-head">
+                <div>
+                  <h4>Pulse Control</h4>
+                  <div class="sub">Shape scope, thresholds, and delivery so the product stays selective, readable, and intentional.</div>
+                </div>
+              </div>
+              <div id="pulseConfigPanel" class="table"></div>
+            </div>
           </div>
         </div>
       </div>

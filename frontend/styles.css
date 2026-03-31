@@ -842,25 +842,60 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .page-tab{ text-transform:none; letter-spacing:.02em }
 
 
-.pulse-filter-strip .perf-card,.pulse-summary-strip .perf-card,.pulse-feed-panel,.pulse-history-panel,.pulse-config-panel{background:linear-gradient(180deg,rgba(15,21,30,.96),rgba(11,16,24,.94));border-color:rgba(255,255,255,.06);box-shadow:0 10px 24px rgba(0,0,0,.24)}
-.pulse-filter-card .label,.pulse-summary-strip .label,.pulse-feed-panel .sub,.pulse-history-panel .sub,.pulse-config-panel .sub{color:#97a8bb}
-.pulse-summary-strip .value{color:#dbe6f2;font-size:24px}
-.pulse-feed-panel h4,.pulse-history-panel h4,.pulse-config-panel h4{font-size:15px;letter-spacing:.06em;color:#eef5fb}
+.pulse-page{padding:18px 18px 20px;border-radius:20px;background:radial-gradient(circle at top left,rgba(197,255,0,.06),transparent 22%),linear-gradient(180deg,rgba(13,19,28,.94),rgba(9,14,21,.98));border-color:rgba(255,255,255,.05)}
+.pulse-shell{display:grid;gap:16px}
+.pulse-hero,.pulse-toolbar,.pulse-filter-strip .perf-card,.pulse-summary-strip .perf-card,.pulse-feed-panel,.pulse-history-panel,.pulse-config-panel{background:linear-gradient(180deg,rgba(15,21,30,.96),rgba(11,16,24,.94));border:1px solid rgba(255,255,255,.06);box-shadow:0 10px 24px rgba(0,0,0,.24)}
+.pulse-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:20px 22px;border-radius:22px}
+.pulse-kicker{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8fa4b8;margin-bottom:8px}
+.pulse-hero h3{margin:0;font-size:34px;line-height:1;color:#f3f7fb}
+.pulse-hero p{margin:10px 0 0;max-width:760px;color:#9fb0c3;font-size:14px;line-height:1.6}
+.pulse-hero-actions{display:flex;align-items:center;gap:10px}
+.pulse-toolbar{display:grid;gap:14px;padding:16px;border-radius:18px}
+.pulse-subtabs{display:flex;flex-wrap:wrap;gap:10px}
+.pulse-subtabs .pulse-subtab{padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.025);border-color:rgba(255,255,255,.08);color:#afbcc9}
+.pulse-subtabs .pulse-subtab.active{background:rgba(197,255,0,.10);border-color:rgba(197,255,0,.26);color:var(--accent)}
+.pulse-watchbar{display:grid;grid-template-columns:minmax(240px,.9fr) minmax(0,1.4fr);gap:12px;align-items:end}
+.pulse-watchbar-copy{display:grid;gap:4px;padding:4px 2px}
+.pulse-watchbar-label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7f96ab}
+.pulse-watchbar-title{font-size:15px;font-weight:650;line-height:1.35;color:#e8eff7}
+.pulse-filter-strip{margin:0;gap:10px;align-items:end}
+.pulse-filter-input-card{min-width:220px;flex:1}
+.pulse-filter-card .label,.pulse-summary-strip .label,.pulse-feed-panel .sub,.pulse-history-panel .sub,.pulse-config-panel .sub,.pulse-watchbar-copy{color:#97a8bb}
+.pulse-filter-select{width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:12px;padding:11px 12px;outline:none}
+.pulse-filter-select:focus,.pulse-targeting-shell textarea:focus,.pulse-config-card input:focus,.pulse-config-card select:focus{border-color:rgba(197,255,0,.28);box-shadow:0 0 0 3px rgba(197,255,0,.07)}
+.pulse-stat-strip{gap:12px}
+.pulse-stat-card{min-height:88px;justify-content:center}
+.pulse-summary-strip .value{color:#dbe6f2;font-size:28px;line-height:1}
+.pulse-content-grid{margin-top:0}
+.pulse-surface-panel{padding:18px;border-radius:18px}
+.pulse-panel-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
+.pulse-feed-panel h4,.pulse-history-panel h4,.pulse-config-panel h4{margin:0 0 6px;font-size:16px;letter-spacing:.04em;color:#eef5fb}
+.pulse-feed-panel .table,.pulse-history-panel .table,.pulse-config-panel .table{margin-top:10px}
+.pulse-feed-panel .alert-cards{gap:14px;margin-top:4px}
+.pulse-feed-panel .alert-card,.pulse-history-panel .row,.pulse-config-panel .row{border-radius:16px}
+.pulse-feed-panel .alert-card{padding:16px 16px 14px;background:linear-gradient(180deg,rgba(17,25,37,.98),rgba(11,17,26,.99));border-color:rgba(255,255,255,.06)}
+.pulse-feed-panel .alert-card-title{font-size:16px}
+.pulse-feed-panel .alert-card-msg{font-size:13px;line-height:1.6}
+.pulse-feed-panel .alert-card-action{padding-top:12px;margin-top:12px}
+.pulse-empty-state{padding:18px 18px 16px;border-radius:16px;background:rgba(255,255,255,.02);border:1px dashed rgba(255,255,255,.08)}
+.pulse-empty-title{font-weight:700;color:#e4edf6;margin-bottom:5px}
 
-
-.pulse-config-hero{background:linear-gradient(180deg,rgba(12,18,28,.96),rgba(10,15,22,.92));border:1px solid rgba(255,255,255,.05)!important;border-radius:16px;padding:16px!important}
+.pulse-config-hero{background:linear-gradient(180deg,rgba(12,18,28,.96),rgba(10,15,22,.92));border:1px solid rgba(255,255,255,.05)!important;border-radius:18px;padding:18px!important}
 .pulse-eyebrow{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#8fa4b8;margin-bottom:6px}
-.pulse-config-title{font-size:20px;font-weight:700;line-height:1.15;color:#dce6f0}
+.pulse-config-title{font-size:22px;font-weight:700;line-height:1.15;color:#dce6f0}
 .pulse-config-copy,.pulse-config-meta{color:#8fa1b4!important}
 .pulse-config-item-title{font-size:13px;font-weight:600;color:#d4deea;line-height:1.2}
-.pulse-config-card{background:rgba(255,255,255,.02)!important;border-color:rgba(255,255,255,.05)!important}
-.pulse-config-card .sub,.pulse-targeting-shell .sub{color:#8ea0b2!important}
+.pulse-config-card{background:rgba(255,255,255,.02)!important;border-color:rgba(255,255,255,.05)!important;padding:14px 16px!important}
+.pulse-config-card .sub,.pulse-targeting-shell .sub{color:#8ea0b2!important;line-height:1.5}
 .pulse-quick-setup{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 14px;margin:0 0 12px;border-radius:12px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}
 .pulse-quick-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .pulse-meeting-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
 .pulse-meeting-chip{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:#0c141d;color:#dce6f3;font-weight:600;cursor:pointer}
 .pulse-meeting-chip span{font-size:11px;color:#8fb0cf}
 .pulse-meeting-chip.is-primary{border-color:rgba(197,255,0,.35);box-shadow:0 0 0 1px rgba(197,255,0,.08) inset;color:var(--accent)}
-.pulse-targeting-shell textarea,.pulse-config-card input,.pulse-config-card select{background:#0c141d;color:#cfdae6;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px}
+.pulse-targeting-shell{margin:4px 0 12px;padding:16px;border-radius:18px;background:rgba(11,18,28,.62);border:1px solid rgba(255,255,255,.06)}
+.pulse-targeting-shell textarea,.pulse-config-card input,.pulse-config-card select{background:#0c141d;color:#cfdae6;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:11px 12px}
 .pulse-targeting-head .tag{background:rgba(77,214,255,.12);border-color:rgba(77,214,255,.28);color:#8ed7ff}
+@media (max-width:980px){.pulse-watchbar{grid-template-columns:1fr}.pulse-hero{align-items:flex-start;flex-direction:column}.pulse-hero h3{font-size:30px}}
 @media (max-width:840px){.pulse-quick-setup{flex-direction:column}.pulse-quick-actions{justify-content:flex-start}}
+@media (max-width:640px){.pulse-page{padding:14px}.pulse-toolbar,.pulse-surface-panel{padding:14px}.pulse-subtabs{display:grid;grid-template-columns:1fr}.pulse-subtabs .pulse-subtab{width:100%;justify-content:center}.pulse-summary-strip .value{font-size:24px}.pulse-watchbar-title{font-size:14px}}
