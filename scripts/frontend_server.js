@@ -102,6 +102,7 @@ let aiModelsCache = { ts: 0, payload: null };
 const PULSE_SEVERITY_LEVELS = Object.freeze(['WATCH', 'HOT', 'CRITICAL', 'ACTION']);
 
 const DEFAULT_PULSE_CONFIG = Object.freeze({
+  enabled: true,
   alertTypes: {
     plunges: true,
     drifts: true,
@@ -115,6 +116,12 @@ const DEFAULT_PULSE_CONFIG = Object.freeze({
     maxMinsToJump: null,
     minMovePct: null,
     trackedRunnerOverride: true,
+  },
+  targeting: {
+    mode: 'all',
+    countries: [],
+    meetings: [],
+    races: [],
   },
   updatedAt: null,
   updatedBy: null,
@@ -133,6 +140,51 @@ function normalizePulseThresholds(raw = {}){
     maxMinsToJump: Number.isFinite(maxMinsToJump) && maxMinsToJump >= 0 ? maxMinsToJump : null,
     minMovePct: Number.isFinite(minMovePct) && minMovePct >= 0 ? minMovePct : null,
     trackedRunnerOverride: raw?.trackedRunnerOverride !== false,
+  };
+}
+
+function normalizePulseTargetList(values = [], mapper = (v) => v){
+  const items = Array.isArray(values) ? values : [];
+  return Array.from(new Set(items.map(mapper).filter(Boolean)));
+}
+
+function normalizePulseMeetingName(value){
+  return String(value || '').trim();
+}
+
+function normalizePulseCountry(value){
+  const upper = String(value || '').trim().toUpperCase();
+  if (upper === 'HKG') return 'HK';
+  return upper;
+}
+
+function normalizePulseRaceTarget(value){
+  if (value == null) return null;
+  if (typeof value === 'object') {
+    const meeting = normalizePulseMeetingName(value.meeting);
+    const race = String(value.race || value.race_number || '').trim().replace(/^R/i, '');
+    if (!meeting || !race) return null;
+    return `${meeting}::${race}`;
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\s*\|\s*/g, '::').replace(/\s*[—-]\s*R?/gi, '::');
+  const parts = normalized.split('::').map(part => String(part || '').trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const race = String(parts.pop() || '').replace(/^R/i, '');
+  const meeting = parts.join('::').trim();
+  if (!meeting || !race) return null;
+  return `${meeting}::${race}`;
+}
+
+function normalizePulseTargeting(raw = {}){
+  const mode = String(raw?.mode || 'all').trim().toLowerCase();
+  const allowedMode = ['all', 'countries', 'meetings', 'races', 'mixed'].includes(mode) ? mode : 'all';
+  return {
+    mode: allowedMode,
+    countries: normalizePulseTargetList(raw?.countries, normalizePulseCountry),
+    meetings: normalizePulseTargetList(raw?.meetings, normalizePulseMeetingName),
+    races: normalizePulseTargetList(raw?.races, normalizePulseRaceTarget),
   };
 }
 
@@ -156,18 +208,69 @@ function pulseAlertPassesThresholds(row, config){
   return true;
 }
 
+function buildPulseMeetingCountryIndex(){
+  const racesPath = path.join(process.cwd(), 'frontend', 'data', 'races.json');
+  const payload = loadJson(racesPath, { races: [] });
+  const rows = Array.isArray(payload?.races) ? payload.races : (Array.isArray(payload) ? payload : []);
+  const index = new Map();
+  rows.forEach((race) => {
+    const meeting = normalizePulseMeetingName(race?.meeting).toLowerCase();
+    const raceNo = String(race?.race_number || race?.race || '').trim();
+    const country = normalizePulseCountry(race?.country);
+    if (!meeting || !raceNo || !country) return;
+    index.set(`${meeting}::${raceNo}`, country);
+    if (!index.has(meeting)) index.set(meeting, country);
+  });
+  return index;
+}
+
+function enrichPulseAlert(row, meetingCountryIndex){
+  if (!row || typeof row !== 'object') return row;
+  const meeting = normalizePulseMeetingName(row.meeting);
+  const race = String(row.race || '').trim().replace(/^R/i, '');
+  const meetingKey = meeting.toLowerCase();
+  const country = normalizePulseCountry(
+    row.country
+    || meetingCountryIndex.get(`${meetingKey}::${race}`)
+    || meetingCountryIndex.get(meetingKey)
+    || null
+  );
+  return country ? { ...row, country } : row;
+}
+
+function pulseAlertMatchesTargeting(row, config){
+  const targeting = normalizePulseTargeting(config?.targeting || {});
+  if (targeting.mode === 'all') return true;
+  const meeting = normalizePulseMeetingName(row?.meeting);
+  const race = String(row?.race || '').trim().replace(/^R/i, '');
+  const country = normalizePulseCountry(row?.country);
+  const raceKey = meeting && race ? `${meeting}::${race}` : null;
+  const matchers = {
+    countries: !!country && targeting.countries.includes(country),
+    meetings: !!meeting && targeting.meetings.includes(meeting),
+    races: !!raceKey && targeting.races.includes(raceKey),
+  };
+  if (targeting.mode === 'mixed') return Object.values(matchers).some(Boolean);
+  return !!matchers[targeting.mode];
+}
+
 function filterPulseAlerts(rows, config = pulseConfigState){
-  const enabled = config?.alertTypes || DEFAULT_PULSE_CONFIG.alertTypes;
-  return (Array.isArray(rows) ? rows : []).filter((row) => {
+  const normalizedConfig = normalizePulseConfig(config || {});
+  if (normalizedConfig.enabled === false) return [];
+  const enabled = normalizedConfig?.alertTypes || DEFAULT_PULSE_CONFIG.alertTypes;
+  const meetingCountryIndex = buildPulseMeetingCountryIndex();
+  return (Array.isArray(rows) ? rows : []).map((row) => enrichPulseAlert(row, meetingCountryIndex)).filter((row) => {
     const key = pulseConfigKeyForAlertType(row?.type);
     if (key && enabled[key] === false) return false;
-    return pulseAlertPassesThresholds(row, config);
+    if (!pulseAlertMatchesTargeting(row, normalizedConfig)) return false;
+    return pulseAlertPassesThresholds(row, normalizedConfig);
   });
 }
 
 function normalizePulseConfig(raw = {}, principal = null){
   const alertTypes = raw && typeof raw.alertTypes === 'object' ? raw.alertTypes : {};
   return {
+    enabled: raw?.enabled !== false,
     alertTypes: {
       plunges: alertTypes.plunges !== false,
       drifts: alertTypes.drifts !== false,
@@ -177,6 +280,7 @@ function normalizePulseConfig(raw = {}, principal = null){
       jumpPulse: alertTypes.jumpPulse !== false,
     },
     thresholds: normalizePulseThresholds(raw?.thresholds || {}),
+    targeting: normalizePulseTargeting(raw?.targeting || {}),
     updatedAt: raw?.updatedAt || null,
     updatedBy: raw?.updatedBy || principal?.username || null,
   };
@@ -5980,6 +6084,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         const current = loadPulseConfig(tenantId);
         const next = savePulseConfig(tenantId, {
           ...current,
+          enabled: payload?.enabled !== undefined ? payload.enabled : current.enabled,
           alertTypes: {
             ...current.alertTypes,
             ...(payload?.alertTypes || {}),
@@ -5987,6 +6092,10 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
           thresholds: {
             ...current.thresholds,
             ...(payload?.thresholds || {}),
+          },
+          targeting: {
+            ...current.targeting,
+            ...(payload?.targeting || {}),
           }
         }, principal);
         return okJson(res, { ok: true, config: next }, 200, req);

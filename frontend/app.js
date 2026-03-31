@@ -758,6 +758,7 @@ function marketMoverImage(row){
 const PULSE_SEVERITY_LEVELS = ['WATCH', 'HOT', 'CRITICAL', 'ACTION'];
 
 const DEFAULT_PULSE_CONFIG = {
+  enabled: true,
   alertTypes: {
     plunges: true,
     drifts: true,
@@ -771,6 +772,12 @@ const DEFAULT_PULSE_CONFIG = {
     maxMinsToJump: null,
     minMovePct: null,
     trackedRunnerOverride: true,
+  },
+  targeting: {
+    mode: 'all',
+    countries: [],
+    meetings: [],
+    races: [],
   },
   updatedAt: null,
   updatedBy: null,
@@ -799,6 +806,50 @@ function normalizePulseThresholds(payload){
   };
 }
 
+function normalizePulseTargetList(values, mapper){
+  const items = Array.isArray(values) ? values : [];
+  return Array.from(new Set(items.map(mapper).filter(Boolean)));
+}
+
+function normalizePulseCountry(value){
+  const upper = String(value || '').trim().toUpperCase();
+  return upper === 'HKG' ? 'HK' : upper;
+}
+
+function normalizePulseMeetingName(value){
+  return String(value || '').trim();
+}
+
+function normalizePulseRaceTarget(value){
+  if (value == null) return null;
+  if (typeof value === 'object') {
+    const meeting = normalizePulseMeetingName(value.meeting);
+    const race = String(value.race || value.race_number || '').trim().replace(/^R/i, '');
+    if (!meeting || !race) return null;
+    return `${meeting}::${race}`;
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\s*\|\s*/g, '::').replace(/\s*[—-]\s*R?/gi, '::');
+  const parts = normalized.split('::').map(part => String(part || '').trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const race = String(parts.pop() || '').replace(/^R/i, '');
+  const meeting = parts.join('::').trim();
+  if (!meeting || !race) return null;
+  return `${meeting}::${race}`;
+}
+
+function normalizePulseTargeting(payload){
+  const targeting = payload && typeof payload.targeting === 'object' ? payload.targeting : payload || {};
+  const mode = String(targeting?.mode || 'all').trim().toLowerCase();
+  return {
+    mode: ['all', 'countries', 'meetings', 'races', 'mixed'].includes(mode) ? mode : 'all',
+    countries: normalizePulseTargetList(targeting?.countries, normalizePulseCountry),
+    meetings: normalizePulseTargetList(targeting?.meetings, normalizePulseMeetingName),
+    races: normalizePulseTargetList(targeting?.races, normalizePulseRaceTarget),
+  };
+}
+
 function pulseSeverityRank(value){
   return PULSE_SEVERITY_LEVELS.indexOf(normalizePulseSeverity(value));
 }
@@ -806,6 +857,7 @@ function pulseSeverityRank(value){
 function normalizePulseConfig(payload){
   const alertTypes = payload && typeof payload.alertTypes === 'object' ? payload.alertTypes : {};
   return {
+    enabled: payload?.enabled !== false,
     alertTypes: {
       plunges: alertTypes.plunges !== false,
       drifts: alertTypes.drifts !== false,
@@ -815,6 +867,7 @@ function normalizePulseConfig(payload){
       jumpPulse: alertTypes.jumpPulse !== false,
     },
     thresholds: normalizePulseThresholds(payload),
+    targeting: normalizePulseTargeting(payload),
     updatedAt: payload?.updatedAt || null,
     updatedBy: payload?.updatedBy || null,
   };
@@ -848,11 +901,29 @@ function pulseAlertPassesThresholds(row){
 }
 
 function filterPulseAlerts(rows){
+  if (pulseConfigState?.enabled === false) return [];
   return (Array.isArray(rows) ? rows : []).filter(row => {
     const key = pulseConfigKeyForAlertType(row?.type);
     if (key && pulseConfigState?.alertTypes?.[key] === false) return false;
     return pulseAlertPassesThresholds(row);
   });
+}
+
+function pulseTargetingModeLabel(mode){
+  if (mode === 'countries') return 'Countries';
+  if (mode === 'meetings') return 'Meetings';
+  if (mode === 'races') return 'Races';
+  if (mode === 'mixed') return 'Mixed';
+  return 'All races';
+}
+
+function pulseTargetingSummary(targeting = {}){
+  const normalized = normalizePulseTargeting({ targeting });
+  const segments = [];
+  if (normalized.countries.length) segments.push(`Countries: ${normalized.countries.join(', ')}`);
+  if (normalized.meetings.length) segments.push(`Meetings: ${normalized.meetings.join(', ')}`);
+  if (normalized.races.length) segments.push(`Races: ${normalized.races.map(value => value.replace('::', ' | R')).join(', ')}`);
+  return segments.length ? segments.join(' · ') : 'No specific follow list. Pulse runs across the full premium feed.';
 }
 
 async function loadPulseConfig(){
@@ -899,6 +970,7 @@ function renderPulseConfigPanel(){
   if (!cfg) return;
   const meta = pulseTypeMeta();
   const thresholds = normalizePulseThresholds(pulseConfigState.thresholds || {});
+  const targeting = normalizePulseTargeting(pulseConfigState.targeting || {});
   const updatedMeta = pulseConfigState.updatedAt
     ? `Saved ${new Date(pulseConfigState.updatedAt).toLocaleString()}${pulseConfigState.updatedBy ? ` by ${escapeHtml(String(pulseConfigState.updatedBy))}` : ''}`
     : 'Using default pulse config';
@@ -906,12 +978,49 @@ function renderPulseConfigPanel(){
     <div class='row' style='grid-template-columns:1fr'>
       <div>
         <div><b>Shared Pulse Config</b></div>
-        <div class='sub' style='margin-top:4px'>Tenant-scoped server config. Toggle alert families on/off for BETMAN web and mobile.</div>
+        <div class='sub' style='margin-top:4px'>Tenant-scoped premium config. Control Pulse enablement, follow scope, and alert families across web + mobile.</div>
         <div class='sub' style='margin-top:4px'>${updatedMeta}</div>
       </div>
     </div>
+    <label class='row pulse-config-card pulse-config-card-accent' style='grid-template-columns:auto 1fr;align-items:center;gap:12px'>
+      <input id='pulseEnabledToggle' type='checkbox' ${pulseConfigState.enabled !== false ? 'checked' : ''} />
+      <div>
+        <div><b>Pulse enabled</b> <span class='tag value'>PREMIUM</span></div>
+        <div class='sub'>Master switch. Enabled by default. Jump Pulse logic stays intact inside this gate.</div>
+      </div>
+    </label>
+    <div class='pulse-targeting-shell'>
+      <div class='pulse-targeting-head'>
+        <div>
+          <div><b>Follow scope</b></div>
+          <div class='sub'>Choose whether Pulse follows countries, meetings, specific races, or any mixed watchlist match.</div>
+        </div>
+        <div class='tag ew'>${escapeHtml(pulseTargetingModeLabel(targeting.mode))}</div>
+      </div>
+      <div class='pulse-targeting-modes'>
+        ${['all','countries','meetings','races','mixed'].map(mode => `<label class='pulse-mode-pill ${targeting.mode === mode ? 'active' : ''}'><input type='radio' name='pulseTargetMode' value='${mode}' ${targeting.mode === mode ? 'checked' : ''} /> <span>${escapeHtml(pulseTargetingModeLabel(mode))}</span></label>`).join('')}
+      </div>
+      <div class='pulse-targeting-grid'>
+        <label>
+          <div><b>Countries</b></div>
+          <div class='sub'>One per line: NZ, AUS, HK.</div>
+          <textarea id='pulseTargetCountries' rows='3' placeholder='NZ&#10;AUS'>${escapeHtml(targeting.countries.join('\n'))}</textarea>
+        </label>
+        <label>
+          <div><b>Meetings</b></div>
+          <div class='sub'>Exact meeting names.</div>
+          <textarea id='pulseTargetMeetings' rows='3' placeholder='Pukekohe&#10;Randwick'>${escapeHtml(targeting.meetings.join('\n'))}</textarea>
+        </label>
+        <label>
+          <div><b>Races</b></div>
+          <div class='sub'>Format: Meeting | R#</div>
+          <textarea id='pulseTargetRaces' rows='3' placeholder='Pukekohe | R1&#10;Randwick | R7'>${escapeHtml(targeting.races.map(value => value.replace('::', ' | R')).join('\n'))}</textarea>
+        </label>
+      </div>
+      <div class='sub' style='margin-top:8px'>${escapeHtml(pulseTargetingSummary(targeting))}</div>
+    </div>
     ${meta.map(item => `
-      <label class='row' style='grid-template-columns:auto 1fr;align-items:center;gap:12px'>
+      <label class='row pulse-config-card' style='grid-template-columns:auto 1fr;align-items:center;gap:12px'>
         <input type='checkbox' class='pulse-config-toggle' data-key='${item.key}' ${pulseConfigState.alertTypes[item.key] ? 'checked' : ''} />
         <div>
           <div><b>${item.label}</b></div>
@@ -919,7 +1028,7 @@ function renderPulseConfigPanel(){
         </div>
       </label>
     `).join('')}
-    <div class='row' style='grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px'>
+    <div class='row pulse-config-card' style='grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px'>
       <label>
         <div><b>Minimum severity</b></div>
         <div class='sub'>Hide lower-severity alerts unless tracked-runner override applies.</div>
@@ -951,10 +1060,10 @@ function renderPulseConfigPanel(){
     </div>`;
 
   const status = $('pulseConfigStatus');
-  cfg.querySelectorAll('.pulse-config-toggle, #pulseThresholdSeverity, #pulseThresholdMinutes, #pulseThresholdMovePct, #pulseThresholdTrackedOverride').forEach(input => {
-    input.addEventListener('change', () => {
-      if (status) status.textContent = 'Unsaved changes';
-    });
+    cfg.querySelectorAll('.pulse-config-toggle, #pulseEnabledToggle, input[name="pulseTargetMode"], #pulseTargetCountries, #pulseTargetMeetings, #pulseTargetRaces, #pulseThresholdSeverity, #pulseThresholdMinutes, #pulseThresholdMovePct, #pulseThresholdTrackedOverride').forEach(input => {
+      input.addEventListener('change', () => {
+        if (status) status.textContent = 'Unsaved changes';
+      });
   });
   $('savePulseConfigBtn')?.addEventListener('click', async () => {
     const btn = $('savePulseConfigBtn');
@@ -962,6 +1071,12 @@ function renderPulseConfigPanel(){
     cfg.querySelectorAll('.pulse-config-toggle').forEach(input => {
       nextAlertTypes[input.dataset.key] = !!input.checked;
     });
+    const nextTargeting = {
+      mode: cfg.querySelector('input[name="pulseTargetMode"]:checked')?.value || targeting.mode,
+      countries: String($('pulseTargetCountries')?.value || '').split(/[\n,]+/).map(v => normalizePulseCountry(v)).filter(Boolean),
+      meetings: String($('pulseTargetMeetings')?.value || '').split(/[\n,]+/).map(v => normalizePulseMeetingName(v)).filter(Boolean),
+      races: String($('pulseTargetRaces')?.value || '').split(/[\n,]+/).map(v => normalizePulseRaceTarget(v)).filter(Boolean),
+    };
     const nextThresholds = {
       minSeverity: $('pulseThresholdSeverity')?.value || thresholds.minSeverity,
       maxMinsToJump: $('pulseThresholdMinutes')?.value === '' ? null : Number($('pulseThresholdMinutes')?.value),
@@ -971,7 +1086,7 @@ function renderPulseConfigPanel(){
     if (btn) btn.disabled = true;
     if (status) status.textContent = 'Saving…';
     try {
-      await savePulseConfig({ alertTypes: nextAlertTypes, thresholds: nextThresholds });
+      await savePulseConfig({ enabled: !!$('pulseEnabledToggle')?.checked, alertTypes: nextAlertTypes, thresholds: nextThresholds, targeting: nextTargeting });
       renderPulseConfigPanel();
       if ($('pulseConfigStatus')) $('pulseConfigStatus').textContent = 'Saved';
     } catch (err) {
@@ -1448,6 +1563,15 @@ async function hydrateAlertsMeetingFilter(alerts){
   sel.value = meetings.includes(prev) || prev === 'all' ? prev : 'all';
 }
 
+async function hydrateAlertsCountryFilter(alerts){
+  const sel = $('alertsCountryFilter');
+  if (!sel) return;
+  const prev = sel.value || 'all';
+  const countries = Array.from(new Set((alerts || []).map(a => String(a?.country || '').trim()).filter(Boolean))).sort((a,b) => a.localeCompare(b));
+  sel.innerHTML = [`<option value="all">All countries</option>`].concat(countries.map(country => `<option value="${escapeAttr(country)}">${escapeHtml(country)}</option>`)).join('');
+  sel.value = countries.includes(prev) || prev === 'all' ? prev : 'all';
+}
+
 async function renderAlertsShell(){
   const live = $('alertsLiveTable');
   const hist = $('alertsHistoryTable');
@@ -1455,14 +1579,14 @@ async function renderAlertsShell(){
   try {
     await loadPulseConfig();
   } catch {}
-  const feed = await fetchLocal('./data/alerts_feed.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] }));
-  const history = await fetchLocal('./data/alerts_history.json', { cache: 'no-store' }).then(r => r.json()).catch(() => []);
+  const feed = await fetchLocal('./api/v1/alerts-feed', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] }));
+  const history = await fetchLocal('./api/v1/alerts-history', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] }));
   const allAlerts = filterPulseAlerts(Array.isArray(feed?.alerts) ? feed.alerts : []);
+  hydrateAlertsCountryFilter(allAlerts);
   hydrateAlertsMeetingFilter(allAlerts);
+  const countryFilter = String($('alertsCountryFilter')?.value || 'all');
   const meetingFilter = String($('alertsMeetingFilter')?.value || 'all');
-  const alerts = meetingFilter === 'all'
-    ? allAlerts
-    : allAlerts.filter(a => String(a?.meeting || '') === meetingFilter);
+  const alerts = allAlerts.filter(a => (countryFilter === 'all' ? true : String(a?.country || '') === countryFilter) && (meetingFilter === 'all' ? true : String(a?.meeting || '') === meetingFilter));
   const critical = alerts.filter(a => String(a?.severity || '') === 'CRITICAL').length;
   const hot = alerts.filter(a => String(a?.severity || '') === 'HOT').length;
   $('alertsHotCount') && ($('alertsHotCount').textContent = String(hot));
@@ -1493,7 +1617,7 @@ async function renderAlertsShell(){
                 <div class='alert-card-top'>
                   <div>
                     <div class='alert-card-title'>${title}</div>
-                    <div class='alert-card-sub'>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))} • ${escapeHtml(alertTypeTag(a?.type))}</div>
+                    <div class='alert-card-sub'>${escapeHtml(String(a?.country || '—'))} • ${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))} • ${escapeHtml(alertTypeTag(a?.type))}</div>
                   </div>
                   <span class='alert-badge ${sev}'>${escapeHtml(String(a?.severity || 'WATCH'))}</span>
                 </div>
@@ -1533,8 +1657,8 @@ async function renderAlertsShell(){
     });
   }
   if (hist) {
-    const historyRows = filterPulseAlerts(Array.isArray(history) ? history : [])
-      .filter(a => meetingFilter === 'all' ? true : String(a?.meeting || '') === meetingFilter);
+    const historyRows = filterPulseAlerts(Array.isArray(history?.alerts) ? history.alerts : (Array.isArray(history) ? history : []))
+      .filter(a => (countryFilter === 'all' ? true : String(a?.country || '') === countryFilter) && (meetingFilter === 'all' ? true : String(a?.meeting || '') === meetingFilter));
     hist.innerHTML = historyRows.length
       ? `<div class='row header'><div>When</div><div>Severity</div><div>Race</div><div>Runner</div><div class='right'>Status</div></div>` + historyRows.slice(0,50).map(a => `<div class='row'>
           <div>${escapeHtml(String(a?.ts || '—'))}</div>
@@ -2768,13 +2892,16 @@ function renderMarketMovers(rows){
     btn.onclick = async ()=>{
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
       if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      setActivePage('workspace');
+      await selectRace(race.key);
       const selNorm = normalizeRunnerName(String(btn.dataset.runner || '').trim());
       const runner = (race.runners || []).find(x => {
         const nm = normalizeRunnerName(String(x.name || x.runner_name || '').trim());
         return nm === selNorm || nm.includes(selNorm) || selNorm.includes(nm);
       });
-      if (!runner) return alert('Runner not found in race cache.');
-      openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
+      if (runner && $('analysisBody')) {
+        $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Focused from Market Movers: ${escapeHtml(runner.name || runner.runner_name || String(btn.dataset.runner || ''))}</div>`;
+      }
     };
   });
 }
@@ -11281,6 +11408,7 @@ document.querySelectorAll('.alerts-subtab').forEach(btn => {
   btn.addEventListener('click', () => setActiveAlertsTab(btn.dataset.alertsTab || 'live'));
 });
 $('refreshAlertsBtn')?.addEventListener('click', () => renderAlertsShell());
+$('alertsCountryFilter')?.addEventListener('change', () => renderAlertsShell());
 $('alertsMeetingFilter')?.addEventListener('change', () => renderAlertsShell());
 $('refreshTrackedBtn')?.addEventListener('click', () => renderTrackedShell());
 document.querySelectorAll('.tracked-subtab').forEach(btn => {
