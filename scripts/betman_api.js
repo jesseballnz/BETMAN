@@ -762,6 +762,11 @@ function createApiHandler(deps) {
       const resolved = mine.map((row) => resolveTrackedBet(row, settledRows, raceResultIndex));
 
       if (req.method === 'GET') {
+        if (JSON.stringify(mine) !== JSON.stringify(resolved)) {
+          const others = trackedRows.filter((row) => normalize(row.username) !== normalize(principal.username));
+          fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
+          fs.writeFileSync(trackedPath, JSON.stringify([...others, ...resolved], null, 2));
+        }
         return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBets: resolved }, 200, rateInfo), true;
       }
 
