@@ -955,6 +955,87 @@ function computeTrackRunnerPayload(race, runner, extras = {}){
   };
 }
 
+function trackedGroupMeta(row = {}){
+  const groupType = String(row?.groupType || '').trim().toLowerCase();
+  const groupId = String(row?.groupId || '').trim();
+  const groupSize = Number(row?.groupSize);
+  const legIndex = Number(row?.legIndex);
+  return {
+    isMulti: groupType === 'multi' && !!groupId,
+    groupType,
+    groupId,
+    groupLabel: String(row?.groupLabel || '').trim() || (Number.isFinite(groupSize) && groupSize > 0 ? `${groupSize}-Leg Multi` : 'Multi'),
+    groupSize: Number.isFinite(groupSize) && groupSize > 0 ? Math.round(groupSize) : null,
+    legIndex: Number.isFinite(legIndex) && legIndex > 0 ? Math.round(legIndex) : null,
+  };
+}
+
+function buildTrackedMultiTag(row = {}){
+  const meta = trackedGroupMeta(row);
+  if (!meta.isMulti) return '';
+  const legText = meta.legIndex && meta.groupSize ? ` ${meta.legIndex}/${meta.groupSize}` : '';
+  return `<span class='tag tracked'>MULTI${escapeHtml(legText)}</span>`;
+}
+
+function dedupeDraggedSelections(rows = []) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of rows) {
+    const item = enrichDraggedSelection(raw);
+    const meeting = String(item?.meeting || '').trim();
+    const race = String(item?.race || '').replace(/^R/i, '').trim();
+    const selection = cleanRunnerText(item?.selection || item?.runner || '');
+    const key = `${meeting.toLowerCase()}|${race}|${normalizeRunnerName(selection)}`;
+    if (!meeting || !race || !selection || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...item, meeting, race, selection });
+  }
+  return out;
+}
+
+async function trackDraggedSelectionsAsMulti(){
+  const legs = dedupeDraggedSelections(draggedSelections);
+  if (legs.length < 2) {
+    alert('Drag at least two distinct selections before tracking a multi.');
+    return;
+  }
+  const groupId = `multi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const groupLabel = `${legs.length}-Leg Multi`;
+  const compactLegs = legs.map((leg, index) => ({
+    meeting: leg.meeting,
+    race: leg.race,
+    selection: leg.selection,
+    odds: Number.isFinite(Number(leg.odds)) ? Number(Number(leg.odds).toFixed(2)) : null,
+    legIndex: index + 1,
+  }));
+
+  try {
+    await Promise.all(compactLegs.map((leg) => fetchLocal('./api/v1/tracked-bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        meeting: leg.meeting,
+        race: leg.race,
+        selection: leg.selection,
+        betType: 'Multi',
+        odds: leg.odds,
+        entryOdds: leg.odds,
+        source: 'web-multi',
+        groupType: 'multi',
+        groupId,
+        groupLabel,
+        groupSize: compactLegs.length,
+        legIndex: leg.legIndex,
+        legs: compactLegs,
+      })
+    })));
+    await refreshTrackedUi({ force: true, rerenderAnalysis: true, rerenderTracked: true });
+    alert(`Tracked ${compactLegs.length}-leg multi.`);
+  } catch (e) {
+    alert('Failed to track multi.');
+  }
+}
+
 async function refreshTrackedUi(opts = {}){
   const { force = true, rerenderAnalysis = true, rerenderTracked = true } = opts;
   await loadTrackedBetsCache(force);
@@ -1116,9 +1197,11 @@ async function renderTrackedShell(){
     const settlementSub = String(r.status || '') === 'settled'
       ? `Return ${fmtUnits(r.payout)} · P/L ${fmtUnits(r.profit)} · ROI ${fmtPct(r.roi)}`
       : 'Awaiting result';
+    const multiTag = buildTrackedMultiTag(r);
+    const multiSub = trackedGroupMeta(r).isMulti ? ` · ${escapeHtml(trackedGroupMeta(r).groupLabel)}` : '';
     return `<div class='row tracked-row' data-id='${escapeAttr(String(r.id || ''))}' data-meeting='${escapeAttr(String(r.meeting || ''))}' data-race='${escapeAttr(String(r.race || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>
       <div><span class='badge'>${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || ''))}</div>
-      <div>${escapeHtml(String(r.selection || ''))}<div class='sub'>${escapeHtml(String(r.betType || 'Win'))}${r.jumpsIn ? ` · ${escapeHtml(String(r.jumpsIn))}` : ''}</div></div>
+      <div>${escapeHtml(String(r.selection || ''))}${multiTag ? ` <span class='runner-tag-row'>${multiTag}</span>` : ''}<div class='sub'>${escapeHtml(String(r.betType || 'Win'))}${multiSub}${r.jumpsIn ? ` · ${escapeHtml(String(r.jumpsIn))}` : ''}</div></div>
       <div>${escapeHtml(String(r.status || 'active'))}<div class='sub'><span class='tag ${badge}'>${escapeHtml(result.toUpperCase())}</span></div></div>
       <div>Entry ${entryOdds}<div class='sub'>${currentSub}</div></div>
       <div class='right'>
@@ -8742,6 +8825,7 @@ function renderHorseAnalysis(race, runner){
   const colourText = escapeHtml(runner.colour || '—');
   const trainerLocText = escapeHtml(runner.trainer_location || '—');
   const ownersText = escapeHtml(runner.owners || '—');
+  const trackedMeta = trackedGroupMeta(trackedBet || {});
   const trackedButtonLabel = trackedBet ? 'TRACKED' : 'Track Runner';
   const trackedButtonClass = trackedBet ? 'btn btn-ghost compact-btn track-runner-btn is-tracked' : 'btn btn-ghost compact-btn track-runner-btn';
 
@@ -8763,7 +8847,7 @@ function renderHorseAnalysis(race, runner){
     </div>
     <div class='btn-row' style='margin-top:12px'>
       <button class='${trackedButtonClass}' type='button' data-track-runner='1' data-meeting='${escapeAttr(String(race?.meeting || ''))}' data-race='${escapeAttr(String(race?.race_number || race?.race || ''))}' data-runner='${escapeAttr(String(runner?.name || runner?.runner_name || ''))}'>${trackedButtonLabel}</button>
-      ${trackedBet ? `<span class='tag tracked'>Entry ${trackedBet.odds != null ? escapeHtml(Number(trackedBet.odds).toFixed(2)) : '—'}${trackedBet.jumpsIn ? ` · ${escapeHtml(String(trackedBet.jumpsIn))}` : ''}</span>` : ''}
+      ${trackedBet ? `<span class='tag tracked'>${trackedMeta.isMulti ? `${escapeHtml(trackedMeta.groupLabel)} · ` : ''}Entry ${trackedBet.odds != null ? escapeHtml(Number(trackedBet.odds).toFixed(2)) : '—'}${trackedBet.jumpsIn ? ` · ${escapeHtml(String(trackedBet.jumpsIn))}` : ''}</span>` : ''}
     </div>
     <table>
       <tr><th>Odds</th><th>Implied Win%</th><th>Track</th><th>Distance</th><th>Track Cond</th><th>1st Up</th><th>2nd Up</th></tr>
@@ -10256,7 +10340,7 @@ function renderAnalysis(race, modeOverride){
     if (!norm) return '';
     const tags = [];
     const trackedBet = findTrackedBet(race?.meeting, race?.race_number || race?.race, runner?.name || runner?.runner_name || runner?.selection || '');
-    if (trackedBet) tags.push(`<span class='tag tracked'>TRACKED</span>`);
+    if (trackedBet) tags.push(`<span class='tag tracked'>${trackedGroupMeta(trackedBet).isMulti ? 'MULTI' : 'TRACKED'}</span>`);
     if (decisionEngine.recommended.key && norm === decisionEngine.recommended.key) {
       tags.push(`<span class='tag win'>Recommended Bet</span>`);
     }
@@ -11859,11 +11943,17 @@ function renderAiSelectionBasket(){
   wrap.innerHTML = `
     <div class='ai-basket-head'>
       <span>Dragged selections: ${draggedSelections.length} · Likely format: ${likelyDraggedFormat()}</span>
-      <button id='aiBasketClear' class='btn btn-ghost compact-btn'>Clear</button>
+      <div class='btn-row'>
+        <button id='aiBasketTrackMulti' class='btn btn-ghost compact-btn' ${draggedSelections.length >= 2 ? '' : 'disabled'}>Track Multi</button>
+        <button id='aiBasketClear' class='btn btn-ghost compact-btn'>Clear</button>
+      </div>
     </div>
     <div class='ai-basket-items'>${rows}</div>
   `;
 
+  wrap.querySelector('#aiBasketTrackMulti')?.addEventListener('click', ()=>{
+    trackDraggedSelectionsAsMulti().catch(() => alert('Failed to track multi.'));
+  });
   wrap.querySelector('#aiBasketClear')?.addEventListener('click', ()=>{
     draggedSelections = [];
     renderAiSelectionBasket();

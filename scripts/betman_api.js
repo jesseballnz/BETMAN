@@ -186,6 +186,50 @@ function filterAlertsByPulseConfig(rows, config) {
   });
 }
 
+function normalizeTrackedMultiPayload(payload = {}) {
+  const groupType = String(payload.groupType || payload.group_type || '').trim().toLowerCase();
+  const groupId = String(payload.groupId || payload.group_id || '').trim();
+  const groupLabel = String(payload.groupLabel || payload.group_label || '').trim();
+  const groupSizeRaw = Number(payload.groupSize ?? payload.group_size);
+  const legIndexRaw = Number(payload.legIndex ?? payload.leg_index);
+  const legs = Array.isArray(payload.legs)
+    ? payload.legs.map((leg, index) => ({
+        meeting: String(leg?.meeting || '').trim(),
+        race: String(leg?.race || '').replace(/^R/i, '').trim(),
+        selection: String(leg?.selection || '').trim(),
+        odds: Number.isFinite(Number(leg?.odds)) ? Number(leg.odds) : null,
+        legIndex: Number.isFinite(Number(leg?.legIndex)) ? Number(leg.legIndex) : index + 1,
+      })).filter((leg) => leg.meeting && leg.race && leg.selection)
+    : [];
+
+  if (groupType !== 'multi' || !groupId) {
+    return {
+      groupType: null,
+      groupId: null,
+      groupLabel: null,
+      groupSize: null,
+      legIndex: null,
+      legs: [],
+    };
+  }
+
+  const derivedGroupSize = Number.isFinite(groupSizeRaw) && groupSizeRaw > 0
+    ? Math.round(groupSizeRaw)
+    : (legs.length || null);
+  const derivedLegIndex = Number.isFinite(legIndexRaw) && legIndexRaw > 0
+    ? Math.round(legIndexRaw)
+    : null;
+
+  return {
+    groupType,
+    groupId,
+    groupLabel: groupLabel || (derivedGroupSize ? `${derivedGroupSize}-Leg Multi` : 'Multi'),
+    groupSize: derivedGroupSize,
+    legIndex: derivedLegIndex,
+    legs,
+  };
+}
+
 /* ── Route handler factory ─────────────────────────────────────────── */
 
 /**
@@ -709,6 +753,7 @@ function createApiHandler(deps) {
             status: 'active',
             result: 'pending',
             settledAt: null,
+            ...normalizeTrackedMultiPayload(payload),
           };
           if (!next.meeting || !next.race || !next.selection) return apiError(req, res, 400, 'invalid_payload', 'meeting, race, and selection are required.', rateInfo);
           fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
