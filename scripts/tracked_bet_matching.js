@@ -63,53 +63,104 @@ function buildComparableBet(row = {}) {
   };
 }
 
-function matchSettledBet(trackedBet, settledRows) {
+function buildRaceResultIndex(settledRows = []) {
+  const rows = Array.isArray(settledRows) ? settledRows : [];
+  const byRace = new Map();
+
+  for (const row of rows) {
+    const comparable = buildComparableBet(row);
+    if (!comparable.meeting || !comparable.race) continue;
+    const key = `${comparable.meeting}|${comparable.race}`;
+    const current = byRace.get(key) || {
+      meeting: row.meeting,
+      race: normalizeRace(row.race),
+      winner: null,
+      positions: new Map(),
+      rows: [],
+      settledAt: null,
+    };
+
+    current.rows.push(row);
+    if (!current.settledAt && (row.settledAt || row.settled_at)) {
+      current.settledAt = row.settledAt || row.settled_at;
+    }
+
+    const winnerName = row.winner || null;
+    if (winnerName && !current.winner) current.winner = winnerName;
+
+    const position = Number(row.position);
+    const selection = row.selection || null;
+    if (Number.isFinite(position) && selection) {
+      current.positions.set(normalizeSelection(selection), position);
+      if (position === 1 && !current.winner) current.winner = selection;
+    }
+
+    byRace.set(key, current);
+  }
+
+  return byRace;
+}
+
+function buildTrackedSettlementSource(trackedBet, settledRows, raceResultIndex = null) {
   const tracked = buildComparableBet(trackedBet);
   if (!tracked.meeting || !tracked.race || !tracked.selection) return null;
   const rows = Array.isArray(settledRows) ? settledRows : [];
-  let best = null;
-  let bestScore = -1;
-  const raceRows = [];
+  const raceMap = raceResultIndex instanceof Map ? raceResultIndex : buildRaceResultIndex(rows);
+  const raceKey = `${tracked.meeting}|${tracked.race}`;
+  const raceResult = raceMap.get(raceKey) || null;
+  const trackedType = normalizeBetType(trackedBet.betType || trackedBet.type);
 
-  for (const row of rows) {
+  let exactMatch = null;
+  let familyMatch = null;
+  const raceRows = raceResult?.rows || [];
+
+  for (const row of raceRows) {
     const settled = buildComparableBet(row);
-    if (settled.meeting !== tracked.meeting) continue;
-    if (settled.race !== tracked.race) continue;
-    raceRows.push(row);
     if (settled.selection !== tracked.selection) continue;
-
-    let score = 0;
-    if (settled.type === tracked.type) score = 3;
-    else if (settled.family === tracked.family) score = 2;
-    else continue;
-
-    if (score > bestScore) {
-      best = row;
-      bestScore = score;
-      if (score === 3) break;
+    if (settled.type === tracked.type) {
+      exactMatch = row;
+      break;
+    }
+    if (!familyMatch && settled.family === tracked.family) {
+      familyMatch = row;
     }
   }
 
-  if (best) return best;
+  if (exactMatch) return { kind: 'settled-row', row: exactMatch, raceResult };
+  if (!raceResult) return familyMatch ? { kind: 'settled-row', row: familyMatch, raceResult } : null;
+  if (trackedType !== 'win' && trackedType !== 'ew') return familyMatch ? { kind: 'settled-row', row: familyMatch, raceResult } : null;
 
-  const trackedType = normalizeBetType(trackedBet.betType || trackedBet.type);
-  if (trackedType !== 'win' && trackedType !== 'ew') return null;
+  const winnerNorm = normalizeSelection(raceResult.winner);
+  const trackedSelection = tracked.selection;
+  const position = raceResult.positions.get(trackedSelection) ?? (winnerNorm === trackedSelection ? 1 : null);
 
-  const winnerFallback = raceRows.find((row) => normalizeSelection(row.winner) === tracked.selection);
-  if (!winnerFallback) return null;
+  if (winnerNorm !== trackedSelection && position == null) {
+    return familyMatch ? { kind: 'settled-row', row: familyMatch, raceResult } : null;
+  }
 
-  const isWinner = true;
-  const ewPlaced = true;
-  const result = trackedType === 'ew' ? 'ew_win' : 'win';
+  const result = trackedType === 'ew'
+    ? ((position === 1) ? 'ew_win' : (Number.isFinite(position) && position <= 3 ? 'ew_place' : 'ew_loss'))
+    : (winnerNorm === trackedSelection ? 'win' : 'loss');
 
   return {
-    ...winnerFallback,
-    selection: trackedBet.selection,
-    type: trackedType,
-    result,
-    position: 1,
-    winner: winnerFallback.winner || trackedBet.selection,
+    kind: 'race-result',
+    row: {
+      meeting: trackedBet.meeting,
+      race: trackedBet.race,
+      selection: trackedBet.selection,
+      type: trackedType,
+      result,
+      position,
+      winner: raceResult.winner || trackedBet.selection,
+      settled_at: raceResult.settledAt || null,
+    },
+    raceResult,
   };
+}
+
+function matchSettledBet(trackedBet, settledRows, raceResultIndex = null) {
+  const source = buildTrackedSettlementSource(trackedBet, settledRows, raceResultIndex);
+  return source?.row || null;
 }
 
 function buildSettledBetKey(row = {}) {
@@ -198,6 +249,28 @@ function toSettledResult(result) {
   return canonical;
 }
 
+function resolveTrackedBet(row = {}, settledRows = [], raceResultIndex = null) {
+  const hit = matchSettledBet(row, settledRows, raceResultIndex);
+  if (!hit) return row;
+  const settlement = buildTrackedSettlement(hit, row);
+  return {
+    ...row,
+    status: settlement.status,
+    result: settlement.result,
+    settledAt: settlement.settledAt,
+    payout: settlement.payout,
+    profit: settlement.profit,
+    roi: settlement.roi,
+    position: settlement.position,
+    winner: settlement.winner,
+  };
+}
+
+function resolveTrackedBets(rows = [], settledRows = [], raceResultIndex = null) {
+  const raceMap = raceResultIndex instanceof Map ? raceResultIndex : buildRaceResultIndex(settledRows);
+  return (Array.isArray(rows) ? rows : []).map((row) => resolveTrackedBet(row, settledRows, raceMap));
+}
+
 function buildTrackedSettledBetRow(trackedRow = {}, settledRow = {}) {
   const settlement = buildTrackedSettlement(settledRow, trackedRow);
   if (settlement.status !== 'settled') return null;
@@ -230,12 +303,13 @@ function normalizeUserKey(value) {
   return raw.includes('@') ? raw.toLowerCase() : raw;
 }
 
-function buildVisibleSettledRows(principal = {}, trackedRows = [], settledRows = []) {
+function buildVisibleSettledRows(principal = {}, trackedRows = [], settledRows = [], raceResultIndex = null) {
   const username = normalizeUserKey(principal.username || '');
+  const raceMap = raceResultIndex instanceof Map ? raceResultIndex : buildRaceResultIndex(settledRows);
   const trackedSettledRows = (Array.isArray(trackedRows) ? trackedRows : [])
     .filter((row) => normalizeUserKey(row.username || '') === username)
     .map((row) => {
-      const hit = matchSettledBet(row, settledRows);
+      const hit = matchSettledBet(row, settledRows, raceMap);
       return hit ? buildTrackedSettledBetRow(row, hit) : null;
     })
     .filter(Boolean);
@@ -272,10 +346,14 @@ module.exports = {
   normalizeBetType,
   betTypeFamily,
   buildComparableBet,
+  buildRaceResultIndex,
+  buildTrackedSettlementSource,
   matchSettledBet,
   buildSettledBetKey,
   canonicalTrackedResult,
   buildTrackedSettlement,
+  resolveTrackedBet,
+  resolveTrackedBets,
   buildTrackedSettledBetRow,
   buildVisibleSettledRows,
 };

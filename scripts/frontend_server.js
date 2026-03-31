@@ -6,7 +6,7 @@ const path = require('path');
 const dns = require('dns');
 const { mergePublicStatusLists } = require('./status_snapshot_merge');
 const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
-const { matchSettledBet, buildTrackedSettlement, buildTrackedSettledBetRow, buildVisibleSettledRows } = require('./tracked_bet_matching');
+const { buildRaceResultIndex, resolveTrackedBet, buildVisibleSettledRows } = require('./tracked_bet_matching');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -108,6 +108,7 @@ const DEFAULT_PULSE_CONFIG = Object.freeze({
     conflicts: true,
     selectionFlips: true,
     preJumpHeat: true,
+    jumpPulse: true,
   },
   thresholds: {
     minSeverity: 'HOT',
@@ -173,6 +174,7 @@ function normalizePulseConfig(raw = {}, principal = null){
       conflicts: alertTypes.conflicts !== false,
       selectionFlips: alertTypes.selectionFlips !== false,
       preJumpHeat: alertTypes.preJumpHeat !== false,
+      jumpPulse: alertTypes.jumpPulse !== false,
     },
     thresholds: normalizePulseThresholds(raw?.thresholds || {}),
     updatedAt: raw?.updatedAt || null,
@@ -189,6 +191,7 @@ function pulseConfigKeyForAlertType(type){
   if (t === 'market_conflict') return 'conflicts';
   if (t === 'selection_flip_recommended' || t === 'selection_flip_odds_runner' || t === 'selection_flip_ew') return 'selectionFlips';
   if (t === 'prejump_heat') return 'preJumpHeat';
+  if (t === 'jump_pulse') return 'jumpPulse';
   return null;
 }
 
@@ -426,17 +429,17 @@ async function initAuthPersistence(){
 
 function getCorsHeaders(req){
   const origin = String(req?.headers?.origin || '').trim();
-  const allowed = new Set(
-    String(process.env.BETMAN_CORS_ORIGINS || 'http://localhost:8081,http://127.0.0.1:8081,http://localhost:8080,http://127.0.0.1:8080')
-      .split(',')
-      .map((v) => String(v || '').trim())
-      .filter(Boolean)
-  );
-  const allowOrigin = allowed.has(origin) ? origin : 'http://localhost:8081';
+  const configured = String(process.env.BETMAN_CORS_ORIGINS || 'http://localhost:8081,http://127.0.0.1:8081,http://localhost:8080,http://127.0.0.1:8080')
+    .split(',')
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+  const allowed = new Set(configured);
+  const isPublicTunnel = /^https:\/\/[a-z0-9.-]+\.(?:ngrok-free\.dev|ngrok\.io)$/i.test(origin);
+  const allowOrigin = origin && (allowed.has(origin) || isPublicTunnel) ? origin : (configured[0] || '*');
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-API-Key',
     'Access-Control-Allow-Credentials': 'true',
     'Vary': 'Origin'
   };
@@ -6000,7 +6003,8 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const trackedPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
     const settledRows = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
     const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
-    return okJson(res, buildVisibleSettledRows(principal, trackedRows, settledRows), 200, req);
+    const raceResultIndex = buildRaceResultIndex(settledRows);
+    return okJson(res, buildVisibleSettledRows(principal, trackedRows, settledRows, raceResultIndex), 200, req);
   }
 
   if (url.pathname === '/api/v1/tracked-bets') {
@@ -6013,30 +6017,13 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
 
     const allTracked = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
     const settled = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
-    const norm = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+    const raceResultIndex = buildRaceResultIndex(settled);
     const liveContext = buildTrackedBetLiveContext(tenantId);
-
-    const resolveTrackedBet = (row) => {
-      const hit = matchSettledBet(row, settled);
-      if (!hit) return row;
-      const settlement = buildTrackedSettlement(hit, row);
-      return {
-        ...row,
-        status: settlement.status,
-        result: settlement.result,
-        settledAt: settlement.settledAt,
-        payout: settlement.payout,
-        profit: settlement.profit,
-        roi: settlement.roi,
-        position: settlement.position,
-        winner: settlement.winner,
-      };
-    };
 
     if (req.method === 'GET') {
       const mineResolved = allTracked
         .filter(row => normalizeUsername(row.username || '') === username)
-        .map(resolveTrackedBet)
+        .map(row => resolveTrackedBet(row, settled, raceResultIndex))
         .sort((a,b) => String(b.trackedAt || '').localeCompare(String(a.trackedAt || '')));
       const mine = mineResolved.map(row => enrichTrackedBetWithCurrentOdds(row, liveContext));
       if (JSON.stringify(mineResolved) !== JSON.stringify(allTracked.filter(row => normalizeUsername(row.username || '') === username))) {

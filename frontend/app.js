@@ -738,6 +738,7 @@ function alertTypeTag(type){
   if (t === 'selection_flip_odds_runner') return 'ODDS RUNNER FLIP';
   if (t === 'selection_flip_ew') return 'EW FLIP';
   if (t === 'prejump_heat') return 'PRE-JUMP HEAT';
+  if (t === 'jump_pulse') return 'JUMP PULSE';
   return 'PULSE ALERT';
 }
 
@@ -763,6 +764,7 @@ const DEFAULT_PULSE_CONFIG = {
     conflicts: true,
     selectionFlips: true,
     preJumpHeat: true,
+    jumpPulse: true,
   },
   thresholds: {
     minSeverity: 'HOT',
@@ -810,6 +812,7 @@ function normalizePulseConfig(payload){
       conflicts: alertTypes.conflicts !== false,
       selectionFlips: alertTypes.selectionFlips !== false,
       preJumpHeat: alertTypes.preJumpHeat !== false,
+      jumpPulse: alertTypes.jumpPulse !== false,
     },
     thresholds: normalizePulseThresholds(payload),
     updatedAt: payload?.updatedAt || null,
@@ -824,6 +827,7 @@ function pulseConfigKeyForAlertType(type){
   if (t === 'market_conflict') return 'conflicts';
   if (t === 'selection_flip_recommended' || t === 'selection_flip_odds_runner' || t === 'selection_flip_ew') return 'selectionFlips';
   if (t === 'prejump_heat') return 'preJumpHeat';
+  if (t === 'jump_pulse') return 'jumpPulse';
   return null;
 }
 
@@ -886,6 +890,7 @@ function pulseTypeMeta(){
     { key: 'conflicts', label: 'Conflicts', desc: 'Market conflict alerts.' },
     { key: 'selectionFlips', label: 'Selection flips', desc: 'Recommended / odds runner / EW flips.' },
     { key: 'preJumpHeat', label: 'Pre-jump heat', desc: 'Late pre-jump heat signals.' },
+    { key: 'jumpPulse', label: 'Jump Pulse', desc: 'Tracked runner alert at jump window (3m or less).' },
   ];
 }
 
@@ -12530,7 +12535,7 @@ async function renderAuthPulseSettingsPanel(){
       <div class='row'><div><b>Minimum severity</b></div><div>${escapeHtml(String(thresholds.minSeverity || 'WATCH'))}</div></div>
       <div class='row'><div><b>Minimum move %</b></div><div>${thresholds.minMovePct == null ? 'Off' : `${thresholds.minMovePct}%`}</div></div>
       <div class='row'><div><b>Tracked override</b></div><div>${thresholds.trackedRunnerOverride ? 'On' : 'Off'}</div></div>
-      <div class='row'><div><b>Alert types</b></div><div>${['plunges','drifts','conflicts','selectionFlips','preJumpHeat'].filter(k => alertTypes[k]).join(' · ') || 'None enabled'}</div></div>
+      <div class='row'><div><b>Alert types</b></div><div>${['plunges','drifts','conflicts','selectionFlips','preJumpHeat','jumpPulse'].filter(k => alertTypes[k]).join(' · ') || 'None enabled'}</div></div>
       <div class='row'><div style='grid-column:1/-1'><button id='openPulseConfigFromAuth' class='btn btn-ghost compact-btn'>Open Full Pulse Config</button></div></div>
     `;
     $('openPulseConfigFromAuth')?.addEventListener('click', () => {

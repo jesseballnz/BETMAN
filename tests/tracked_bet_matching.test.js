@@ -5,10 +5,14 @@ const assert = require('assert');
 const {
   normalizeSelection,
   normalizeBetType,
+  buildRaceResultIndex,
+  buildTrackedSettlementSource,
   matchSettledBet,
   buildSettledBetKey,
   canonicalTrackedResult,
   buildTrackedSettlement,
+  resolveTrackedBet,
+  resolveTrackedBets,
   buildTrackedSettledBetRow,
   buildVisibleSettledRows,
 } = require('../scripts/tracked_bet_matching');
@@ -51,6 +55,25 @@ const winnerFallback = matchSettledBet(
 assert.strictEqual(winnerFallback && winnerFallback.selection, 'Cavalry');
 assert.strictEqual(winnerFallback && winnerFallback.result, 'win');
 assert.strictEqual(winnerFallback && winnerFallback.position, 1);
+
+const raceIndex = buildRaceResultIndex([
+  { meeting: 'Newcastle', race: '1', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Cavalry', settled_at: '2026-03-31T04:05:06.000Z' },
+  { meeting: 'Newcastle', race: '1', selection: 'Dubliners', type: 'odds_runner', result: 'loss', position: 8, winner: 'Cavalry' },
+]);
+assert.strictEqual(raceIndex.get('newcastle|1').winner, 'Cavalry');
+assert.strictEqual(raceIndex.get('newcastle|1').positions.get('sarapo'), 3);
+
+const raceFirstSource = buildTrackedSettlementSource(
+  { meeting: 'Newcastle', race: '1', selection: 'Cavalry', betType: 'Win', entryOdds: 3.3, stake: 5 },
+  [
+    { meeting: 'Newcastle', race: '1', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Cavalry', settled_at: '2026-03-31T04:05:06.000Z' },
+    { meeting: 'Newcastle', race: '1', selection: 'Dubliners', type: 'odds_runner', result: 'loss', position: 8, winner: 'Cavalry' },
+  ],
+  raceIndex,
+);
+assert.strictEqual(raceFirstSource && raceFirstSource.kind, 'race-result');
+assert.strictEqual(raceFirstSource && raceFirstSource.row && raceFirstSource.row.result, 'win');
+assert.strictEqual(raceFirstSource && raceFirstSource.row && raceFirstSource.row.position, 1);
 
 assert.strictEqual(
   buildSettledBetKey({ meeting: 'Newcastle', race: 'R1', selection: '7. Cavalry', type: 'Each Way' }),
@@ -108,6 +131,130 @@ assert.deepStrictEqual(
     position: null,
     winner: null,
   }
+);
+
+assert.deepStrictEqual(
+  resolveTrackedBet(
+    {
+      id: 'tracked-win',
+      meeting: 'Newcastle',
+      race: '1',
+      selection: 'Cavalry',
+      betType: 'Win',
+      stake: 5,
+      entryOdds: 3.3,
+      status: 'active',
+      result: 'pending',
+    },
+    [
+      { meeting: 'Newcastle', race: '1', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Cavalry', settled_at: '2026-03-31T04:05:06.000Z' },
+      { meeting: 'Newcastle', race: '1', selection: 'Dubliners', type: 'odds_runner', result: 'loss', position: 8, winner: 'Cavalry' },
+    ],
+    raceIndex,
+  ),
+  {
+    id: 'tracked-win',
+    meeting: 'Newcastle',
+    race: '1',
+    selection: 'Cavalry',
+    betType: 'Win',
+    stake: 5,
+    entryOdds: 3.3,
+    status: 'settled',
+    result: 'won',
+    settledAt: '2026-03-31T04:05:06.000Z',
+    payout: 16.5,
+    profit: 11.5,
+    roi: 2.3,
+    position: 1,
+    winner: 'Cavalry',
+  }
+);
+
+assert.deepStrictEqual(
+  resolveTrackedBet(
+    {
+      id: 'tracked-loss',
+      meeting: 'Newcastle',
+      race: '1',
+      selection: 'Sarapo',
+      betType: 'Win',
+      stake: 5,
+      entryOdds: 3.3,
+      status: 'active',
+      result: 'pending',
+    },
+    [
+      { meeting: 'Newcastle', race: '1', selection: 'Cavalry', type: 'win', result: 'win', position: 1, winner: 'Cavalry', settled_at: '2026-03-31T04:05:06.000Z' },
+      { meeting: 'Newcastle', race: '1', selection: 'Dubliners', type: 'odds_runner', result: 'loss', position: 8, winner: 'Cavalry' },
+    ]
+  ),
+  {
+    id: 'tracked-loss',
+    meeting: 'Newcastle',
+    race: '1',
+    selection: 'Sarapo',
+    betType: 'Win',
+    stake: 5,
+    entryOdds: 3.3,
+    status: 'active',
+    result: 'pending',
+  },
+  'no direct row and no tracked position should stay unresolved'
+);
+
+assert.deepStrictEqual(
+  resolveTrackedBet(
+    {
+      id: 'tracked-ew',
+      meeting: 'Newcastle',
+      race: '1',
+      selection: 'Sarapo',
+      betType: 'EW',
+      stake: 5,
+      entryOdds: 8,
+      status: 'active',
+      result: 'pending',
+    },
+    [
+      { meeting: 'Newcastle', race: '1', selection: 'Cavalry', type: 'win', result: 'win', position: 1, winner: 'Cavalry', settled_at: '2026-03-31T04:05:06.000Z' },
+      { meeting: 'Newcastle', race: '1', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Cavalry' },
+    ]
+  ),
+  {
+    id: 'tracked-ew',
+    meeting: 'Newcastle',
+    race: '1',
+    selection: 'Sarapo',
+    betType: 'EW',
+    stake: 5,
+    entryOdds: 8,
+    status: 'settled',
+    result: 'won',
+    settledAt: '2026-03-31T04:05:06.000Z',
+    payout: null,
+    profit: null,
+    roi: null,
+    position: 3,
+    winner: 'Cavalry',
+  }
+);
+
+assert.deepStrictEqual(
+  resolveTrackedBets(
+    [
+      { id: 'tracked-win', meeting: 'Newcastle', race: '1', selection: 'Cavalry', betType: 'Win', stake: 5, entryOdds: 3.3, status: 'active', result: 'pending' },
+      { id: 'tracked-missing', meeting: 'Newcastle', race: '2', selection: 'Unknown', betType: 'Win', stake: 5, entryOdds: 2.2, status: 'active', result: 'pending' },
+    ],
+    [
+      { meeting: 'Newcastle', race: '1', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Cavalry', settled_at: '2026-03-31T04:05:06.000Z' },
+    ],
+    raceIndex,
+  ).map((row) => ({ id: row.id, status: row.status, result: row.result, winner: row.winner || null })),
+  [
+    { id: 'tracked-win', status: 'settled', result: 'won', winner: 'Cavalry' },
+    { id: 'tracked-missing', status: 'active', result: 'pending', winner: null },
+  ]
 );
 
 assert.deepStrictEqual(

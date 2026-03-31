@@ -15,7 +15,7 @@ const historyPath = path.join(tenantDir, 'alerts_history.json');
 fs.mkdirSync(tmpDir, { recursive: true });
 fs.mkdirSync(tenantDir, { recursive: true });
 
-const advertisedStart = new Date(Date.now() + (8 * 60 * 1000)).toISOString();
+const advertisedStart = new Date(Date.now() + (2 * 60 * 1000)).toISOString();
 const state = {
   ts: new Date().toISOString(),
   races: {
@@ -52,10 +52,33 @@ const previousStatus = {
   }
 };
 
+const trackedBetsPath = path.join(tenantDir, 'tracked_bets.json');
+const pulseConfigPath = path.join(tenantDir, 'pulse_config.json');
+
 fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
 fs.writeFileSync(statusPath, JSON.stringify(previousStatus, null, 2));
 fs.writeFileSync(alertsPath, JSON.stringify({ updatedAt: null, alerts: [] }, null, 2));
 fs.writeFileSync(historyPath, JSON.stringify([], null, 2));
+fs.writeFileSync(trackedBetsPath, JSON.stringify([
+  { meeting: 'Newcastle', race: '7', selection: 'Wild Thoughts', betType: 'Win', status: 'active' },
+  { meeting: 'Newcastle', race: '7', selection: 'Lord Of Biscay', betType: 'Win', status: 'settled' }
+], null, 2));
+fs.writeFileSync(pulseConfigPath, JSON.stringify({
+  alertTypes: {
+    plunges: true,
+    drifts: true,
+    conflicts: true,
+    selectionFlips: true,
+    preJumpHeat: true,
+    jumpPulse: true
+  },
+  thresholds: {
+    minSeverity: 'HOT',
+    maxMinsToJump: null,
+    minMovePct: null,
+    trackedRunnerOverride: true
+  }
+}, null, 2));
 
 execFileSync('node', [path.join(root, 'scripts', 'status_writer.js'), `--state_path=${statePath}`, `--status_path=${statusPath}`], {
   cwd: root,
@@ -69,5 +92,13 @@ assert(alertsFeed.alerts.length > 0, 'expected live alerts for meaningful untrac
 const critical = alertsFeed.alerts.find(a => a.selection === 'Wild Thoughts');
 assert(critical, 'expected Wild Thoughts mover alert');
 assert(['CRITICAL', 'HOT', 'ACTION'].includes(critical.severity), 'meaningful mover should be surfaced above INFO/WATCH');
+
+const jumpPulse = alertsFeed.alerts.find(a => a.type === 'jump_pulse' && a.selection === 'Wild Thoughts');
+assert(jumpPulse, 'expected jump pulse alert for tracked runner inside 3-minute window');
+assert(jumpPulse.minsToJump >= 0 && jumpPulse.minsToJump <= 3, 'jump pulse should stay inside the 3-minute window');
+assert.strictEqual(jumpPulse.trackedRunner, true);
+
+const settledTracked = alertsFeed.alerts.find(a => a.type === 'jump_pulse' && a.selection === 'Lord Of Biscay');
+assert.strictEqual(settledTracked, undefined, 'settled tracked runners should not emit jump pulse alerts');
 
 console.log('alerts_generation tests passed');

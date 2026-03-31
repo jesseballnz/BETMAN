@@ -15,7 +15,7 @@
 const crypto = require('crypto');
 const path   = require('path');
 const fs     = require('fs');
-const { matchSettledBet, buildTrackedSettlement } = require('./tracked_bet_matching');
+const { buildRaceResultIndex, resolveTrackedBet } = require('./tracked_bet_matching');
 
 /* ── Configuration ─────────────────────────────────────────────────── */
 const API_VERSION = '1.0.0';
@@ -30,6 +30,7 @@ const DEFAULT_PULSE_CONFIG = Object.freeze({
     conflicts: true,
     selectionFlips: true,
     preJumpHeat: true,
+    jumpPulse: true,
   },
   thresholds: {
     minSeverity: 'HOT',
@@ -185,6 +186,7 @@ function normalizePulseConfig(raw = {}, principal = null) {
       conflicts: alertTypes.conflicts !== false,
       selectionFlips: alertTypes.selectionFlips !== false,
       preJumpHeat: alertTypes.preJumpHeat !== false,
+      jumpPulse: alertTypes.jumpPulse !== false,
     },
     thresholds: normalizePulseThresholds(raw?.thresholds || {}),
     updatedAt: raw?.updatedAt || null,
@@ -199,6 +201,7 @@ function pulseConfigKeyForAlertType(type) {
   if (t === 'market_conflict') return 'conflicts';
   if (t === 'selection_flip_recommended' || t === 'selection_flip_odds_runner' || t === 'selection_flip_ew') return 'selectionFlips';
   if (t === 'prejump_heat') return 'preJumpHeat';
+  if (t === 'jump_pulse') return 'jumpPulse';
   return null;
 }
 
@@ -753,24 +756,10 @@ function createApiHandler(deps) {
         : path.join(rootDir, 'frontend', 'data', 'settled_bets.json');
       const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
       const settledRows = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
+      const raceResultIndex = buildRaceResultIndex(settledRows);
       const normalize = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
       const mine = trackedRows.filter((row) => normalize(row.username) === normalize(principal.username));
-      const resolved = mine.map((row) => {
-        const hit = matchSettledBet(row, settledRows);
-        if (!hit) return row;
-        const settlement = buildTrackedSettlement(hit, row);
-        return {
-          ...row,
-          status: settlement.status,
-          result: settlement.result,
-          settledAt: settlement.settledAt,
-          payout: settlement.payout,
-          profit: settlement.profit,
-          roi: settlement.roi,
-          position: settlement.position,
-          winner: settlement.winner,
-        };
-      });
+      const resolved = mine.map((row) => resolveTrackedBet(row, settledRows, raceResultIndex));
 
       if (req.method === 'GET') {
         return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBets: resolved }, 200, rateInfo), true;

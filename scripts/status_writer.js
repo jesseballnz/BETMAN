@@ -17,6 +17,7 @@ const DEFAULT_PULSE_CONFIG = Object.freeze({
     conflicts: true,
     selectionFlips: true,
     preJumpHeat: true,
+    jumpPulse: true,
   },
   thresholds: {
     minSeverity: 'HOT',
@@ -53,6 +54,7 @@ function normalizePulseConfig(raw = {}) {
       conflicts: alertTypes.conflicts !== false,
       selectionFlips: alertTypes.selectionFlips !== false,
       preJumpHeat: alertTypes.preJumpHeat !== false,
+      jumpPulse: alertTypes.jumpPulse !== false,
     },
     thresholds: normalizePulseThresholds(raw?.thresholds || {}),
     updatedAt: raw?.updatedAt || null,
@@ -67,6 +69,7 @@ function pulseConfigKeyForAlertType(type) {
   if (t === 'market_conflict') return 'conflicts';
   if (t === 'selection_flip_recommended' || t === 'selection_flip_odds_runner' || t === 'selection_flip_ew') return 'selectionFlips';
   if (t === 'prejump_heat') return 'preJumpHeat';
+  if (t === 'jump_pulse') return 'jumpPulse';
   return null;
 }
 
@@ -1153,7 +1156,37 @@ for (const [key, nextSel] of nextSelectionMap.entries()) {
   });
 }
 
-const pulseAlertsAll = filterPulseAlerts([...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts], pulseConfig).sort((a,b) => {
+const jumpPulseAlerts = trackedBets
+  .filter(row => String(row?.status || 'active').toLowerCase() !== 'settled')
+  .map((row) => {
+    const key = `${String(row?.meeting || '').trim().toLowerCase()}|${String(row?.race || '').replace(/^R/i,'').trim()}|${String(row?.selection || '').trim().toLowerCase()}`;
+    const mover = (status.marketMovers || []).find(x => `${String(x?.meeting || '').trim().toLowerCase()}|${String(x?.race || '').replace(/^R/i,'').trim()}|${String(x?.runner || '').trim().toLowerCase()}` === key);
+    const minsToJump = Number(mover?.minsToJump ?? row?.minsToJump);
+    if (!Number.isFinite(minsToJump) || minsToJump < 0 || minsToJump > 3) return null;
+    return {
+      id: `${key}|jump_pulse|${Math.round(minsToJump)}`,
+      ts: new Date().toISOString(),
+      tenantId,
+      scope: tenantId === 'default' ? 'SYSTEM' : 'TENANT',
+      type: 'jump_pulse',
+      severity: 'ACTION',
+      title: `ACTION Jump Pulse — ${row.meeting} R${row.race}`,
+      message: `${row.selection} jumps in ${Math.round(minsToJump)}m`,
+      status: 'live',
+      meeting: row.meeting,
+      race: String(row.race),
+      selection: row.selection,
+      trackedRunner: true,
+      trackedPriority: 2,
+      betmanRole: String(row?.betType || 'tracked').toLowerCase(),
+      minsToJump: Math.round(minsToJump),
+      interpretation: 'Tracked runner is approaching jump time',
+      action: 'REVIEW_TRACKED'
+    };
+  })
+  .filter(Boolean);
+
+const pulseAlertsAll = filterPulseAlerts([...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts, ...jumpPulseAlerts], pulseConfig).sort((a,b) => {
   const sev = { ACTION: 4, CRITICAL: 3, HOT: 2, WATCH: 1, INFO: 0 };
   if (sev[b.severity] !== sev[a.severity]) return sev[b.severity] - sev[a.severity];
   const trackedDelta = Number(b?.trackedPriority || (b?.trackedRunner ? 1 : 0)) - Number(a?.trackedPriority || (a?.trackedRunner ? 1 : 0));

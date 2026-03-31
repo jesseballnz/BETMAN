@@ -271,7 +271,8 @@ asyncTests.push((async () => {
       { id: '1', type: 'hot_plunge', selection: 'A', severity: 'CRITICAL', movePct: -12, minsToJump: 8 },
       { id: '2', type: 'hot_drift', selection: 'B', severity: 'HOT', movePct: 6, minsToJump: 8 },
       { id: '3', type: 'market_conflict', selection: 'C', severity: 'CRITICAL', minsToJump: 25 },
-      { id: '4', type: 'hot_plunge', selection: 'Tracked D', severity: 'WATCH', movePct: 3, minsToJump: 40, trackedRunner: true }
+      { id: '4', type: 'hot_plunge', selection: 'Tracked D', severity: 'WATCH', movePct: 3, minsToJump: 40, trackedRunner: true },
+      { id: '5', type: 'jump_pulse', selection: 'Tracked E', severity: 'ACTION', minsToJump: 2, trackedRunner: true }
     ]
   }, null, 2));
 
@@ -314,11 +315,12 @@ asyncTests.push((async () => {
   await handler(getReq, getRes, new URL('http://localhost/api/v1/alerts-feed'));
   assert.strictEqual(getRes.statusCode, 200);
   const feed = JSON.parse(getRes.body);
-  assert.strictEqual(feed.alerts.length, 2);
+  assert.strictEqual(feed.alerts.length, 3);
   assert.strictEqual(feed.alerts.some((row) => row.selection === 'B'), false);
   assert.strictEqual(feed.alerts.some((row) => row.selection === 'C'), false);
   assert.strictEqual(feed.alerts.some((row) => row.selection === 'A'), true);
   assert.strictEqual(feed.alerts.some((row) => row.selection === 'Tracked D'), true);
+  assert.strictEqual(feed.alerts.some((row) => row.selection === 'Tracked E'), true);
   console.log('  ✓ Pulse config route persists and filters tenant alerts + thresholds');
 })());
 
@@ -507,7 +509,47 @@ asyncTests.push((async () => {
   console.log('  ✓ ask-betman validation — missing question');
 })());
 
-// 21. Models endpoint
+// 21. tracked-bets endpoint resolves race-result-first winner/ew fallbacks
+asyncTests.push((async () => {
+  const testKey = generateApiKey();
+  const trackedRows = [
+    { id: 't1', username: 'alice', meeting: 'Newcastle', race: '1', selection: 'Cavalry', betType: 'Win', stake: 5, entryOdds: 3.3, status: 'active', result: 'pending' },
+    { id: 't2', username: 'alice', meeting: 'Newcastle', race: '2', selection: 'Sarapo', betType: 'EW', stake: 5, entryOdds: 8, status: 'active', result: 'pending' },
+    { id: 't3', username: 'alice', meeting: 'Newcastle', race: '3', selection: 'No Result Yet', betType: 'Win', stake: 5, entryOdds: 2.2, status: 'active', result: 'pending' },
+    { id: 't4', username: 'bob', meeting: 'Newcastle', race: '1', selection: 'Hidden', betType: 'Win', stake: 5, entryOdds: 10, status: 'active', result: 'pending' },
+  ];
+  const settledRows = [
+    { meeting: 'Newcastle', race: '1', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Cavalry', settled_at: '2026-03-31T04:05:06.000Z', stake_units: 1, return_units: 0, profit_units: -1 },
+    { meeting: 'Newcastle', race: '2', selection: 'Other Runner', type: 'win', result: 'win', position: 1, winner: 'Other Runner', settled_at: '2026-03-31T05:05:06.000Z' },
+    { meeting: 'Newcastle', race: '2', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Other Runner' },
+  ];
+  const handler = makeHandler({
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [{ key: testKey, label: 'Test', active: true }] }], adminApiKeys: [] }),
+    loadJson: (p, f) => {
+      if (p.includes('tracked_bets.json')) return trackedRows;
+      if (p.includes('settled_bets.json')) return settledRows;
+      return f;
+    }
+  });
+  const req = fakeReq('GET', '/api/v1/tracked-bets', { 'x-api-key': testKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/tracked-bets');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.trackedBets.length, 3);
+  assert.deepStrictEqual(
+    parsed.trackedBets.map((row) => ({ id: row.id, status: row.status, result: row.result, position: row.position ?? null, winner: row.winner ?? null })),
+    [
+      { id: 't1', status: 'settled', result: 'won', position: 1, winner: 'Cavalry' },
+      { id: 't2', status: 'settled', result: 'won', position: 3, winner: 'Other Runner' },
+      { id: 't3', status: 'active', result: 'pending', position: null, winner: null },
+    ]
+  );
+  console.log('  ✓ tracked-bets endpoint resolves race-result-first fallbacks');
+})());
+
+// 22. Models endpoint
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
