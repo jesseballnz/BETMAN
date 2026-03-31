@@ -1288,16 +1288,41 @@ function setActiveTrackedTab(tab){
   });
 }
 
+function trackedPriorityBand(row){
+  const mins = Number(row?.minsToJump);
+  const movePct = Math.abs(Number(row?.movePct || 0));
+  const isTrackedJumpPulse = String(row?.lastPulseType || '').toLowerCase() === 'jump_pulse';
+  if (isTrackedJumpPulse || (Number.isFinite(mins) && mins >= 0 && mins <= 3)) return 'PRIMARY';
+  if (movePct >= 10 || (Number.isFinite(mins) && mins <= 15)) return 'ACTIVE';
+  return 'PASSIVE';
+}
+
+function trackedPriorityRank(row){
+  const band = trackedPriorityBand(row);
+  if (band === 'PRIMARY') return 3;
+  if (band === 'ACTIVE') return 2;
+  return 1;
+}
+
 async function renderTrackedShell(){
   const table = $('trackedTable');
   if (!table) return;
   const rows = await loadTrackedBetsCache(true);
-  const filtered = rows.filter(r => trackedTab === 'settled' ? String(r.status) === 'settled' : String(r.status) !== 'settled');
+  const filtered = rows
+    .filter(r => trackedTab === 'settled' ? String(r.status) === 'settled' : String(r.status) !== 'settled')
+    .sort((a, b) => {
+      const pr = trackedPriorityRank(b) - trackedPriorityRank(a);
+      if (pr !== 0) return pr;
+      const am = Number(a?.minsToJump);
+      const bm = Number(b?.minsToJump);
+      if (Number.isFinite(am) && Number.isFinite(bm) && am !== bm) return am - bm;
+      return String(b?.trackedAt || '').localeCompare(String(a?.trackedAt || ''));
+    });
   if (!filtered.length) {
     table.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No ${trackedTab} tracked runners</div></div>`;
     return;
   }
-  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Odds</div><div class='right'>Stake / Settlement / Actions</div></div>` + filtered.map(r => {
+  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Odds</div><div class='right'>Stake / Settlement / Actions</div></div>` + filtered.map((r, index) => {
     const result = canonicalTrackedResultLabel(r.result);
     const badge = result === 'won' ? 'value' : (result === 'lost' ? 'danger' : 'ew');
     const entryOdds = formatTrackedOddsValue(r.entryOdds ?? r.odds);
@@ -1308,26 +1333,68 @@ async function renderTrackedShell(){
     const settlementSub = String(r.status || '') === 'settled'
       ? `Return ${fmtUnits(r.payout)} · P/L ${fmtUnits(r.profit)} · ROI ${fmtPct(r.roi)}`
       : 'Awaiting result';
+    const priorityBand = trackedPriorityBand(r);
+    const priorityClass = priorityBand === 'PRIMARY' ? 'value' : (priorityBand === 'ACTIVE' ? 'ew' : '');
     const multiTag = buildTrackedMultiTag(r);
     const multiSub = trackedGroupMeta(r).isMulti ? ` · ${escapeHtml(trackedGroupMeta(r).groupLabel)}` : '';
-    return `<div class='row tracked-row' data-id='${escapeAttr(String(r.id || ''))}' data-meeting='${escapeAttr(String(r.meeting || ''))}' data-race='${escapeAttr(String(r.race || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>
+    return `<div class='row tracked-row' draggable='true' data-index='${index}' data-id='${escapeAttr(String(r.id || ''))}' data-meeting='${escapeAttr(String(r.meeting || ''))}' data-race='${escapeAttr(String(r.race || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>
       <div><span class='badge'>${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || ''))}</div>
-      <div>${escapeHtml(String(r.selection || ''))}${multiTag ? ` <span class='runner-tag-row'>${multiTag}</span>` : ''}<div class='sub'>${escapeHtml(String(r.betType || 'Win'))}${multiSub}${r.jumpsIn ? ` · ${escapeHtml(String(r.jumpsIn))}` : ''}</div></div>
+      <div>${escapeHtml(String(r.selection || ''))}${multiTag ? ` <span class='runner-tag-row'>${multiTag}</span>` : ''} <span class='tag ${priorityClass}'>${priorityBand}</span><div class='sub'>${escapeHtml(String(r.betType || 'Win'))}${multiSub}${r.jumpsIn ? ` · ${escapeHtml(String(r.jumpsIn))}` : ''}</div></div>
       <div>${escapeHtml(String(r.status || 'active'))}<div class='sub'><span class='tag ${badge}'>${escapeHtml(result.toUpperCase())}</span></div></div>
       <div>Entry ${entryOdds}<div class='sub'>${currentSub}</div></div>
       <div class='right'>
         <div>${r.stake != null ? escapeHtml(String(r.stake)) : '—'}<div class='sub'>stake · ${settlementSub}</div></div>
+        <button class='btn btn-ghost compact-btn tracked-priority-up-btn' data-id='${escapeAttr(String(r.id || ''))}' title='Raise priority'>↑</button>
+        <button class='btn btn-ghost compact-btn tracked-priority-down-btn' data-id='${escapeAttr(String(r.id || ''))}' title='Lower priority'>↓</button>
         <button class='btn btn-ghost compact-btn tracked-edit-btn' data-id='${escapeAttr(String(r.id || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>Edit</button>
         <button class='btn btn-ghost compact-btn tracked-remove-btn' data-id='${escapeAttr(String(r.id || ''))}'>Untrack</button>
       </div>
     </div>`;
   }).join('');
 
-  table.querySelectorAll('.tracked-row').forEach(row => row.addEventListener('click', async () => {
-    const id = row.getAttribute('data-id');
-    if (!id) return;
-    await openTrackedEditorById(id);
-  }));
+  let draggedTrackedId = null;
+  table.querySelectorAll('.tracked-row').forEach(row => {
+    row.addEventListener('dragstart', (e) => {
+      draggedTrackedId = row.getAttribute('data-id');
+      row.classList.add('dragging');
+      try { e.dataTransfer.effectAllowed = 'move'; } catch {}
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      draggedTrackedId = null;
+      table.querySelectorAll('.tracked-row').forEach(n => n.classList.remove('drop-target'));
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!draggedTrackedId || draggedTrackedId === row.getAttribute('data-id')) return;
+      table.querySelectorAll('.tracked-row').forEach(n => n.classList.remove('drop-target'));
+      row.classList.add('drop-target');
+      try { e.dataTransfer.dropEffect = 'move'; } catch {}
+    });
+    row.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      row.classList.remove('drop-target');
+      const targetId = row.getAttribute('data-id');
+      if (!draggedTrackedId || !targetId || draggedTrackedId === targetId) return;
+      const ordered = filtered.slice();
+      const from = ordered.findIndex(item => String(item.id) === String(draggedTrackedId));
+      const to = ordered.findIndex(item => String(item.id) === String(targetId));
+      if (from === -1 || to === -1) return;
+      const [moved] = ordered.splice(from, 1);
+      ordered.splice(to, 0, moved);
+      await Promise.all(ordered.map((item, idx) => fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(String(item.id))}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priorityRank: idx + 1 })
+      }).catch(() => null)));
+      await refreshTrackedUi({ force: true, rerenderAnalysis: false, rerenderTracked: true });
+    });
+    row.addEventListener('click', async () => {
+      const id = row.getAttribute('data-id');
+      if (!id) return;
+      await openTrackedEditorById(id);
+    });
+  });
 
   table.querySelectorAll('.tracked-remove-btn').forEach(btn => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -1335,6 +1402,34 @@ async function renderTrackedShell(){
     if (!id) return;
     await fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
     await refreshTrackedUi({ force: true, rerenderAnalysis: false, rerenderTracked: true });
+  }));
+
+  async function shiftTrackedPriority(id, delta) {
+    const idx = filtered.findIndex(r => String(r.id) === String(id));
+    if (idx === -1) return;
+    const current = filtered[idx];
+    const currentRank = Number.isFinite(Number(current?.priorityRank)) ? Number(current.priorityRank) : idx + 1;
+    const nextRank = Math.max(1, currentRank + delta);
+    await fetchLocal(`./api/v1/tracked-bets/${encodeURIComponent(String(id))}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priorityRank: nextRank })
+    }).catch(() => null);
+    await refreshTrackedUi({ force: true, rerenderAnalysis: false, rerenderTracked: true });
+  }
+
+  table.querySelectorAll('.tracked-priority-up-btn').forEach(btn => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const id = btn.getAttribute('data-id');
+    if (!id) return;
+    await shiftTrackedPriority(id, -1);
+  }));
+
+  table.querySelectorAll('.tracked-priority-down-btn').forEach(btn => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const id = btn.getAttribute('data-id');
+    if (!id) return;
+    await shiftTrackedPriority(id, 1);
   }));
 
   table.querySelectorAll('.tracked-edit-btn').forEach(btn => btn.addEventListener('click', async (e) => {

@@ -995,12 +995,16 @@ status.marketOddsOpening = nextOpening;
 const trackedBetsPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'tracked_bets.json') : path.join(tenantDataDir, 'tracked_bets.json');
 const trackedBetsRaw = loadJson(trackedBetsPath, []);
 const trackedBets = Array.isArray(trackedBetsRaw) ? trackedBetsRaw : [];
-const trackedRunnerKeys = new Set(
+const trackedRunnerMap = new Map(
   trackedBets
     .filter(row => String(row?.status || 'active').toLowerCase() !== 'settled')
-    .map(row => `${String(row?.meeting || '').trim().toLowerCase()}|${String(row?.race || '').replace(/^R/i,'').trim()}|${String(row?.selection || '').trim().toLowerCase()}`)
-    .filter(Boolean)
+    .map(row => [
+      `${String(row?.meeting || '').trim().toLowerCase()}|${String(row?.race || '').replace(/^R/i,'').trim()}|${String(row?.selection || '').trim().toLowerCase()}`,
+      row,
+    ])
+    .filter(([key]) => !!key)
 );
+const trackedRunnerKeys = new Set(trackedRunnerMap.keys());
 
 function runnerRoleForAlert(meeting, race, runner) {
   const m = String(meeting || '').trim().toLowerCase();
@@ -1021,9 +1025,13 @@ function runnerRoleForAlert(meeting, race, runner) {
   return 'market';
 }
 
-function isTrackedRunnerAlert(meeting, race, runner) {
+function trackedRunnerEntry(meeting, race, runner) {
   const key = `${String(meeting || '').trim().toLowerCase()}|${String(race || '').replace(/^R/i,'').trim()}|${String(runner || '').trim().toLowerCase()}`;
-  return trackedRunnerKeys.has(key);
+  return trackedRunnerMap.get(key) || null;
+}
+
+function isTrackedRunnerAlert(meeting, race, runner) {
+  return !!trackedRunnerEntry(meeting, race, runner);
 }
 
 const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
@@ -1032,7 +1040,8 @@ const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
   const raceSettled = isRaceSettledForAlerts(x.meeting, x.race, minsToJump);
   const absMove = Math.abs(move);
   const role = runnerRoleForAlert(x.meeting, x.race, x.runner);
-  const trackedRunner = isTrackedRunnerAlert(x.meeting, x.race, x.runner);
+  const trackedEntry = trackedRunnerEntry(x.meeting, x.race, x.runner);
+  const trackedRunner = !!trackedEntry;
   const linkedSuggested = (status.suggestedBets || []).find(s =>
     String(s?.meeting || '').trim().toLowerCase() === String(x?.meeting || '').trim().toLowerCase() &&
     String(s?.race || '').replace(/^R/i,'').trim() === String(x?.race || '').replace(/^R/i,'').trim() &&
@@ -1072,7 +1081,8 @@ const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
     selection: x.runner,
     betmanRole: role,
     trackedRunner,
-    trackedPriority: trackedRunner ? 1 : 0,
+    trackedPriority: trackedRunner ? (Number.isFinite(Number(trackedEntry?.priorityRank)) ? Math.max(1, 100 - Number(trackedEntry.priorityRank)) : 1) : 0,
+    trackedPriorityRank: Number.isFinite(Number(trackedEntry?.priorityRank)) ? Number(trackedEntry.priorityRank) : null,
     fromOdds: x.fromOdds,
     toOdds: x.toOdds,
     movePct: move,

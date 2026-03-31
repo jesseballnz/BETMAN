@@ -784,6 +784,7 @@ function createApiHandler(deps) {
             jumpsIn: payload.jumpsIn ?? null,
             note: payload.note ?? null,
             source: payload.source || 'manual',
+            priorityRank: Number.isFinite(Number(payload.priorityRank)) ? Number(payload.priorityRank) : null,
             trackedAt: new Date().toISOString(),
             status: 'active',
             result: 'pending',
@@ -817,7 +818,15 @@ function createApiHandler(deps) {
           const updated = trackedRows.map((row) => {
             if (String(row.id) !== trackedId) return row;
             if (!principal.isAdmin && normalize(row.username) !== normalize(principal.username)) return row;
-            return { ...row, ...payload, id: row.id, username: row.username };
+            return {
+              ...row,
+              ...payload,
+              priorityRank: payload.priorityRank === null || payload.priorityRank === undefined
+                ? row.priorityRank ?? null
+                : (Number.isFinite(Number(payload.priorityRank)) ? Number(payload.priorityRank) : row.priorityRank ?? null),
+              id: row.id,
+              username: row.username,
+            };
           });
           fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
           fs.writeFileSync(trackedPath, JSON.stringify(updated, null, 2));
