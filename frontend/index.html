@@ -763,61 +763,124 @@
       <div class="section-head">
         <h3>Pulse</h3>
         <div class="section-actions">
-          <button id="refreshAlertsBtn" class="btn btn-ghost compact-btn">Refresh</button>
+          <button id="refreshPulseBtn" class="btn btn-ghost compact-btn">Refresh</button>
         </div>
       </div>
       <div class="btn-row" style="margin:10px 0 10px 0;flex-wrap:wrap;gap:8px">
-        <button class="btn btn-ghost compact-btn alerts-subtab active" data-alerts-tab="live">Live Pulse</button>
-        <button class="btn btn-ghost compact-btn alerts-subtab" data-alerts-tab="history">Pulse History</button>
-        <button class="btn btn-ghost compact-btn alerts-subtab" data-alerts-tab="config">Pulse Control</button>
+        <button class="btn btn-ghost compact-btn pulse-subtab active" data-pulse-tab="live">Live Pulse</button>
+        <button class="btn btn-ghost compact-btn pulse-subtab" data-pulse-tab="history">Pulse History</button>
+        <button class="btn btn-ghost compact-btn pulse-subtab" data-pulse-tab="config">Pulse Control</button>
       </div>
       <div class="perf-kpis perf-kpis-secondary pulse-filter-strip" style="margin:0 0 14px 0;gap:10px;align-items:end">
         <div class="perf-card pulse-filter-card" style="min-width:220px;flex:1">
           <div class="label">Country</div>
-          <select id="alertsCountryFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
+          <select id="pulseCountryFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
             <option value="all">All countries</option>
           </select>
         </div>
         <div class="perf-card pulse-filter-card" style="min-width:220px;flex:1">
           <div class="label">Meeting</div>
-          <select id="alertsMeetingFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
+          <select id="pulseMeetingFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
             <option value="all">All meetings</option>
           </select>
         </div>
       </div>
 
-      <div class="alerts-subpanel active" data-alerts-panel="live">
+      <div class="pulse-subpanel active" data-pulse-panel="live">
         <div class="perf-kpis perf-kpis-secondary pulse-summary-strip">
-          <div class="perf-card"><div class="label">Hot</div><div id="alertsHotCount" class="value">0</div></div>
-          <div class="perf-card"><div class="label">Action</div><div id="alertsCriticalCount" class="value">0</div></div>
-          <div class="perf-card"><div class="label">Live</div><div id="alertsLiveCount" class="value">0</div></div>
+          <div class="perf-card"><div class="label">Hot</div><div id="pulseHotCount" class="value">0</div></div>
+          <div class="perf-card"><div class="label">Action</div><div id="pulseCriticalCount" class="value">0</div></div>
+          <div class="perf-card"><div class="label">Live</div><div id="pulseLiveCount" class="value">0</div></div>
         </div>
         <div class="perf-grid">
           <div class="perf-section perf-wide pulse-feed-panel" style="margin-top:12px">
             <h4>Live Pulse</h4>
             <div class="sub">BETMAN Pulse surfaces premium pre-race signals: market pressure, thesis changes, and jump-timed tracked runner prompts.</div>
-            <div id="alertsLiveTable" class="table"></div>
+            <div id="pulseLiveTable" class="table"></div>
           </div>
         </div>
       </div>
 
-      <div class="alerts-subpanel" data-alerts-panel="history" style="display:none">
+      <div class="pulse-subpanel" data-pulse-panel="history" style="display:none">
         <div class="perf-grid">
           <div class="perf-section perf-wide pulse-history-panel">
             <h4>Pulse History</h4>
             <div class="sub">Premium signal history and audit trail across tracked runners, thesis changes, and jump-timed prompts.</div>
-            <div id="alertsHistoryTable" class="table"></div>
+            <div id="pulseHistoryTable" class="table"></div>
           </div>
         </div>
       </div>
 
-      <div class="alerts-subpanel" data-alerts-panel="config" style="display:none">
+      <div class="pulse-subpanel" data-pulse-panel="config" style="display:none">
         <div class="perf-grid">
           <div class="perf-section perf-wide pulse-config-panel">
             <h4>Pulse Control</h4>
             <div class="sub">Tune premium signal scope, thresholds, and delivery for BETMAN Pulse.</div>
-            <div id="alertsConfigPanel" class="table"></div>
+            <div id="pulseConfigPanel" class="table"></div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section page-section" data-page="alerts" style="display:none">
+      <div class="section-head">
+        <h3>Alerts</h3>
+        <div class="section-actions">
+          <button id="refreshGenericAlertsBtn" class="btn btn-ghost compact-btn">Refresh</button>
+        </div>
+      </div>
+      <div class="sub" style="margin:0 0 12px 0">Broad market monitoring across movers, drifts, flips, and jump-window signals. Use this for generic surveillance. Pulse remains the premium curated layer.</div>
+      <div class="perf-kpis perf-kpis-secondary pulse-filter-strip generic-alerts-filter-strip" style="margin:0 0 14px 0;gap:10px;align-items:end">
+        <div class="perf-card pulse-filter-card" style="min-width:180px;flex:1">
+          <div class="label">Country</div>
+          <select id="genericAlertsCountryFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
+            <option value="all">All countries</option>
+          </select>
+        </div>
+        <div class="perf-card pulse-filter-card" style="min-width:180px;flex:1">
+          <div class="label">Meeting</div>
+          <select id="genericAlertsMeetingFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
+            <option value="all">All meetings</option>
+          </select>
+        </div>
+        <div class="perf-card pulse-filter-card" style="min-width:160px;flex:1">
+          <div class="label">Severity</div>
+          <select id="genericAlertsSeverityFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
+            <option value="all">All severities</option>
+            <option value="ACTION">Action</option>
+            <option value="CRITICAL">Critical</option>
+            <option value="HOT">Hot</option>
+            <option value="WATCH">Watch</option>
+          </select>
+        </div>
+        <div class="perf-card pulse-filter-card" style="min-width:200px;flex:1">
+          <div class="label">Type</div>
+          <select id="genericAlertsTypeFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
+            <option value="all">All alert types</option>
+          </select>
+        </div>
+        <div class="perf-card pulse-filter-card" style="min-width:220px;flex:1.2">
+          <div class="label">Search</div>
+          <input id="genericAlertsSearch" type="search" placeholder="Runner, meeting, note" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none" />
+        </div>
+      </div>
+
+      <div class="perf-kpis perf-kpis-secondary pulse-summary-strip">
+        <div class="perf-card"><div class="label">Action</div><div id="genericAlertsActionCount" class="value">0</div></div>
+        <div class="perf-card"><div class="label">Hot/Critical</div><div id="genericAlertsHotCount" class="value">0</div></div>
+        <div class="perf-card"><div class="label">Live</div><div id="genericAlertsLiveCount" class="value">0</div></div>
+      </div>
+
+      <div class="perf-grid">
+        <div class="perf-section perf-wide pulse-feed-panel" style="margin-top:12px">
+          <h4>Live Alerts</h4>
+          <div class="sub">Generic monitoring feed with clean click-through into the race workspace.</div>
+          <div id="genericAlertsLiveTable" class="table"></div>
+        </div>
+        <div class="perf-section perf-wide pulse-history-panel">
+          <h4>Recent Alert History</h4>
+          <div class="sub">Latest alert audit trail without premium gating.</div>
+          <div id="genericAlertsHistoryTable" class="table"></div>
         </div>
       </div>
     </section>

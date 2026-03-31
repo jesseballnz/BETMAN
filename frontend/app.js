@@ -1036,7 +1036,7 @@ function pulseTypeMeta(){
 }
 
 async function renderPulseConfigPanel(){
-  const cfg = $('alertsConfigPanel');
+  const cfg = $('pulseConfigPanel') || $('alertsConfigPanel');
   if (!cfg) return;
   const meta = pulseTypeMeta();
   const thresholds = normalizePulseThresholds(pulseConfigState.thresholds || {});
@@ -1537,15 +1537,21 @@ async function openTrackedEditorById(id){
   bindTrackedEditor(document.querySelector('[data-tracked-edit-root="1"]'), row);
 }
 
-function setActiveAlertsTab(tab){
-  document.querySelectorAll('.alerts-subtab').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.alertsTab === tab);
+function setActivePulseTab(tab){
+  document.querySelectorAll('.pulse-subtab, .alerts-subtab').forEach(btn => {
+    const btnTab = btn.dataset.pulseTab || btn.dataset.alertsTab;
+    btn.classList.toggle('active', btnTab === tab);
   });
-  document.querySelectorAll('.alerts-subpanel').forEach(panel => {
-    const active = panel.dataset.alertsPanel === tab;
+  document.querySelectorAll('.pulse-subpanel, .alerts-subpanel').forEach(panel => {
+    const panelTab = panel.dataset.pulsePanel || panel.dataset.alertsPanel;
+    const active = panelTab === tab;
     panel.style.display = active ? '' : 'none';
     panel.classList.toggle('active', active);
   });
+}
+
+function setActiveAlertsTab(tab){
+  setActivePulseTab(tab);
 }
 
 function setActiveTrackedTab(tab){
@@ -1707,7 +1713,7 @@ async function renderTrackedShell(){
 }
 
 async function hydrateAlertsMeetingFilter(alerts){
-  const sel = $('alertsMeetingFilter');
+  const sel = $('pulseMeetingFilter') || $('alertsMeetingFilter');
   if (!sel) return;
   const prev = sel.value || 'all';
   const meetings = Array.from(new Set((alerts || []).map(a => String(a?.meeting || '').trim()).filter(Boolean))).sort((a,b) => a.localeCompare(b));
@@ -1716,7 +1722,7 @@ async function hydrateAlertsMeetingFilter(alerts){
 }
 
 async function hydrateAlertsCountryFilter(alerts){
-  const sel = $('alertsCountryFilter');
+  const sel = $('pulseCountryFilter') || $('alertsCountryFilter');
   if (!sel) return;
   const prev = sel.value || 'all';
   const countries = Array.from(new Set((alerts || []).map(a => String(a?.country || '').trim()).filter(Boolean))).sort((a,b) => a.localeCompare(b));
@@ -1725,9 +1731,9 @@ async function hydrateAlertsCountryFilter(alerts){
 }
 
 async function renderAlertsShell(){
-  const live = $('alertsLiveTable');
-  const hist = $('alertsHistoryTable');
-  const cfg = $('alertsConfigPanel');
+  const live = $('pulseLiveTable') || $('alertsLiveTable');
+  const hist = $('pulseHistoryTable') || $('alertsHistoryTable');
+  const cfg = $('pulseConfigPanel') || $('alertsConfigPanel');
   try {
     await loadPulseConfig();
   } catch {}
@@ -1736,11 +1742,14 @@ async function renderAlertsShell(){
   const allAlerts = filterPulseAlerts(Array.isArray(feed?.alerts) ? feed.alerts : []);
   hydrateAlertsCountryFilter(allAlerts);
   hydrateAlertsMeetingFilter(allAlerts);
-  const countryFilter = String($('alertsCountryFilter')?.value || 'all');
-  const meetingFilter = String($('alertsMeetingFilter')?.value || 'all');
+  const countryFilter = String(($('pulseCountryFilter') || $('alertsCountryFilter'))?.value || 'all');
+  const meetingFilter = String(($('pulseMeetingFilter') || $('alertsMeetingFilter'))?.value || 'all');
   const alerts = allAlerts.filter(a => (countryFilter === 'all' ? true : String(a?.country || '') === countryFilter) && (meetingFilter === 'all' ? true : String(a?.meeting || '') === meetingFilter));
   const critical = alerts.filter(a => String(a?.severity || '') === 'CRITICAL').length;
   const hot = alerts.filter(a => String(a?.severity || '') === 'HOT').length;
+  $('pulseHotCount') && ($('pulseHotCount').textContent = String(hot));
+  $('pulseCriticalCount') && ($('pulseCriticalCount').textContent = String(critical));
+  $('pulseLiveCount') && ($('pulseLiveCount').textContent = String(alerts.length));
   $('alertsHotCount') && ($('alertsHotCount').textContent = String(hot));
   $('alertsCriticalCount') && ($('alertsCriticalCount').textContent = String(critical));
   $('alertsLiveCount') && ($('alertsLiveCount').textContent = String(alerts.length));
@@ -1850,7 +1859,11 @@ function setActivePage(page){
     loadRuntimeHealth();
   }
   if (page === 'alerts') {
-    setActiveAlertsTab('live');
+    setActivePulseTab('live');
+    renderAlertsShell();
+  }
+  if (page === 'pulse') {
+    setActivePulseTab('live');
     renderAlertsShell();
   }
   if (page === 'tracked') {
@@ -11546,12 +11559,13 @@ $('refreshPerformanceBtn')?.addEventListener('click', ()=> triggerPerformancePol
 document.querySelectorAll('.perf-subtab').forEach(btn => {
   btn.addEventListener('click', () => setActivePerformanceTab(btn.dataset.perfTab || 'overview'));
 });
-document.querySelectorAll('.alerts-subtab').forEach(btn => {
-  btn.addEventListener('click', () => setActiveAlertsTab(btn.dataset.alertsTab || 'live'));
+document.querySelectorAll('.pulse-subtab, .alerts-subtab').forEach(btn => {
+  btn.addEventListener('click', () => setActivePulseTab(btn.dataset.pulseTab || btn.dataset.alertsTab || 'live'));
 });
+$('refreshPulseBtn')?.addEventListener('click', () => renderAlertsShell());
 $('refreshAlertsBtn')?.addEventListener('click', () => renderAlertsShell());
-$('alertsCountryFilter')?.addEventListener('change', () => renderAlertsShell());
-$('alertsMeetingFilter')?.addEventListener('change', () => renderAlertsShell());
+($('pulseCountryFilter') || $('alertsCountryFilter'))?.addEventListener('change', () => renderAlertsShell());
+($('pulseMeetingFilter') || $('alertsMeetingFilter'))?.addEventListener('change', () => renderAlertsShell());
 $('refreshTrackedBtn')?.addEventListener('click', () => renderTrackedShell());
 document.querySelectorAll('.tracked-subtab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -12906,7 +12920,7 @@ async function renderAuthPulseSettingsPanel(){
     $('openPulseConfigFromAuth')?.addEventListener('click', () => {
       toggleAuthModal(false);
       setActivePage('pulse');
-      setActiveAlertsTab('config');
+      setActivePulseTab('config');
       renderPulseConfigPanel();
     });
   } catch {
