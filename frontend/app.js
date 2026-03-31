@@ -1141,7 +1141,8 @@ async function renderAlertsShell(){
           const sev = String(a?.severity || 'WATCH').toLowerCase();
           const title = escapeHtml(String(a?.title || `${a?.meeting || '—'} R${a?.race || ''}`));
           const runner = escapeHtml(String(a?.selection || '—'));
-          const role = escapeHtml(String(a?.betmanRole || 'market'));
+          const roleBase = String(a?.betmanRole || 'market');
+          const role = escapeHtml(a?.trackedRunner ? `tracked · ${roleBase}` : roleBase);
           const interpretation = escapeHtml(String(a?.interpretation || 'Pulse signal detected'));
           const action = escapeHtml(String(a?.action || 'Watch'));
           const note = escapeHtml(String(a?.note || ''));

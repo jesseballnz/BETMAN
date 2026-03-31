@@ -884,6 +884,16 @@ status.marketOddsSnapshot = nextSnap;
 status.marketOddsHistory = nextHistory;
 status.marketOddsOpening = nextOpening;
 
+const trackedBetsPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'tracked_bets.json') : path.join(tenantDataDir, 'tracked_bets.json');
+const trackedBetsRaw = loadJson(trackedBetsPath, []);
+const trackedBets = Array.isArray(trackedBetsRaw) ? trackedBetsRaw : [];
+const trackedRunnerKeys = new Set(
+  trackedBets
+    .filter(row => String(row?.status || 'active').toLowerCase() !== 'settled')
+    .map(row => `${String(row?.meeting || '').trim().toLowerCase()}|${String(row?.race || '').replace(/^R/i,'').trim()}|${String(row?.selection || '').trim().toLowerCase()}`)
+    .filter(Boolean)
+);
+
 function runnerRoleForAlert(meeting, race, runner) {
   const m = String(meeting || '').trim().toLowerCase();
   const r = String(race || '').replace(/^R/i,'').trim();
@@ -903,11 +913,17 @@ function runnerRoleForAlert(meeting, race, runner) {
   return 'market';
 }
 
+function isTrackedRunnerAlert(meeting, race, runner) {
+  const key = `${String(meeting || '').trim().toLowerCase()}|${String(race || '').replace(/^R/i,'').trim()}|${String(runner || '').trim().toLowerCase()}`;
+  return trackedRunnerKeys.has(key);
+}
+
 const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
   const move = Number(x?.pctMove || 0);
   const minsToJump = Number(x?.minsToJump);
   const absMove = Math.abs(move);
   const role = runnerRoleForAlert(x.meeting, x.race, x.runner);
+  const trackedRunner = isTrackedRunnerAlert(x.meeting, x.race, x.runner);
   const linkedSuggested = (status.suggestedBets || []).find(s =>
     String(s?.meeting || '').trim().toLowerCase() === String(x?.meeting || '').trim().toLowerCase() &&
     String(s?.race || '').replace(/^R/i,'').trim() === String(x?.race || '').replace(/^R/i,'').trim() &&
@@ -916,12 +932,16 @@ const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
   const executable = !!linkedSuggested?.executionEligible;
   const hot = absMove >= 15 || (Number.isFinite(minsToJump) && minsToJump <= 15 && absMove >= 10);
   const critical = absMove >= 25 || (Number.isFinite(minsToJump) && minsToJump <= 10 && absMove >= 20);
-  const severity = executable && critical ? 'ACTION' : (hot ? 'WATCH' : 'INFO');
+  const severity = executable && critical
+    ? 'ACTION'
+    : trackedRunner
+      ? (critical ? 'CRITICAL' : (hot ? 'HOT' : 'INFO'))
+      : (hot ? 'WATCH' : 'INFO');
   const type = move < 0 ? 'hot_plunge' : 'hot_drift';
   const interpretation = move < 0
-    ? (role !== 'market' ? `Market support building for ${role}` : 'Market support building')
-    : (role !== 'market' ? `Market moving against ${role}` : 'Market drifting away');
-  const action = executable ? (critical ? 'BET_NOW' : 'QUEUE') : (hot ? 'WATCH' : 'IGNORE');
+    ? (role !== 'market' ? `Market support building for ${role}` : (trackedRunner ? 'Tracked runner attracting support' : 'Market support building'))
+    : (role !== 'market' ? `Market moving against ${role}` : (trackedRunner ? 'Tracked runner drifting in the market' : 'Market drifting away'));
+  const action = executable ? (critical ? 'BET_NOW' : 'QUEUE') : (trackedRunner ? (hot ? 'REVIEW_TRACKED' : 'WATCH_TRACKED') : (hot ? 'WATCH' : 'IGNORE'));
   return {
     id: `${String(x?.meeting || '').toLowerCase()}|${String(x?.race || '')}|${String(x?.runner || '').toLowerCase()}|${type}`,
     ts: new Date().toISOString(),
@@ -936,6 +956,8 @@ const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
     race: String(x.race),
     selection: x.runner,
     betmanRole: role,
+    trackedRunner,
+    trackedPriority: trackedRunner ? 1 : 0,
     fromOdds: x.fromOdds,
     toOdds: x.toOdds,
     movePct: move,
@@ -1021,6 +1043,8 @@ for (const [key, nextSel] of nextSelectionMap.entries()) {
 const pulseAlerts = [...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts].sort((a,b) => {
   const sev = { ACTION: 4, CRITICAL: 3, HOT: 2, WATCH: 1, INFO: 0 };
   if (sev[b.severity] !== sev[a.severity]) return sev[b.severity] - sev[a.severity];
+  const trackedDelta = Number(b?.trackedPriority || (b?.trackedRunner ? 1 : 0)) - Number(a?.trackedPriority || (a?.trackedRunner ? 1 : 0));
+  if (trackedDelta !== 0) return trackedDelta;
   return Math.abs(Number(b.movePct || 0)) - Math.abs(Number(a.movePct || 0));
 }).filter(a => ['ACTION','CRITICAL','HOT'].includes(String(a.severity || ''))).slice(0, 24);
 
