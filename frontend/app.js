@@ -1281,6 +1281,17 @@ function formatTrackedOddsValue(value){
   return Number.isFinite(num) && num > 0 ? num.toFixed(2) : '—';
 }
 
+function resolveTrackedOddsDisplay(row = {}, kind = 'current'){
+  const current = Number(row?.currentOdds);
+  const entry = Number(row?.entryOdds ?? row?.odds);
+  const resolved = kind === 'entry'
+    ? (Number.isFinite(entry) && entry > 0 ? entry : null)
+    : (Number.isFinite(current) && current > 0
+      ? current
+      : (Number.isFinite(entry) && entry > 0 ? entry : null));
+  return formatTrackedOddsValue(resolved);
+}
+
 function canonicalTrackedResultLabel(value){
   const raw = String(value || 'pending').trim().toLowerCase();
   if (raw === 'win') return 'won';
@@ -1465,7 +1476,7 @@ function buildTrackedEditorHtml(row){
   const race = escapeHtml(String(row?.race || '—'));
   const status = escapeHtml(String(row?.status || 'active'));
   const result = escapeHtml(canonicalTrackedResultLabel(row?.result).toUpperCase());
-  const currentOdds = formatTrackedOddsValue(row?.currentOdds);
+  const currentOdds = resolveTrackedOddsDisplay(row, 'current');
   const currentOddsMeta = row?.currentOddsSource ? ` <span class='sub'>(${escapeHtml(String(row.currentOddsSource))})</span>` : '';
   const settlementLine = String(row?.status || '') === 'settled'
     ? `<div><b>Settlement:</b> Return ${fmtUnits(row?.payout)} · P/L ${fmtUnits(row?.profit)} · ROI ${fmtPct(row?.roi)}</div>`
@@ -1632,8 +1643,8 @@ async function renderTrackedShell(){
   const renderRows = (items) => items.map((r, index) => {
     const result = canonicalTrackedResultLabel(r.result);
     const badge = result === 'won' ? 'value' : (result === 'lost' ? 'danger' : 'ew');
-    const entryOdds = formatTrackedOddsValue(r.entryOdds ?? r.odds);
-    const currentOdds = formatTrackedOddsValue(r.currentOdds);
+    const entryOdds = resolveTrackedOddsDisplay(r, 'entry');
+    const currentOdds = resolveTrackedOddsDisplay(r, 'current');
     const currentSub = r.currentOddsSource
       ? `Current ${currentOdds} · ${escapeHtml(String(r.currentOddsSource))}`
       : `Current ${currentOdds}`;

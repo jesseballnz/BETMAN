@@ -356,6 +356,15 @@ function resolveTenantPathById(tenantId, defaultPath, filename){
   return fs.existsSync(p) ? p : defaultPath;
 }
 
+function resolveTenantOwnedPathById(tenantId, defaultPath, filename){
+  const tid = normalizeTenantId(tenantId || 'default');
+  return tid === 'default' ? defaultPath : tenantDataPath(tid, filename);
+}
+
+function isPrivateTenantPrincipal(principal){
+  return !!principal && !principal.isAdmin && effectiveTenantId(principal) !== 'default';
+}
+
 function normalizeBaseUrl(url){
   const trimmed = String(url || '').trim();
   if (!trimmed) return '';
@@ -1173,6 +1182,52 @@ function toPositiveOddsValue(...values){
   return null;
 }
 
+function resolveTrackedCurrentOdds(row, options) {
+  const {
+    runnerOdds = null,
+    runnerSource = 'races',
+    moverOdds = null,
+    moverSource = 'market-movers',
+    suggestedOdds = null,
+    suggestedSource = 'suggested-bets',
+    raceFinished = false,
+  } = options || {};
+
+  const persistedCurrent = toPositiveOddsValue(row?.currentOdds);
+  const entryOdds = toPositiveOddsValue(row?.entryOdds, row?.odds);
+
+  if (runnerOdds != null) {
+    return { currentOdds: runnerOdds, currentOddsSource: runnerSource || 'races' };
+  }
+
+  if (persistedCurrent != null) {
+    return {
+      currentOdds: persistedCurrent,
+      currentOddsSource: row?.currentOddsSource || (raceFinished ? 'last known' : 'current'),
+    };
+  }
+
+  if (!raceFinished && moverOdds != null) {
+    return { currentOdds: moverOdds, currentOddsSource: moverSource || 'market-movers' };
+  }
+
+  if (!raceFinished && suggestedOdds != null) {
+    return { currentOdds: suggestedOdds, currentOddsSource: suggestedSource || 'suggested-bets' };
+  }
+
+  if (entryOdds != null) {
+    return {
+      currentOdds: entryOdds,
+      currentOddsSource: raceFinished ? 'last known (entry)' : 'entry',
+    };
+  }
+
+  return {
+    currentOdds: null,
+    currentOddsSource: row?.currentOddsSource || null,
+  };
+}
+
 function formatRunnerCallout(selection, suggested = []){
   const name = String(selection?.selection || selection?.runner || '').trim();
   if (!name) return '';
@@ -1636,36 +1691,18 @@ function enrichTrackedBetWithCurrentOdds(row, liveContext) {
   const race = liveContext?.raceMap?.get(raceKey) || null;
   const raceStatus = race?.race_status || null;
   const raceFinished = FINISHED_RACE_STATUSES.has(String(raceStatus || '').toLowerCase());
-
-  let currentOdds = null;
-  let currentOddsSource = null;
-
   const runnerHit = liveContext?.runnerMap?.get(trackedKey);
-  if (runnerHit && Number.isFinite(Number(runnerHit.currentOdds)) && Number(runnerHit.currentOdds) > 0) {
-    currentOdds = Number(Number(runnerHit.currentOdds).toFixed(2));
-    currentOddsSource = runnerHit.source || 'races';
-  }
-
-  if (currentOdds == null && !raceFinished) {
-    const moverHit = liveContext?.moverMap?.get(trackedKey);
-    if (moverHit && Number.isFinite(Number(moverHit.currentOdds)) && Number(moverHit.currentOdds) > 0) {
-      currentOdds = Number(Number(moverHit.currentOdds).toFixed(2));
-      currentOddsSource = moverHit.source || 'market-movers';
-    }
-  }
-
-  if (currentOdds == null && !raceFinished) {
-    const suggestedHit = liveContext?.suggestedMap?.get(trackedKey);
-    if (suggestedHit && Number.isFinite(Number(suggestedHit.currentOdds)) && Number(suggestedHit.currentOdds) > 0) {
-      currentOdds = Number(Number(suggestedHit.currentOdds).toFixed(2));
-      currentOddsSource = suggestedHit.source || 'suggested-bets';
-    }
-  }
-
-  if (currentOdds == null && Number.isFinite(entryOdds) && entryOdds > 0) {
-    currentOdds = Number(Number(entryOdds).toFixed(2));
-    currentOddsSource = raceFinished ? 'last known (entry)' : 'entry';
-  }
+  const moverHit = liveContext?.moverMap?.get(trackedKey);
+  const suggestedHit = liveContext?.suggestedMap?.get(trackedKey);
+  const { currentOdds, currentOddsSource } = resolveTrackedCurrentOdds(row, {
+    runnerOdds: toPositiveOddsValue(runnerHit?.currentOdds),
+    runnerSource: runnerHit?.source || 'races',
+    moverOdds: toPositiveOddsValue(moverHit?.currentOdds),
+    moverSource: moverHit?.source || 'market-movers',
+    suggestedOdds: toPositiveOddsValue(suggestedHit?.currentOdds),
+    suggestedSource: suggestedHit?.source || 'suggested-bets',
+    raceFinished,
+  });
 
   return {
     ...row,

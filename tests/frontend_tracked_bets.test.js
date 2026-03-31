@@ -49,6 +49,7 @@ vm.runInContext(
     extractFunction('normalizeRunnerName'),
     extractFunction('normalizeTrackedKey'),
     extractFunction('toPositiveOddsValue'),
+    extractFunction('resolveTrackedCurrentOdds'),
     extractFunction('enrichTrackedBetWithCurrentOdds'),
   ].join('\n\n'),
   sandbox
@@ -101,6 +102,48 @@ assert.deepStrictEqual(
     entryOdds: 4.4,
     currentOdds: 6.8,
     currentOddsSource: 'market-movers',
+    raceStatus: 'OPEN',
+  }
+);
+
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(sandbox.enrichTrackedBetWithCurrentOdds(
+    {
+      meeting: 'Newcastle',
+      race: 'R1',
+      selection: 'Cavalry',
+      currentOdds: 5.5,
+      currentOddsSource: 'cached-live',
+      entryOdds: null,
+      odds: 4.4,
+    },
+    { raceMap: new Map([[raceKey, { meeting: 'Newcastle', race_number: '1', race_status: 'OPEN' }]]), runnerMap: new Map(), moverMap: new Map(), suggestedMap: new Map() },
+  ))),
+  {
+    meeting: 'Newcastle',
+    race: 'R1',
+    selection: 'Cavalry',
+    currentOdds: 5.5,
+    currentOddsSource: 'cached-live',
+    entryOdds: 4.4,
+    odds: 4.4,
+    raceStatus: 'OPEN',
+  }
+);
+
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(sandbox.enrichTrackedBetWithCurrentOdds(
+    { meeting: 'Newcastle', race: 'R1', selection: 'Cavalry', odds: 4.4 },
+    { raceMap: new Map([[raceKey, { meeting: 'Newcastle', race_number: '1', race_status: 'OPEN' }]]), runnerMap: new Map(), moverMap: new Map(), suggestedMap: new Map() },
+  ))),
+  {
+    meeting: 'Newcastle',
+    race: 'R1',
+    selection: 'Cavalry',
+    odds: 4.4,
+    entryOdds: 4.4,
+    currentOdds: 4.4,
+    currentOddsSource: 'entry',
     raceStatus: 'OPEN',
   }
 );
