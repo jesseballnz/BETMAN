@@ -816,6 +816,11 @@ function normalizePulseCountry(value){
   return upper === 'HKG' ? 'HK' : upper;
 }
 
+function normalizeUiCountry(value, fallback = 'NZ'){
+  const normalized = normalizePulseCountry(value);
+  return ['NZ', 'AUS', 'HK', 'ALL'].includes(normalized) ? normalized : fallback;
+}
+
 function normalizePulseMeetingName(value){
   return String(value || '').trim();
 }
@@ -2353,7 +2358,7 @@ async function restoreLastRaceSelection(){
     const saved = JSON.parse(localStorage.getItem(LAST_RACE_STORAGE_KEY) || '{}');
     if (!saved || !saved.key) return;
     if (saved.day && saved.day !== selectedDay) return;
-    if (saved.country && saved.country !== selectedCountry) return;
+    if (saved.country && normalizeUiCountry(saved.country, selectedCountry) !== selectedCountry) return;
     const race = (racesCache || []).find(r => {
       if (r.key && r.key === saved.key) return true;
       const meets = String(r.meeting || '').trim().toLowerCase() === String(saved.meeting || '').trim().toLowerCase();
@@ -2452,7 +2457,7 @@ hydrateAiCooldownFromStorage();
     const saved = JSON.parse(localStorage.getItem(MEETING_LOCK_KEY) || '{}');
     if (saved && typeof saved === 'object') {
       if (saved.day && ['today','tomorrow'].includes(saved.day)) selectedDay = saved.day;
-      if (saved.country === 'NZ') selectedCountry = 'NZ';
+      selectedCountry = normalizeUiCountry(saved.country, selectedCountry);
       if (saved.meeting) selectedMeeting = saved.meeting;
     }
     const cs = $('countrySelect');
@@ -2517,8 +2522,14 @@ async function loadStake(){
   } catch {}
 }
 
+const CLIENT_FINISHED_RACE_STATUSES = new Set(['final', 'abandoned', 'resulted']);
+const CLIENT_ACTIVE_RACE_STATUSES = new Set(['open', 'closed', 'jumped', 'running', 'inrunning', 'in-running', 'live']);
+
 function raceIsUpcoming(race, cutoffMs = Date.now() - 5 * 60 * 1000){
   if (!race) return false;
+  const status = String(race?.race_status || '').trim().toLowerCase();
+  if (CLIENT_FINISHED_RACE_STATUSES.has(status)) return false;
+  if (CLIENT_ACTIVE_RACE_STATUSES.has(status)) return true;
   const rawTs = race?.advertised_start ?? race?.start_time_nz ?? race?.start_time_iso ?? race?.start_time;
   const ts = parseTimeValue(rawTs);
   if (!Number.isFinite(ts)) return true;
@@ -2576,8 +2587,8 @@ function refreshMeetingOptions(allRows, extraMeetings=[], fullRows=null){
 function applyScopedRaces(allRaces){
   const cleanRaces = (allRaces || []).slice();
   const upcomingCutoff = Date.now() - 5 * 60 * 1000;
-  let effectiveCountry = String(selectedCountry || 'NZ').toUpperCase();
-  const hasRowsFor = (cc) => cleanRaces.some(r => String(r.country || '').toUpperCase() === cc);
+  let effectiveCountry = normalizeUiCountry(selectedCountry, 'NZ');
+  const hasRowsFor = (cc) => cleanRaces.some(r => normalizeUiCountry(r.country, '') === cc);
   if (effectiveCountry !== 'ALL' && !hasRowsFor(effectiveCountry)) {
     const order = ['NZ', 'AUS', 'HK'];
     const next = order.find(c => hasRowsFor(c));
@@ -2591,7 +2602,7 @@ function applyScopedRaces(allRaces){
 
   const byCountry = cleanRaces.filter(r => effectiveCountry === 'ALL'
     ? true
-    : String(r.country || '').toUpperCase() === effectiveCountry);
+    : normalizeUiCountry(r.country, '') === effectiveCountry);
 
   if (selectedMeeting !== 'ALL') {
     const meetingNorm = normalizeMeetingKey(selectedMeeting);
@@ -2599,7 +2610,7 @@ function applyScopedRaces(allRaces){
     if (!hasSelectedMeeting) {
       const globalHit = cleanRaces.find(r => normalizeMeetingKey(r.meeting) === meetingNorm && raceIsUpcoming(r, upcomingCutoff));
       if (globalHit) {
-        const targetCountry = String(globalHit.country || '').toUpperCase();
+        const targetCountry = normalizeUiCountry(globalHit.country, '');
         if (targetCountry && targetCountry !== effectiveCountry) {
           selectedCountry = targetCountry;
           const cs = $('countrySelect');
@@ -2615,7 +2626,7 @@ function applyScopedRaces(allRaces){
     }
   }
 
-  const statusExtras = (selectedCountry === 'ALL') ? currentStatusMeetings() : [];
+  const statusExtras = currentStatusMeetings();
   refreshMeetingOptions(byCountry, statusExtras, cleanRaces);
   racesCache = byCountry;
   strategyRaceModelCache.clear();
@@ -7960,7 +7971,7 @@ async function enqueueRequest(type, target='main'){
       if (type === 'decrease') earlyWindowMin = Math.max(1, earlyWindowMin - 30);
       localStorage.setItem('earlyWindowMin', String(earlyWindowMin));
       $('earlyWindowMin').textContent = `Suggested window: ${earlyWindowMin}m`;
-    refreshBetWindowUi();
+      refreshBetWindowUi();
     } else if (target === 'aiwindow') {
       if (type === 'increase') aiWindowMin = Math.min(30, aiWindowMin + 1);
       if (type === 'decrease') aiWindowMin = Math.max(1, aiWindowMin - 1);
@@ -7983,6 +7994,7 @@ $('increaseExoticBtn').addEventListener('click', ()=>enqueueRequest('increase', 
 $('decreaseExoticBtn').addEventListener('click', ()=>enqueueRequest('decrease', 'exotic'));
 $('increaseWindowBtn').addEventListener('click', ()=>enqueueRequest('increase', 'window'));
 $('decreaseWindowBtn').addEventListener('click', ()=>enqueueRequest('decrease', 'window'));
+
 $('saveBetWindowBtn')?.addEventListener('click', async ()=>{
   const val = Number(($('betWindowInput')?.value || '').trim());
   if (!Number.isFinite(val)) return alert('Enter a valid number.');
@@ -11643,7 +11655,7 @@ document.querySelectorAll('.pill[data-day]').forEach(p=>{
 });
 $('countrySelect')?.addEventListener('change', async (e)=>{
   invalidateMeetingSearch();
-  selectedCountry = e.target.value;
+  selectedCountry = normalizeUiCountry(e.target.value, selectedCountry);
   selectedMeeting = 'ALL';
   persistMeetingLock();
   const meetingSel = $('meetingSelect');
@@ -11661,8 +11673,8 @@ $('meetingSelect')?.addEventListener('change', async (e)=>{
     if (!inCache) {
       const all = await loadAllRacesUnfiltered();
       const hit = (all || []).find(r => String(r.meeting || '').trim().toLowerCase() === String(selectedMeeting).trim().toLowerCase());
-      if (hit && hit.country && String(hit.country).toUpperCase() !== String(selectedCountry).toUpperCase()) {
-        selectedCountry = String(hit.country).toUpperCase();
+      if (hit && hit.country && normalizeUiCountry(hit.country, selectedCountry) !== selectedCountry) {
+        selectedCountry = normalizeUiCountry(hit.country, selectedCountry);
         const cs = $('countrySelect');
         if (cs) cs.value = selectedCountry;
         persistMeetingLock();

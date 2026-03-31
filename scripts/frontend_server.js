@@ -5984,8 +5984,8 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
                 if (!m || !rno) continue;
                 if (meeting && m.toLowerCase() !== meeting) continue;
                 archived.push({
-                  key: `${String(race.country || '').toUpperCase()}:${m}:R${rno}`,
-                  country: String(race.country || '').toUpperCase() || null,
+                  key: `${normalizePulseCountry(race.country)}:${m}:R${rno}`,
+                  country: normalizePulseCountry(race.country) || null,
                   meeting: m,
                   race_number: rno,
                   description: race.race_name || race.description || '',
@@ -6049,7 +6049,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         if (archived.length) rows = archived;
       } catch {}
     }
-    if (country) rows = rows.filter(r => String(r.country || '').toUpperCase() === country);
+    if (country) rows = rows.filter(r => normalizePulseCountry(r.country) === country);
     if (meeting) rows = rows.filter(r => String(r.meeting || '').trim().toLowerCase() === meeting);
 
     const total = rows.length;
