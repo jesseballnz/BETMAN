@@ -6,7 +6,7 @@ const path = require('path');
 const dns = require('dns');
 const { mergePublicStatusLists } = require('./status_snapshot_merge');
 const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
-const { matchSettledBet, buildTrackedSettlement, buildTrackedSettledBetRow } = require('./tracked_bet_matching');
+const { matchSettledBet, buildTrackedSettlement, buildTrackedSettledBetRow, buildVisibleSettledRows } = require('./tracked_bet_matching');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -5991,20 +5991,11 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const principal = req.authPrincipal;
     if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
     const tenantId = principal.effectiveTenantId || 'default';
-    const username = normalizeUsername(principal.username || 'unknown');
     const settledPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json');
     const trackedPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'tracked_bets.json'), 'tracked_bets.json');
     const settledRows = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
     const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
-    const trackedSettledRows = trackedRows
-      .filter((row) => normalizeUsername(row.username || '') === username)
-      .map((row) => {
-        const hit = matchSettledBet(row, settledRows);
-        return hit ? buildTrackedSettledBetRow(row, hit) : null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => String(b.settled_at || b.date || '').localeCompare(String(a.settled_at || a.date || '')));
-    return okJson(res, [...trackedSettledRows, ...settledRows], 200, req);
+    return okJson(res, buildVisibleSettledRows(principal, trackedRows, settledRows), 200, req);
   }
 
   if (url.pathname === '/api/v1/tracked-bets') {

@@ -197,6 +197,45 @@ function buildTrackedSettledBetRow(trackedRow = {}, settledRow = {}) {
   };
 }
 
+function normalizeUserKey(value) {
+  const raw = String(value || '').trim();
+  return raw.includes('@') ? raw.toLowerCase() : raw;
+}
+
+function buildVisibleSettledRows(principal = {}, trackedRows = [], settledRows = []) {
+  const username = normalizeUserKey(principal.username || '');
+  const trackedSettledRows = (Array.isArray(trackedRows) ? trackedRows : [])
+    .filter((row) => normalizeUserKey(row.username || '') === username)
+    .map((row) => {
+      const hit = matchSettledBet(row, settledRows);
+      return hit ? buildTrackedSettledBetRow(row, hit) : null;
+    })
+    .filter(Boolean);
+
+  const directSettledRows = (Array.isArray(settledRows) ? settledRows : []).filter((row) => {
+    if (principal?.isAdmin) return true;
+    const rowUser = normalizeUserKey(row.username || row.user || row.userId || row.owner || '');
+    return rowUser && rowUser === username;
+  });
+
+  const seen = new Set();
+  return [...trackedSettledRows, ...directSettledRows]
+    .filter((row) => {
+      const key = row.id
+        ? `id:${row.id}`
+        : buildSettledBetKey({
+            meeting: row.meeting,
+            race: row.race,
+            selection: row.selection,
+            type: row.type || row.betType,
+          });
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => String(b.settled_at || b.date || '').localeCompare(String(a.settled_at || a.date || '')));
+}
+
 module.exports = {
   normalizeText,
   normalizeMeeting,
@@ -210,4 +249,5 @@ module.exports = {
   canonicalTrackedResult,
   buildTrackedSettlement,
   buildTrackedSettledBetRow,
+  buildVisibleSettledRows,
 };

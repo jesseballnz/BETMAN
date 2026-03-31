@@ -10,6 +10,7 @@ const {
   canonicalTrackedResult,
   buildTrackedSettlement,
   buildTrackedSettledBetRow,
+  buildVisibleSettledRows,
 } = require('../scripts/tracked_bet_matching');
 
 assert.strictEqual(normalizeSelection('7. Cavalry'), 'cavalry');
@@ -147,6 +148,104 @@ assert.deepStrictEqual(
     tracked_at: '2026-03-31T03:00:00.000Z',
     betType: 'Win',
   }
+);
+
+assert.deepStrictEqual(
+  buildVisibleSettledRows(
+    { username: 'user@example.com', isAdmin: false },
+    [
+      {
+        id: 'tracked-1',
+        username: 'user@example.com',
+        meeting: 'Newcastle',
+        race: '1',
+        selection: 'Cavalry',
+        betType: 'Win',
+        entryOdds: 3.3,
+        stake: 5,
+        trackedAt: '2026-03-31T03:00:00.000Z',
+      },
+      {
+        id: 'tracked-2',
+        username: 'other@example.com',
+        meeting: 'Newcastle',
+        race: '1',
+        selection: 'Other',
+        betType: 'Win',
+        entryOdds: 4,
+        stake: 5,
+        trackedAt: '2026-03-31T03:00:00.000Z',
+      },
+    ],
+    [
+      {
+        meeting: 'Newcastle',
+        race: '1',
+        selection: 'Cavalry',
+        type: 'win',
+        result: 'win',
+        settled_at: '2026-03-31T04:05:06.000Z',
+        odds: 3.3,
+        stake_units: 1,
+        return_units: 3.3,
+        profit_units: 2.3,
+        roi: 2.3,
+        winner: 'Cavalry',
+        position: 1,
+      },
+      {
+        meeting: 'Auckland',
+        race: '2',
+        selection: 'Leaked Global Row',
+        type: 'win',
+        result: 'loss',
+        settled_at: '2026-03-31T05:00:00.000Z',
+        odds: 2,
+        stake_units: 1,
+        return_units: 0,
+        profit_units: -1,
+        roi: -1,
+      },
+      {
+        meeting: 'Wellington',
+        race: '3',
+        selection: 'Direct User Row',
+        type: 'win',
+        result: 'win',
+        settled_at: '2026-03-31T06:00:00.000Z',
+        odds: 2.5,
+        stake_units: 1,
+        return_units: 2.5,
+        profit_units: 1.5,
+        roi: 1.5,
+        username: 'user@example.com',
+      },
+    ]
+  ).map((row) => row.selection),
+  ['Direct User Row', 'Cavalry']
+);
+
+assert.deepStrictEqual(
+  buildVisibleSettledRows(
+    { username: 'admin', isAdmin: true },
+    [],
+    [
+      {
+        meeting: 'Auckland',
+        race: '2',
+        selection: 'Global Row',
+        type: 'win',
+        result: 'loss',
+        settled_at: '2026-03-31T05:00:00.000Z',
+        odds: 2,
+        stake_units: 1,
+        return_units: 0,
+        profit_units: -1,
+        roi: -1,
+      },
+    ]
+  ).map((row) => row.selection),
+  ['Global Row']
 );
 
 console.log('tracked_bet_matching.test.js: ok');
