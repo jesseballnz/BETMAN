@@ -997,6 +997,15 @@ function formatTrackedOddsValue(value){
   return Number.isFinite(num) && num > 0 ? num.toFixed(2) : '—';
 }
 
+function canonicalTrackedResultLabel(value){
+  const raw = String(value || 'pending').trim().toLowerCase();
+  if (raw === 'win') return 'won';
+  if (raw === 'loss') return 'lost';
+  if (raw.startsWith('ew_')) return raw === 'ew_loss' ? 'lost' : 'won';
+  if (raw === 'won' || raw === 'lost' || raw === 'void') return raw;
+  return 'pending';
+}
+
 async function loadTrackedBetsCache(force = false){
   if (!force && trackedBetsCacheLoadedAt && (Date.now() - trackedBetsCacheLoadedAt) < 15_000) return trackedBetsCache;
   try {
@@ -1161,7 +1170,7 @@ function buildTrackedEditorHtml(row){
   const meeting = escapeHtml(String(row?.meeting || '—'));
   const race = escapeHtml(String(row?.race || '—'));
   const status = escapeHtml(String(row?.status || 'active'));
-  const result = escapeHtml(String(row?.result || 'pending').toUpperCase());
+  const result = escapeHtml(canonicalTrackedResultLabel(row?.result).toUpperCase());
   const currentOdds = formatTrackedOddsValue(row?.currentOdds);
   const currentOddsMeta = row?.currentOddsSource ? ` <span class='sub'>(${escapeHtml(String(row.currentOddsSource))})</span>` : '';
   const settlementLine = String(row?.status || '') === 'settled'
@@ -1274,7 +1283,7 @@ async function renderTrackedShell(){
     return;
   }
   table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Odds</div><div class='right'>Stake / Settlement / Actions</div></div>` + filtered.map(r => {
-    const result = String(r.result || 'pending').toLowerCase();
+    const result = canonicalTrackedResultLabel(r.result);
     const badge = result === 'won' ? 'value' : (result === 'lost' ? 'danger' : 'ew');
     const entryOdds = formatTrackedOddsValue(r.entryOdds ?? r.odds);
     const currentOdds = formatTrackedOddsValue(r.currentOdds);
