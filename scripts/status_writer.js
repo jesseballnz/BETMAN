@@ -946,14 +946,20 @@ const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
   const critical = absMove >= 25 || (Number.isFinite(minsToJump) && minsToJump <= 10 && absMove >= 20);
   const severity = executable && critical
     ? 'ACTION'
-    : trackedRunner
-      ? (critical ? 'CRITICAL' : (hot ? 'HOT' : 'INFO'))
-      : (hot ? 'WATCH' : 'INFO');
+    : (critical
+      ? 'CRITICAL'
+      : (hot ? 'HOT' : (trackedRunner ? 'WATCH' : 'INFO')));
   const type = move < 0 ? 'hot_plunge' : 'hot_drift';
   const interpretation = move < 0
     ? (role !== 'market' ? `Market support building for ${role}` : (trackedRunner ? 'Tracked runner attracting support' : 'Market support building'))
     : (role !== 'market' ? `Market moving against ${role}` : (trackedRunner ? 'Tracked runner drifting in the market' : 'Market drifting away'));
-  const action = executable ? (critical ? 'BET_NOW' : 'QUEUE') : (trackedRunner ? (hot ? 'REVIEW_TRACKED' : 'WATCH_TRACKED') : (hot ? 'WATCH' : 'IGNORE'));
+  const action = executable
+    ? (critical ? 'BET_NOW' : 'QUEUE')
+    : trackedRunner
+      ? (hot ? 'REVIEW_TRACKED' : 'WATCH_TRACKED')
+      : role !== 'market'
+        ? (move < 0 ? 'REVIEW_SIGNAL' : 'RECHECK_SIGNAL')
+        : (hot ? 'WATCH_MARKET' : 'IGNORE');
   return {
     id: `${String(x?.meeting || '').toLowerCase()}|${String(x?.race || '')}|${String(x?.runner || '').toLowerCase()}|${type}`,
     ts: new Date().toISOString(),
