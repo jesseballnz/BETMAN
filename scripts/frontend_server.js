@@ -6,7 +6,7 @@ const path = require('path');
 const dns = require('dns');
 const { mergePublicStatusLists } = require('./status_snapshot_merge');
 const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
-const { matchSettledBet } = require('./tracked_bet_matching');
+const { matchSettledBet, buildTrackedSettlement } = require('./tracked_bet_matching');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -5934,12 +5934,17 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const resolveTrackedBet = (row) => {
       const hit = matchSettledBet(row, settled);
       if (!hit) return row;
+      const settlement = buildTrackedSettlement(hit, row);
       return {
         ...row,
-        status: 'settled',
-        result: String(hit.result || 'pending').toLowerCase(),
-        settledAt: hit.settledAt || row.settledAt || null,
-        payout: hit.payout ?? row.payout ?? null,
+        status: settlement.status,
+        result: settlement.result,
+        settledAt: settlement.settledAt,
+        payout: settlement.payout,
+        profit: settlement.profit,
+        roi: settlement.roi,
+        position: settlement.position,
+        winner: settlement.winner,
       };
     };
 

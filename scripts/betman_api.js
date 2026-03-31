@@ -15,7 +15,7 @@
 const crypto = require('crypto');
 const path   = require('path');
 const fs     = require('fs');
-const { matchSettledBet } = require('./tracked_bet_matching');
+const { matchSettledBet, buildTrackedSettlement } = require('./tracked_bet_matching');
 
 /* ── Configuration ─────────────────────────────────────────────────── */
 const API_VERSION = '1.0.0';
@@ -592,12 +592,17 @@ function createApiHandler(deps) {
       const resolved = mine.map((row) => {
         const hit = matchSettledBet(row, settledRows);
         if (!hit) return row;
+        const settlement = buildTrackedSettlement(hit, row);
         return {
           ...row,
-          status: 'settled',
-          result: String(hit.result || 'pending').toLowerCase(),
-          settledAt: hit.settledAt || row.settledAt || null,
-          payout: hit.payout ?? row.payout ?? null,
+          status: settlement.status,
+          result: settlement.result,
+          settledAt: settlement.settledAt,
+          payout: settlement.payout,
+          profit: settlement.profit,
+          roi: settlement.roi,
+          position: settlement.position,
+          winner: settlement.winner,
         };
       });
 

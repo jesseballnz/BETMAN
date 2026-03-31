@@ -96,6 +96,38 @@ function buildSettledBetKey(row = {}) {
   return `${normalized.meeting}|${normalized.race}|${normalized.selection}|${normalized.type}`;
 }
 
+function canonicalTrackedResult(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'pending';
+  if (raw === 'win') return 'won';
+  if (raw === 'loss') return 'lost';
+  if (raw === 'placed' || raw === 'place') return 'won';
+  if (['won', 'lost', 'pending', 'void'].includes(raw)) return raw;
+  if (raw.startsWith('ew_')) return raw === 'ew_loss' ? 'lost' : 'won';
+  return raw;
+}
+
+function toFiniteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function buildTrackedSettlement(row = {}, fallback = {}) {
+  const result = canonicalTrackedResult(row.result || fallback.result);
+  const payout = toFiniteNumber(row.payout ?? row.return_units ?? fallback.payout);
+  const profit = toFiniteNumber(row.profit ?? row.profit_units ?? fallback.profit);
+  return {
+    status: result === 'pending' ? 'active' : 'settled',
+    result,
+    settledAt: row.settledAt || row.settled_at || fallback.settledAt || null,
+    payout,
+    profit,
+    roi: toFiniteNumber(row.roi ?? fallback.roi),
+    position: row.position ?? fallback.position ?? null,
+    winner: row.winner ?? fallback.winner ?? null,
+  };
+}
+
 module.exports = {
   normalizeText,
   normalizeMeeting,
@@ -106,4 +138,6 @@ module.exports = {
   buildComparableBet,
   matchSettledBet,
   buildSettledBetKey,
+  canonicalTrackedResult,
+  buildTrackedSettlement,
 };
