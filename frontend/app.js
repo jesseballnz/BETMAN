@@ -748,6 +748,12 @@ function alertTypeImage(type){
   return '';
 }
 
+function marketMoverImage(row){
+  const move = Number(row?.pctMove || 0);
+  if (!Number.isFinite(move) || move === 0) return '';
+  return move < 0 ? '/assets/firming.png' : '/assets/drifting.png';
+}
+
 const DEFAULT_PULSE_CONFIG = {
   alertTypes: {
     plunges: true,
@@ -2417,10 +2423,11 @@ function renderMarketMovers(rows){
       const graphHtml = buildMoverGraph(r) || "<div class='sub'>No horizon data</div>";
       const fromOddsTxt = (r.fromOdds !== null && r.fromOdds !== undefined && Number.isFinite(Number(r.fromOdds))) ? Number(r.fromOdds).toFixed(2) : '—';
       const toOddsTxt = (r.toOdds !== null && r.toOdds !== undefined && Number.isFinite(Number(r.toOdds))) ? Number(r.toOdds).toFixed(2) : '—';
+      const moverImg = marketMoverImage(r);
       row.innerHTML = `
         <div><button class='bet-btn race-cell-btn movers-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
         <div><button class='bet-btn movers-runner-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-runner='${r.runner}'><span class='bet-icon'>🐎</span>${r.runner}</button></div>
-        <div><div class='comp-box ${cls}'>${move < 0 ? 'Firmed' : 'Drifted'} ${Math.abs(move).toFixed(1)}% ${r.fresh ? '· NEW' : ''}${r.startMove ? '· START' : ''}</div><div class='sub'>${fromOddsTxt} → ${toOddsTxt}</div></div>
+        <div><div class='comp-box ${cls} mover-comp-box'>${moverImg ? `<img class='mover-signal-img' src='${moverImg}' alt='${move < 0 ? 'Firming' : 'Drifting'} signal' />` : ''}<span>${move < 0 ? 'Firmed' : 'Drifted'} ${Math.abs(move).toFixed(1)}% ${r.fresh ? '· NEW' : ''}${r.startMove ? '· START' : ''}</span></div><div class='sub'>${fromOddsTxt} → ${toOddsTxt}</div></div>
         <div>${graphHtml}</div>
         <div class='right'>${buildJumpCell(r.meeting, r.race, r.eta || '—')}</div>
       `;

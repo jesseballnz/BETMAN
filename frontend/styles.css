@@ -359,6 +359,8 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .alert-card-title{font-weight:800;font-size:15px;color:#f4f8ff;margin-bottom:4px}
 .alert-card-sub{font-size:12px;color:#8ea6c8}
 .alert-card-msg{font-size:13px;color:#dfe7f2;line-height:1.45;margin:8px 0}
+.mover-comp-box{display:flex;align-items:center;gap:8px}
+.mover-signal-img{width:20px;height:20px;object-fit:contain;flex:0 0 auto}
 .alert-card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
 .alert-card-grid .k{font-size:11px;color:#8ea6c8;text-transform:uppercase;letter-spacing:.04em}
 .alert-card-grid .v{font-size:13px;color:#f4f8ff;font-weight:700;margin-top:2px}
