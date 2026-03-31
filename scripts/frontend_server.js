@@ -1555,6 +1555,11 @@ function enrichTrackedBetWithCurrentOdds(row, liveContext) {
     }
   }
 
+  if (currentOdds == null && Number.isFinite(entryOdds) && entryOdds > 0) {
+    currentOdds = Number(Number(entryOdds).toFixed(2));
+    currentOddsSource = raceFinished ? 'last known (entry)' : 'entry';
+  }
+
   return {
     ...row,
     odds: entryOdds,

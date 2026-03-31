@@ -69,11 +69,13 @@ function matchSettledBet(trackedBet, settledRows) {
   const rows = Array.isArray(settledRows) ? settledRows : [];
   let best = null;
   let bestScore = -1;
+  const raceRows = [];
 
   for (const row of rows) {
     const settled = buildComparableBet(row);
     if (settled.meeting !== tracked.meeting) continue;
     if (settled.race !== tracked.race) continue;
+    raceRows.push(row);
     if (settled.selection !== tracked.selection) continue;
 
     let score = 0;
@@ -88,7 +90,26 @@ function matchSettledBet(trackedBet, settledRows) {
     }
   }
 
-  return best;
+  if (best) return best;
+
+  const trackedType = normalizeBetType(trackedBet.betType || trackedBet.type);
+  if (trackedType !== 'win' && trackedType !== 'ew') return null;
+
+  const winnerFallback = raceRows.find((row) => normalizeSelection(row.winner) === tracked.selection);
+  if (!winnerFallback) return null;
+
+  const isWinner = true;
+  const ewPlaced = true;
+  const result = trackedType === 'ew' ? 'ew_win' : 'win';
+
+  return {
+    ...winnerFallback,
+    selection: trackedBet.selection,
+    type: trackedType,
+    result,
+    position: 1,
+    winner: winnerFallback.winner || trackedBet.selection,
+  };
 }
 
 function buildSettledBetKey(row = {}) {
@@ -128,9 +149,15 @@ function buildTrackedSettlement(row = {}, fallback = {}) {
   const result = canonicalTrackedResult(row.result || fallback.result);
   const trackedStake = toFiniteNumber(fallback.stake ?? fallback.stake_units);
   const unitStake = toFiniteNumber(row.stake_units ?? 1);
-  const scaledPayout = scaleSettlementValue(toFiniteNumber(row.payout ?? row.return_units), trackedStake, unitStake);
-  const scaledProfit = scaleSettlementValue(toFiniteNumber(row.profit ?? row.profit_units), trackedStake, unitStake);
   const odds = toFiniteNumber(fallback.entryOdds ?? fallback.odds ?? row.odds);
+  const rawPayout = toFiniteNumber(row.payout ?? row.return_units);
+  const rawProfit = toFiniteNumber(row.profit ?? row.profit_units);
+  const shouldIgnoreSourceReturns = result === 'won' && Number.isFinite(trackedStake) && Number.isFinite(odds) && (
+    (Number.isFinite(rawPayout) && rawPayout <= 0)
+    || (Number.isFinite(rawProfit) && rawProfit < 0)
+  );
+  const scaledPayout = shouldIgnoreSourceReturns ? null : scaleSettlementValue(rawPayout, trackedStake, unitStake);
+  const scaledProfit = shouldIgnoreSourceReturns ? null : scaleSettlementValue(rawProfit, trackedStake, unitStake);
 
   let payout = scaledPayout;
   let profit = scaledProfit;
@@ -148,7 +175,8 @@ function buildTrackedSettlement(row = {}, fallback = {}) {
     profit = -trackedStake;
   }
 
-  const roi = toFiniteNumber(row.roi ?? fallback.roi)
+  const sourceRoi = shouldIgnoreSourceReturns ? null : toFiniteNumber(row.roi ?? fallback.roi);
+  const roi = sourceRoi
     ?? (Number.isFinite(profit) && Number.isFinite(trackedStake) && trackedStake > 0 ? (profit / trackedStake) : null);
 
   return {

@@ -5287,16 +5287,16 @@ function attachInterestingHandlers(){
     btn.onclick = async () => {
       const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
       if (!race) return alert('Race not found in cache yet. Try Refresh.');
+      setActivePage('workspace');
+      await selectRace(race.key);
       const selRaw = String(btn.dataset.runner || '');
       const selNorm = normalizeRunnerName(selRaw.replace(/^\d+\.\s*/, '').trim());
       const runner = (race.runners || []).find(x => {
         const nm = normalizeRunnerName(String(x.name || x.runner_name || '').trim());
         return nm === selNorm || nm.includes(selNorm) || selNorm.includes(nm);
       });
-      if (runner) {
-        openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
-      } else {
-        openSummaryPopup(`${race.meeting} R${race.race_number} — ${race.description}`, `<div style='margin-bottom:8px'><b>Interesting Runner:</b> ${selRaw}</div>` + renderAnalysis(race));
+      if (runner && $('analysisBody')) {
+        $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Focused from Interesting Runners: ${escapeHtml(runner.name || runner.runner_name || selRaw)}</div>`;
       }
     };
   });
@@ -12517,6 +12517,33 @@ async function loadAuthenticatedUser(){
   if (!isAdminUser && (activePage === 'bakeoff' || activePage === 'performance')) setActivePage('workspace');
 }
 
+async function renderAuthPulseSettingsPanel(){
+  const root = $('authPulseSettingsBody');
+  if (!root) return;
+  root.innerHTML = `<div class='row'><div style='grid-column:1/-1'>Loading Pulse settings…</div></div>`;
+  try {
+    const cfg = await loadPulseConfig();
+    const thresholds = cfg?.thresholds || {};
+    const alertTypes = cfg?.alertTypes || {};
+    root.innerHTML = `
+      <div class='row'><div><b>Time gate</b></div><div>${thresholds.maxMinsToJump == null ? 'Off' : `${thresholds.maxMinsToJump} minutes to jump`}</div></div>
+      <div class='row'><div><b>Minimum severity</b></div><div>${escapeHtml(String(thresholds.minSeverity || 'WATCH'))}</div></div>
+      <div class='row'><div><b>Minimum move %</b></div><div>${thresholds.minMovePct == null ? 'Off' : `${thresholds.minMovePct}%`}</div></div>
+      <div class='row'><div><b>Tracked override</b></div><div>${thresholds.trackedRunnerOverride ? 'On' : 'Off'}</div></div>
+      <div class='row'><div><b>Alert types</b></div><div>${['plunges','drifts','conflicts','selectionFlips','preJumpHeat'].filter(k => alertTypes[k]).join(' · ') || 'None enabled'}</div></div>
+      <div class='row'><div style='grid-column:1/-1'><button id='openPulseConfigFromAuth' class='btn btn-ghost compact-btn'>Open Full Pulse Config</button></div></div>
+    `;
+    $('openPulseConfigFromAuth')?.addEventListener('click', () => {
+      toggleAuthModal(false);
+      setActivePage('alerts');
+      setActiveAlertsTab('config');
+      renderPulseConfigPanel();
+    });
+  } catch {
+    root.innerHTML = `<div class='row'><div style='grid-column:1/-1'>Unable to load Pulse settings right now.</div></div>`;
+  }
+}
+
 async function openAuthModal(){
   toggleAuthModal(true);
   let isAdmin = false;
@@ -12533,6 +12560,7 @@ async function openAuthModal(){
     apiKeyPreview = null;
   }
   updateApiKeyPanel();
+  await renderAuthPulseSettingsPanel();
 
   const adminBlock = $('adminAuthBlock');
   if (adminBlock) adminBlock.style.display = '';

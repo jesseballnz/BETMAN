@@ -1,0 +1,17 @@
+{
+  "alertTypes": {
+    "plunges": true,
+    "drifts": true,
+    "conflicts": true,
+    "selectionFlips": true,
+    "preJumpHeat": true
+  },
+  "thresholds": {
+    "minSeverity": "HOT",
+    "maxMinsToJump": 0,
+    "minMovePct": 0,
+    "trackedRunnerOverride": true
+  },
+  "updatedAt": "2026-03-31T17:04:28.860Z",
+  "updatedBy": "betman"
+}

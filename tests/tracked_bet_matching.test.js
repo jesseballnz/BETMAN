@@ -41,6 +41,17 @@ const oddsRunnerFallback = matchSettledBet(
 );
 assert.strictEqual(oddsRunnerFallback && oddsRunnerFallback.result, 'loss');
 
+const winnerFallback = matchSettledBet(
+  { meeting: 'Newcastle', race: '1', selection: 'Cavalry', betType: 'Win' },
+  [
+    { meeting: 'Newcastle', race: '1', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Cavalry' },
+    { meeting: 'Newcastle', race: '1', selection: 'Dubliners', type: 'odds_runner', result: 'loss', position: 8, winner: 'Cavalry' },
+  ]
+);
+assert.strictEqual(winnerFallback && winnerFallback.selection, 'Cavalry');
+assert.strictEqual(winnerFallback && winnerFallback.result, 'win');
+assert.strictEqual(winnerFallback && winnerFallback.position, 1);
+
 assert.strictEqual(
   buildSettledBetKey({ meeting: 'Newcastle', race: 'R1', selection: '7. Cavalry', type: 'Each Way' }),
   'newcastle|1|cavalry|ew'
