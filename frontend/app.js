@@ -1211,13 +1211,16 @@ async function renderPulseConfigPanel(){
       if (!target) return;
       const meeting = normalizePulseMeetingName(btn.dataset.meeting || '');
       if (!meeting) return;
-      const existing = target.value.split(/\n+/).map(v => String(v || '').trim()).filter(Boolean);
-      if (!existing.includes(meeting)) existing.push(meeting);
-      target.value = existing.join('\n');
+      target.value = meeting;
       const modeInput = cfg.querySelector('input[name="pulseTargetMode"][value="meetings"]');
       if (modeInput) modeInput.checked = true;
       cfg.querySelectorAll('.pulse-mode-pill').forEach(pill => pill.classList.toggle('active', pill.querySelector('input')?.checked));
-      if (status) status.textContent = `${meeting} added — save to apply`;
+      cfg.querySelectorAll('.pulse-meeting-chip').forEach(chip => chip.classList.toggle('active', chip === btn));
+      const quickBtn = $('pulseQuickSelectedMeetingBtn');
+      if (quickBtn) quickBtn.textContent = `Use ${meeting}`;
+      const focusBtn = $('pulseQuickPukekoheBtn');
+      if (focusBtn && meeting.toLowerCase() !== 'pukekohe') focusBtn.textContent = `Focus ${meeting}`;
+      if (status) status.textContent = `${meeting} selected — use the button to apply instantly`;
     });
   });
 
