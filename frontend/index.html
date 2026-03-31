@@ -766,35 +766,35 @@
         </div>
       </div>
       <div class="btn-row" style="margin:10px 0 10px 0;flex-wrap:wrap;gap:8px">
-        <button class="btn btn-ghost compact-btn alerts-subtab active" data-alerts-tab="live">Live Alerts</button>
-        <button class="btn btn-ghost compact-btn alerts-subtab" data-alerts-tab="history">History</button>
-        <button class="btn btn-ghost compact-btn alerts-subtab" data-alerts-tab="config">Pulse Config</button>
+        <button class="btn btn-ghost compact-btn alerts-subtab active" data-alerts-tab="live">Live Pulse</button>
+        <button class="btn btn-ghost compact-btn alerts-subtab" data-alerts-tab="history">Pulse History</button>
+        <button class="btn btn-ghost compact-btn alerts-subtab" data-alerts-tab="config">Pulse Control</button>
       </div>
-      <div class="perf-kpis perf-kpis-secondary" style="margin:0 0 14px 0;gap:10px;align-items:end">
-        <div class="perf-card" style="min-width:220px;flex:1">
-          <div class="label">Country Filter</div>
-          <select id="alertsCountryFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none">
+      <div class="perf-kpis perf-kpis-secondary pulse-filter-strip" style="margin:0 0 14px 0;gap:10px;align-items:end">
+        <div class="perf-card pulse-filter-card" style="min-width:220px;flex:1">
+          <div class="label">Country</div>
+          <select id="alertsCountryFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
             <option value="all">All countries</option>
           </select>
         </div>
-        <div class="perf-card" style="min-width:220px;flex:1">
-          <div class="label">Meeting Filter</div>
-          <select id="alertsMeetingFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.12);color:#e6edf6;border-radius:10px;padding:10px 12px;outline:none">
+        <div class="perf-card pulse-filter-card" style="min-width:220px;flex:1">
+          <div class="label">Meeting</div>
+          <select id="alertsMeetingFilter" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none">
             <option value="all">All meetings</option>
           </select>
         </div>
       </div>
 
       <div class="alerts-subpanel active" data-alerts-panel="live">
-        <div class="perf-kpis perf-kpis-secondary">
-          <div class="perf-card"><div class="label">HOT</div><div id="alertsHotCount" class="value">0</div></div>
-          <div class="perf-card"><div class="label">CRITICAL</div><div id="alertsCriticalCount" class="value">0</div></div>
-          <div class="perf-card"><div class="label">Live Feed</div><div id="alertsLiveCount" class="value">0</div></div>
+        <div class="perf-kpis perf-kpis-secondary pulse-summary-strip">
+          <div class="perf-card"><div class="label">Hot</div><div id="alertsHotCount" class="value">0</div></div>
+          <div class="perf-card"><div class="label">Action</div><div id="alertsCriticalCount" class="value">0</div></div>
+          <div class="perf-card"><div class="label">Live</div><div id="alertsLiveCount" class="value">0</div></div>
         </div>
         <div class="perf-grid">
-          <div class="perf-section perf-wide" style="margin-top:12px">
-            <h4>Pulse Feed</h4>
-            <div class="sub">Plunges, drifts, conflicts, selection flips, and pre-jump heat.</div>
+          <div class="perf-section perf-wide pulse-feed-panel" style="margin-top:12px">
+            <h4>Live Pulse</h4>
+            <div class="sub">BETMAN Pulse surfaces premium pre-race signals: market pressure, thesis changes, and jump-timed tracked runner prompts.</div>
             <div id="alertsLiveTable" class="table"></div>
           </div>
         </div>
@@ -802,9 +802,9 @@
 
       <div class="alerts-subpanel" data-alerts-panel="history" style="display:none">
         <div class="perf-grid">
-          <div class="perf-section perf-wide">
-            <h4>Alert History</h4>
-            <div class="sub">Delivered and recent alerts. This will become the audit trail for Pulse.</div>
+          <div class="perf-section perf-wide pulse-history-panel">
+            <h4>Pulse History</h4>
+            <div class="sub">Premium signal history and audit trail across tracked runners, thesis changes, and jump-timed prompts.</div>
             <div id="alertsHistoryTable" class="table"></div>
           </div>
         </div>
@@ -812,9 +812,9 @@
 
       <div class="alerts-subpanel" data-alerts-panel="config" style="display:none">
         <div class="perf-grid">
-          <div class="perf-section perf-wide">
-            <h4>Pulse Config</h4>
-            <div class="sub">Thresholds and delivery controls for HOT signals, plunges, drifts, and market conflicts.</div>
+          <div class="perf-section perf-wide pulse-config-panel">
+            <h4>Pulse Control</h4>
+            <div class="sub">Tune premium signal scope, thresholds, and delivery for BETMAN Pulse.</div>
             <div id="alertsConfigPanel" class="table"></div>
           </div>
         </div>

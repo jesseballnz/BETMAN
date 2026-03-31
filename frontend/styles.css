@@ -809,3 +809,9 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .btn,.bet-btn,.analysis-drag-btn,.btn-ghost{ text-transform:none; letter-spacing:.01em }
 .btn{ box-shadow:0 3px 10px rgba(197,255,0,.16) }
 .page-tab{ text-transform:none; letter-spacing:.02em }
+
+
+.pulse-filter-strip .perf-card,.pulse-summary-strip .perf-card,.pulse-feed-panel,.pulse-history-panel,.pulse-config-panel{background:linear-gradient(180deg,rgba(15,21,30,.96),rgba(11,16,24,.94));border-color:rgba(255,255,255,.06);box-shadow:0 10px 24px rgba(0,0,0,.24)}
+.pulse-filter-card .label,.pulse-summary-strip .label,.pulse-feed-panel .sub,.pulse-history-panel .sub,.pulse-config-panel .sub{color:#97a8bb}
+.pulse-summary-strip .value{color:#dbe6f2;font-size:24px}
+.pulse-feed-panel h4,.pulse-history-panel h4,.pulse-config-panel h4{font-size:15px;letter-spacing:.06em;color:#eef5fb}

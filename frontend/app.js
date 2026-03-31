@@ -1643,7 +1643,7 @@ async function renderAlertsShell(){
             ${note ? `<div class='alert-card-action'><div><div class='label'>Note</div><div class='value'>${note}</div></div></div>` : ''}
           </div>`;
         }).join('') + `</div>`
-      : `<div class='row'><div style='grid-column:1/-1'>No live alerts yet</div></div>`;
+      : `<div class='row'><div style='grid-column:1/-1'><div style='font-weight:700;color:#d9e4ef;margin-bottom:4px'>No live Pulse right now</div><div class='sub'>When premium signals trigger, they’ll appear here.</div></div></div>`;
 
     live.querySelectorAll('.alert-row').forEach(node => {
       node.addEventListener('click', async () => {
@@ -1660,14 +1660,20 @@ async function renderAlertsShell(){
     const historyRows = filterPulseAlerts(Array.isArray(history?.alerts) ? history.alerts : (Array.isArray(history) ? history : []))
       .filter(a => (countryFilter === 'all' ? true : String(a?.country || '') === countryFilter) && (meetingFilter === 'all' ? true : String(a?.meeting || '') === meetingFilter));
     hist.innerHTML = historyRows.length
-      ? `<div class='row header'><div>When</div><div>Severity</div><div>Race</div><div>Runner</div><div class='right'>Status</div></div>` + historyRows.slice(0,50).map(a => `<div class='row'>
+      ? `<div class='row header'><div>When</div><div>Severity</div><div>Race</div><div>Runner</div><div class='right'>Status / Result</div></div>` + historyRows.slice(0,50).map(a => {
+          const result = String(a?.result || (a?.raceSettled ? 'settled' : '') || '').trim();
+          const winner = String(a?.winner || '').trim();
+          const position = a?.position != null ? String(a.position) : '';
+          const resultBits = [result, position ? `Pos ${position}` : '', winner ? `Winner ${winner}` : ''].filter(Boolean).join(' · ');
+          return `<div class='row'>
           <div>${escapeHtml(String(a?.ts || '—'))}</div>
           <div>${escapeHtml(String(a?.severity || '—'))}</div>
           <div>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))}</div>
           <div>${escapeHtml(String(a?.selection || '—'))}</div>
-          <div class='right'>${escapeHtml(String(a?.status || '—'))}</div>
-        </div>`).join('')
-      : `<div class='row'><div style='grid-column:1/-1'>No alert history yet</div></div>`;
+          <div class='right'>${escapeHtml(String(a?.status || '—'))}${resultBits ? `<div class='sub'>${escapeHtml(resultBits)}</div>` : ''}</div>
+        </div>`;
+        }).join('')
+      : `<div class='row'><div style='grid-column:1/-1'>No Pulse history yet</div></div>`;
   }
   if (cfg) renderPulseConfigPanel();
 }
