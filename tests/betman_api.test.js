@@ -7,6 +7,8 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const {
@@ -58,6 +60,19 @@ function fakePostReq(urlStr, body, headers = {}) {
   };
 }
 
+function fakePutReq(urlStr, body, headers = {}) {
+  const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+  return {
+    method: 'PUT',
+    url: urlStr,
+    headers: { host: 'localhost', 'content-type': 'application/json', ...headers },
+    on(ev, cb) {
+      if (ev === 'data') cb(bodyStr);
+      if (ev === 'end') setTimeout(cb, 0);
+    }
+  };
+}
+
 const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(ROOT, 'frontend', 'data');
 
@@ -67,6 +82,8 @@ function makeHandler(overrides = {}) {
     saveAuthState: overrides.saveAuthState || (() => {}),
     loadJson: overrides.loadJson || ((p, f) => f),
     resolveTenantPath: overrides.resolveTenantPath || ((req, dp) => dp),
+    getSessionPrincipal: overrides.getSessionPrincipal,
+    resolveTenantPathById: overrides.resolveTenantPathById,
     dataDir: overrides.dataDir || DATA_DIR,
     rootDir: overrides.rootDir || ROOT
   });
@@ -125,8 +142,9 @@ console.log('  ✓ rateCheck enforces sliding window limits');
 
 // 4. apiJson response format
 {
+  const req = fakeReq('GET', '/api/v1/health');
   const res = fakeRes();
-  apiJson(res, { ok: true, test: 'value' }, 200, { limit: 60, remaining: 59, window: 60 });
+  apiJson(req, res, { ok: true, test: 'value' }, 200, { limit: 60, remaining: 59, window: 60 });
   assert.strictEqual(res.statusCode, 200);
   const parsed = JSON.parse(res.body);
   assert.strictEqual(parsed.ok, true);
@@ -138,8 +156,9 @@ console.log('  ✓ apiJson formats response with rate limit headers');
 
 // 5. apiError response format
 {
+  const req = fakeReq('GET', '/api/v1/health');
   const res = fakeRes();
-  apiError(res, 401, 'api_key_required', 'Provide an API key.');
+  apiError(req, res, 401, 'api_key_required', 'Provide an API key.');
   assert.strictEqual(res.statusCode, 401);
   const parsed = JSON.parse(res.body);
   assert.strictEqual(parsed.ok, false);
@@ -238,7 +257,58 @@ asyncTests.push((async () => {
   console.log('  ✓ Races endpoint returns data with rate headers');
 })());
 
-// 12. Race detail endpoint
+// 12. Pulse config route supports PUT + filtered alerts by tenant
+asyncTests.push((async () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'betman-api-pulse-'));
+  const dataDir = path.join(tmpRoot, 'frontend', 'data');
+  const tenantDir = path.join(tmpRoot, 'memory', 'tenants', 'acct_test', 'frontend-data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(tenantDir, { recursive: true });
+
+  fs.writeFileSync(path.join(tenantDir, 'alerts_feed.json'), JSON.stringify({
+    updatedAt: '2026-03-31T00:00:00.000Z',
+    alerts: [
+      { id: '1', type: 'hot_plunge', selection: 'A' },
+      { id: '2', type: 'hot_drift', selection: 'B' },
+      { id: '3', type: 'market_conflict', selection: 'C' }
+    ]
+  }, null, 2));
+
+  const loadJson = (p, f) => {
+    try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return f; }
+  };
+  const resolveTenantPathById = (tenantId, defaultPath, filename) => {
+    if (tenantId === 'acct_test') return path.join(tmpRoot, 'memory', 'tenants', tenantId, 'frontend-data', filename);
+    return defaultPath;
+  };
+
+  const handler = makeHandler({
+    dataDir,
+    rootDir: tmpRoot,
+    loadJson,
+    getSessionPrincipal: () => ({ username: 'alice', tenantId: 'acct_test', effectiveTenantId: 'acct_test' }),
+    resolveTenantPathById,
+  });
+
+  const putReq = fakePutReq('/api/v1/pulse-config', { alertTypes: { drifts: false } });
+  const putRes = fakeRes();
+  await handler(putReq, putRes, new URL('http://localhost/api/v1/pulse-config'));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.strictEqual(putRes.statusCode, 200);
+  const saved = JSON.parse(putRes.body);
+  assert.strictEqual(saved.config.alertTypes.drifts, false);
+
+  const getReq = fakeReq('GET', '/api/v1/alerts-feed');
+  const getRes = fakeRes();
+  await handler(getReq, getRes, new URL('http://localhost/api/v1/alerts-feed'));
+  assert.strictEqual(getRes.statusCode, 200);
+  const feed = JSON.parse(getRes.body);
+  assert.strictEqual(feed.alerts.length, 2);
+  assert.strictEqual(feed.alerts.some((row) => row.type === 'hot_drift'), false);
+  console.log('  ✓ Pulse config route persists and filters tenant alerts');
+})());
+
+// 13. Race detail endpoint
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({

@@ -777,6 +777,24 @@ function normalizePulseConfig(payload){
   };
 }
 
+function pulseConfigKeyForAlertType(type){
+  const t = String(type || '').toLowerCase();
+  if (t === 'hot_plunge') return 'plunges';
+  if (t === 'hot_drift') return 'drifts';
+  if (t === 'market_conflict') return 'conflicts';
+  if (t === 'selection_flip_recommended' || t === 'selection_flip_odds_runner' || t === 'selection_flip_ew') return 'selectionFlips';
+  if (t === 'prejump_heat') return 'preJumpHeat';
+  return null;
+}
+
+function filterPulseAlerts(rows){
+  return (Array.isArray(rows) ? rows : []).filter(row => {
+    const key = pulseConfigKeyForAlertType(row?.type);
+    if (!key) return true;
+    return pulseConfigState?.alertTypes?.[key] !== false;
+  });
+}
+
 async function loadPulseConfig(){
   const res = await fetchLocal('./api/v1/pulse-config', { cache: 'no-store' });
   const payload = await res.json().catch(() => ({}));
@@ -1144,7 +1162,7 @@ async function renderAlertsShell(){
   } catch {}
   const feed = await fetchLocal('./data/alerts_feed.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] }));
   const history = await fetchLocal('./data/alerts_history.json', { cache: 'no-store' }).then(r => r.json()).catch(() => []);
-  const allAlerts = Array.isArray(feed?.alerts) ? feed.alerts : [];
+  const allAlerts = filterPulseAlerts(Array.isArray(feed?.alerts) ? feed.alerts : []);
   hydrateAlertsMeetingFilter(allAlerts);
   const meetingFilter = String($('alertsMeetingFilter')?.value || 'all');
   const alerts = meetingFilter === 'all'
@@ -1220,7 +1238,7 @@ async function renderAlertsShell(){
     });
   }
   if (hist) {
-    const historyRows = (Array.isArray(history) ? history : [])
+    const historyRows = filterPulseAlerts(Array.isArray(history) ? history : [])
       .filter(a => meetingFilter === 'all' ? true : String(a?.meeting || '') === meetingFilter);
     hist.innerHTML = historyRows.length
       ? `<div class='row header'><div>When</div><div>Severity</div><div>Race</div><div>Runner</div><div class='right'>Status</div></div>` + historyRows.slice(0,50).map(a => `<div class='row'>

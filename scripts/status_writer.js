@@ -8,6 +8,52 @@ function loadJson(p, fallback){
   try { return JSON.parse(fs.readFileSync(p,'utf8')); } catch { return fallback; }
 }
 
+const DEFAULT_PULSE_CONFIG = Object.freeze({
+  alertTypes: {
+    plunges: true,
+    drifts: true,
+    conflicts: true,
+    selectionFlips: true,
+    preJumpHeat: true,
+  },
+  updatedAt: null,
+  updatedBy: null,
+});
+
+function normalizePulseConfig(raw = {}) {
+  const alertTypes = raw && typeof raw.alertTypes === 'object' ? raw.alertTypes : {};
+  return {
+    alertTypes: {
+      plunges: alertTypes.plunges !== false,
+      drifts: alertTypes.drifts !== false,
+      conflicts: alertTypes.conflicts !== false,
+      selectionFlips: alertTypes.selectionFlips !== false,
+      preJumpHeat: alertTypes.preJumpHeat !== false,
+    },
+    updatedAt: raw?.updatedAt || null,
+    updatedBy: raw?.updatedBy || null,
+  };
+}
+
+function pulseConfigKeyForAlertType(type) {
+  const t = String(type || '').trim().toLowerCase();
+  if (t === 'hot_plunge') return 'plunges';
+  if (t === 'hot_drift') return 'drifts';
+  if (t === 'market_conflict') return 'conflicts';
+  if (t === 'selection_flip_recommended' || t === 'selection_flip_odds_runner' || t === 'selection_flip_ew') return 'selectionFlips';
+  if (t === 'prejump_heat') return 'preJumpHeat';
+  return null;
+}
+
+function filterPulseAlerts(rows, config) {
+  const enabled = config?.alertTypes || DEFAULT_PULSE_CONFIG.alertTypes;
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const key = pulseConfigKeyForAlertType(row?.type);
+    if (!key) return true;
+    return enabled[key] !== false;
+  });
+}
+
 function appendJsonl(p, row){
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -80,6 +126,8 @@ const stakeData = loadJson(stakePath, { stakePerRace: 10, exoticStakePerRace: 1,
 const feelData = loadJson(feelPath, { score: 50, wins: 0, losses: 0, updatedAt: '' });
 const placedBets = loadJson(placedPath, []);
 const queuedBets = loadJson(queuePath, []);
+const pulseConfigPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'pulse_config.json') : path.join(tenantDataDir, 'pulse_config.json');
+const pulseConfig = normalizePulseConfig(loadJson(pulseConfigPath, DEFAULT_PULSE_CONFIG));
 
 // preserve last known open bets if latest pull failed
 if ((balanceData.betcha?.openBets == null || balanceData.tab?.openBets == null) && prevStatus?.openBets != null) {
@@ -1059,7 +1107,7 @@ for (const [key, nextSel] of nextSelectionMap.entries()) {
   });
 }
 
-const pulseAlertsAll = [...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts].sort((a,b) => {
+const pulseAlertsAll = filterPulseAlerts([...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts], pulseConfig).sort((a,b) => {
   const sev = { ACTION: 4, CRITICAL: 3, HOT: 2, WATCH: 1, INFO: 0 };
   if (sev[b.severity] !== sev[a.severity]) return sev[b.severity] - sev[a.severity];
   const trackedDelta = Number(b?.trackedPriority || (b?.trackedRunner ? 1 : 0)) - Number(a?.trackedPriority || (a?.trackedRunner ? 1 : 0));
@@ -1075,7 +1123,7 @@ const alertsFeedPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'al
 const alertsHistoryPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'alerts_history.json') : path.join(tenantDataDir, 'alerts_history.json');
 const priorAlerts = loadJson(alertsHistoryPath, []);
 const mergedAlerts = Array.from(new Map(
-  [...pulseAlertsAll, ...(Array.isArray(priorAlerts) ? priorAlerts : [])]
+  [...pulseAlertsAll, ...filterPulseAlerts(Array.isArray(priorAlerts) ? priorAlerts : [], pulseConfig)]
     .map(alert => [String(alert?.id || `${alert?.meeting || ''}|${alert?.race || ''}|${alert?.selection || ''}|${alert?.type || ''}`), alert])
 ).values())
   .sort((a, b) => String(b?.ts || '').localeCompare(String(a?.ts || '')))

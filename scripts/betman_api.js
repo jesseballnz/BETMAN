@@ -22,6 +22,18 @@ const API_VERSION = '1.0.0';
 const DEFAULT_RATE_LIMIT   = Number(process.env.BETMAN_API_RATE_LIMIT   || 60);   // requests per window
 const DEFAULT_RATE_WINDOW  = Number(process.env.BETMAN_API_RATE_WINDOW  || 60);   // window in seconds
 const TAB_BASE = 'https://api.tab.co.nz/affiliates/v1';
+const PULSE_CONFIG_FILE = 'pulse_config.json';
+const DEFAULT_PULSE_CONFIG = Object.freeze({
+  alertTypes: {
+    plunges: true,
+    drifts: true,
+    conflicts: true,
+    selectionFlips: true,
+    preJumpHeat: true,
+  },
+  updatedAt: null,
+  updatedBy: null,
+});
 
 /* ── API-key helpers ───────────────────────────────────────────────── */
 
@@ -138,6 +150,40 @@ function apiJson(req, res, payload, code = 200, rateInfo) {
 
 function apiError(req, res, code, error, message, rateInfo) {
   apiJson(req, res, { ok: false, error, message, api_version: API_VERSION }, code, rateInfo);
+}
+
+function normalizePulseConfig(raw = {}, principal = null) {
+  const alertTypes = raw && typeof raw.alertTypes === 'object' ? raw.alertTypes : {};
+  return {
+    alertTypes: {
+      plunges: alertTypes.plunges !== false,
+      drifts: alertTypes.drifts !== false,
+      conflicts: alertTypes.conflicts !== false,
+      selectionFlips: alertTypes.selectionFlips !== false,
+      preJumpHeat: alertTypes.preJumpHeat !== false,
+    },
+    updatedAt: raw?.updatedAt || null,
+    updatedBy: raw?.updatedBy || principal?.username || null,
+  };
+}
+
+function pulseConfigKeyForAlertType(type) {
+  const t = String(type || '').trim().toLowerCase();
+  if (t === 'hot_plunge') return 'plunges';
+  if (t === 'hot_drift') return 'drifts';
+  if (t === 'market_conflict') return 'conflicts';
+  if (t === 'selection_flip_recommended' || t === 'selection_flip_odds_runner' || t === 'selection_flip_ew') return 'selectionFlips';
+  if (t === 'prejump_heat') return 'preJumpHeat';
+  return null;
+}
+
+function filterAlertsByPulseConfig(rows, config) {
+  const enabled = config?.alertTypes || DEFAULT_PULSE_CONFIG.alertTypes;
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const key = pulseConfigKeyForAlertType(row?.type);
+    if (!key) return true;
+    return enabled[key] !== false;
+  });
 }
 
 /* ── Route handler factory ─────────────────────────────────────────── */
@@ -276,6 +322,36 @@ function createApiHandler(deps) {
   function readDataFile(filename, fallback) {
     const p = path.join(dataDir, filename);
     return loadJson(p, fallback);
+  }
+
+  function writeJson(filePath, payload) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
+  }
+
+  function effectiveTenantId(principal) {
+    return principal?.effectiveTenantId || principal?.tenantId || 'default';
+  }
+
+  function loadPulseConfigForTenant(tenantId = 'default') {
+    const filePath = resolveTenantPathById
+      ? resolveTenantPathById(tenantId, path.join(dataDir, PULSE_CONFIG_FILE), PULSE_CONFIG_FILE)
+      : path.join(dataDir, PULSE_CONFIG_FILE);
+    const raw = loadJson(filePath, DEFAULT_PULSE_CONFIG);
+    return normalizePulseConfig(raw);
+  }
+
+  function savePulseConfigForTenant(tenantId = 'default', payload = {}, principal = null) {
+    const filePath = resolveTenantPathById
+      ? resolveTenantPathById(tenantId, path.join(dataDir, PULSE_CONFIG_FILE), PULSE_CONFIG_FILE)
+      : path.join(dataDir, PULSE_CONFIG_FILE);
+    const next = normalizePulseConfig({
+      ...payload,
+      updatedAt: new Date().toISOString(),
+      updatedBy: principal?.username || payload?.updatedBy || null,
+    }, principal);
+    writeJson(filePath, next);
+    return next;
   }
 
   /* ── Route table ─────────────────────────────────────────────────── */
@@ -737,23 +813,69 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/alerts-feed ───────────────────────────────────── */
     if (req.method === 'GET' && route === '/alerts-feed') {
-      const data = readDataFile('alerts_feed.json', { updatedAt: null, alerts: [] });
+      const tenantId = effectiveTenantId(principal);
+      const dataPath = resolveTenantPathById
+        ? resolveTenantPathById(tenantId, path.join(dataDir, 'alerts_feed.json'), 'alerts_feed.json')
+        : path.join(dataDir, 'alerts_feed.json');
+      const data = loadJson(dataPath, { updatedAt: null, alerts: [] });
+      const config = loadPulseConfigForTenant(tenantId);
       return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
         updatedAt: data.updatedAt || null,
-        alerts: Array.isArray(data.alerts) ? data.alerts : []
+        alerts: filterAlertsByPulseConfig(Array.isArray(data.alerts) ? data.alerts : [], config)
       }, 200, rateInfo), true;
     }
 
     /* ── GET /api/v1/alerts-history ────────────────────────────────── */
     if (req.method === 'GET' && route === '/alerts-history') {
-      const data = readDataFile('alerts_history.json', []);
+      const tenantId = effectiveTenantId(principal);
+      const dataPath = resolveTenantPathById
+        ? resolveTenantPathById(tenantId, path.join(dataDir, 'alerts_history.json'), 'alerts_history.json')
+        : path.join(dataDir, 'alerts_history.json');
+      const data = loadJson(dataPath, []);
+      const config = loadPulseConfigForTenant(tenantId);
       return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
-        alerts: Array.isArray(data) ? data : []
+        alerts: filterAlertsByPulseConfig(Array.isArray(data) ? data : [], config)
       }, 200, rateInfo), true;
+    }
+
+    /* ── GET/PUT/PATCH /api/v1/pulse-config ───────────────────────── */
+    if (route === '/pulse-config') {
+      const tenantId = effectiveTenantId(principal);
+
+      if (req.method === 'GET') {
+        return apiJson(req, res, {
+          ok: true,
+          api_version: API_VERSION,
+          config: loadPulseConfigForTenant(tenantId)
+        }, 200, rateInfo), true;
+      }
+
+      if (req.method === 'PUT' || req.method === 'PATCH') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+          let payload = {};
+          try { payload = body ? JSON.parse(body) : {}; } catch {}
+          const current = loadPulseConfigForTenant(tenantId);
+          const next = savePulseConfigForTenant(tenantId, {
+            ...current,
+            alertTypes: {
+              ...current.alertTypes,
+              ...(payload?.alertTypes || {}),
+            }
+          }, principal);
+          return apiJson(req, res, {
+            ok: true,
+            api_version: API_VERSION,
+            config: next
+          }, 200, rateInfo);
+        });
+        return true;
+      }
     }
 
     /* ── GET /api/v1/learnings-report ──────────────────────────────── */
