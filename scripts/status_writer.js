@@ -647,6 +647,17 @@ const settledBetsPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 's
 const settledBets = loadJson(settledBetsPath, []);
 const settledMap = new Map((settledBets || []).map(r => [buildSettledBetKey(r), r]));
 const resMap = new Map((betResults || []).map(r => [`${String(r.meeting).toLowerCase()}|${String(r.race)}|${String(r.selection).toLowerCase()}`, r.result]));
+const settledRaceKeys = new Set([
+  ...(Array.isArray(settledBets) ? settledBets : []).map(r => `${String(r?.meeting || '').trim().toLowerCase()}|${String(r?.race || '').replace(/^R/i,'').trim()}`),
+  ...(Array.isArray(betResults) ? betResults : []).map(r => `${String(r?.meeting || '').trim().toLowerCase()}|${String(r?.race || '').replace(/^R/i,'').trim()}`),
+].filter(Boolean));
+
+function isRaceSettledForAlerts(meeting, race, minsToJump){
+  const key = `${String(meeting || '').trim().toLowerCase()}|${String(race || '').replace(/^R/i,'').trim()}`;
+  if (settledRaceKeys.has(key)) return true;
+  if (Number.isFinite(minsToJump) && minsToJump <= -20) return true;
+  return false;
+}
 
 status.completedBets = placedRowsAll
   .filter(x => {
@@ -921,6 +932,7 @@ function isTrackedRunnerAlert(meeting, race, runner) {
 const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
   const move = Number(x?.pctMove || 0);
   const minsToJump = Number(x?.minsToJump);
+  const raceSettled = isRaceSettledForAlerts(x.meeting, x.race, minsToJump);
   const absMove = Math.abs(move);
   const role = runnerRoleForAlert(x.meeting, x.race, x.runner);
   const trackedRunner = isTrackedRunnerAlert(x.meeting, x.race, x.runner);
@@ -951,7 +963,7 @@ const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
     severity,
     title: `${severity} ${move < 0 ? 'Plunge' : 'Drift'} — ${x.meeting} R${x.race}`,
     message: `${x.runner} ${Number(x?.fromOdds).toFixed(2)} → ${Number(x?.toOdds).toFixed(2)} (${move.toFixed(1)}%)`,
-    status: 'live',
+    status: raceSettled ? 'settled' : 'live',
     meeting: x.meeting,
     race: String(x.race),
     selection: x.runner,
@@ -962,6 +974,7 @@ const basePulseAlerts = (status.marketMovers || []).map((x, idx) => {
     toOdds: x.toOdds,
     movePct: move,
     minsToJump: Number.isFinite(minsToJump) ? minsToJump : null,
+    raceSettled,
     interpretation,
     action
   };
@@ -1040,18 +1053,27 @@ for (const [key, nextSel] of nextSelectionMap.entries()) {
   });
 }
 
-const pulseAlerts = [...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts].sort((a,b) => {
+const pulseAlertsAll = [...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts].sort((a,b) => {
   const sev = { ACTION: 4, CRITICAL: 3, HOT: 2, WATCH: 1, INFO: 0 };
   if (sev[b.severity] !== sev[a.severity]) return sev[b.severity] - sev[a.severity];
   const trackedDelta = Number(b?.trackedPriority || (b?.trackedRunner ? 1 : 0)) - Number(a?.trackedPriority || (a?.trackedRunner ? 1 : 0));
   if (trackedDelta !== 0) return trackedDelta;
   return Math.abs(Number(b.movePct || 0)) - Math.abs(Number(a.movePct || 0));
-}).filter(a => ['ACTION','CRITICAL','HOT'].includes(String(a.severity || ''))).slice(0, 24);
+}).filter(a => ['ACTION','CRITICAL','HOT'].includes(String(a.severity || '')));
+
+const pulseAlerts = pulseAlertsAll
+  .filter(a => String(a?.status || 'live').toLowerCase() !== 'settled')
+  .slice(0, 24);
 
 const alertsFeedPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'alerts_feed.json') : path.join(tenantDataDir, 'alerts_feed.json');
 const alertsHistoryPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'alerts_history.json') : path.join(tenantDataDir, 'alerts_history.json');
 const priorAlerts = loadJson(alertsHistoryPath, []);
-const mergedAlerts = [...pulseAlerts, ...priorAlerts].slice(0, 200);
+const mergedAlerts = Array.from(new Map(
+  [...pulseAlertsAll, ...(Array.isArray(priorAlerts) ? priorAlerts : [])]
+    .map(alert => [String(alert?.id || `${alert?.meeting || ''}|${alert?.race || ''}|${alert?.selection || ''}|${alert?.type || ''}`), alert])
+).values())
+  .sort((a, b) => String(b?.ts || '').localeCompare(String(a?.ts || '')))
+  .slice(0, 200);
 fs.writeFileSync(alertsFeedPath, JSON.stringify({ updatedAt: new Date().toISOString(), alerts: pulseAlerts }, null, 2));
 fs.writeFileSync(alertsHistoryPath, JSON.stringify(mergedAlerts, null, 2));
 

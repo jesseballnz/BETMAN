@@ -1213,8 +1213,10 @@ async function renderAlertsShell(){
     });
   }
   if (hist) {
-    hist.innerHTML = Array.isArray(history) && history.length
-      ? `<div class='row header'><div>When</div><div>Severity</div><div>Race</div><div>Runner</div><div class='right'>Status</div></div>` + history.slice(0,50).map(a => `<div class='row'>
+    const historyRows = (Array.isArray(history) ? history : [])
+      .filter(a => meetingFilter === 'all' ? true : String(a?.meeting || '') === meetingFilter);
+    hist.innerHTML = historyRows.length
+      ? `<div class='row header'><div>When</div><div>Severity</div><div>Race</div><div>Runner</div><div class='right'>Status</div></div>` + historyRows.slice(0,50).map(a => `<div class='row'>
           <div>${escapeHtml(String(a?.ts || '—'))}</div>
           <div>${escapeHtml(String(a?.severity || '—'))}</div>
           <div>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))}</div>
