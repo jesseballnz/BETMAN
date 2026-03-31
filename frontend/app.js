@@ -1044,13 +1044,13 @@ async function renderPulseConfigPanel(){
   const targetOptions = await getPulseTargetOptions().catch(() => ({ countries: [], meetings: [], races: [], meetingCards: [] }));
   const updatedMeta = pulseConfigState.updatedAt
     ? `Saved ${new Date(pulseConfigState.updatedAt).toLocaleString()}${pulseConfigState.updatedBy ? ` by ${escapeHtml(String(pulseConfigState.updatedBy))}` : ''}`
-    : 'Using default pulse config';
+    : 'Using default Pulse profile';
   cfg.innerHTML = `
     <div class='row pulse-config-hero' style='grid-template-columns:1fr'>
       <div>
         <div class='pulse-eyebrow'>Pulse Control</div>
-        <div class='pulse-config-title'>Premium signal scope, thresholds, and delivery</div>
-        <div class='sub pulse-config-copy'>Tenant-scoped premium config across web + mobile. Keep this calm, selective, and actionable.</div>
+        <div class='pulse-config-title'>Tune the product feel, not just the thresholds</div>
+        <div class='sub pulse-config-copy'>Shared premium profile across web and mobile. Keep Pulse selective, readable, and worth acting on.</div>
         <div class='sub pulse-config-meta'>${updatedMeta}</div>
       </div>
     </div>
@@ -1058,7 +1058,7 @@ async function renderPulseConfigPanel(){
       <input id='pulseEnabledToggle' type='checkbox' ${pulseConfigState.enabled !== false ? 'checked' : ''} />
       <div>
         <div class='pulse-config-item-title'>Pulse enabled <span class='tag value'>PREMIUM</span></div>
-        <div class='sub'>Master switch for BETMAN Pulse. Jump Pulse remains inside this gate.</div>
+        <div class='sub'>Master switch for the premium feed. Jump Pulse remains inside this gate.</div>
       </div>
     </label>
     <div class='pulse-targeting-shell'>
@@ -1072,7 +1072,7 @@ async function renderPulseConfigPanel(){
       <div class='pulse-quick-setup'>
         <div>
           <div class='pulse-config-item-title'>Fast setup for today</div>
-          <div class='sub'>Live meetings only. Pukekohe is promoted when available so Pulse can be focused in seconds.</div>
+          <div class='sub'>Live meetings only. Pukekohe is promoted when available so Pulse can be narrowed in seconds.</div>
         </div>
         <div class='pulse-quick-actions'>
           ${targetOptions.meetings.includes('Pukekohe') ? `<button id='pulseQuickPukekoheBtn' class='btn btn-ghost compact-btn'>Focus Pukekohe</button>` : ''}
@@ -1144,7 +1144,7 @@ async function renderPulseConfigPanel(){
       </label>
     </div>
     <div class='row' style='grid-template-columns:auto 1fr;gap:10px;align-items:center'>
-      <button id='savePulseConfigBtn' class='btn'>Save Pulse Config</button>
+      <button id='savePulseConfigBtn' class='btn'>Save Pulse Profile</button>
       <div id='pulseConfigStatus' class='sub'>Changes are shared per tenant.</div>
     </div>`;
 
@@ -1942,7 +1942,7 @@ async function renderAlertsShell(){
   if (live) {
     live.innerHTML = alerts.length
       ? `<div class='alert-cards'>${alerts.map(a => buildAlertCardMarkup(a)).join('')}</div>`
-      : `<div class='row'><div style='grid-column:1/-1'><div style='font-weight:700;color:#d9e4ef;margin-bottom:4px'>No live Pulse right now</div><div class='sub'>When premium signals trigger, they’ll appear here.</div></div></div>`;
+      : `<div class='pulse-empty-state'><div class='pulse-empty-title'>No live Pulse right now</div><div class='sub'>When a premium signal clears the bar, it will land here.</div></div>`;
     bindAlertCardClicks(live);
   }
   if (hist) {
@@ -1962,7 +1962,7 @@ async function renderAlertsShell(){
           <div class='right'>${escapeHtml(String(a?.status || '—'))}${resultBits ? `<div class='sub'>${escapeHtml(resultBits)}</div>` : ''}</div>
         </div>`;
         }).join('')
-      : `<div class='row'><div style='grid-column:1/-1'>No Pulse history yet</div></div>`;
+      : `<div class='pulse-empty-state'><div class='pulse-empty-title'>No Pulse history yet</div><div class='sub'>Once the premium feed starts firing, the recent trail will appear here.</div></div>`;
   }
   if (cfg) renderPulseConfigPanel();
 }
