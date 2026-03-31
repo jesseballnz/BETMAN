@@ -815,3 +815,21 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .pulse-filter-card .label,.pulse-summary-strip .label,.pulse-feed-panel .sub,.pulse-history-panel .sub,.pulse-config-panel .sub{color:#97a8bb}
 .pulse-summary-strip .value{color:#dbe6f2;font-size:24px}
 .pulse-feed-panel h4,.pulse-history-panel h4,.pulse-config-panel h4{font-size:15px;letter-spacing:.06em;color:#eef5fb}
+
+
+.pulse-config-hero{background:linear-gradient(180deg,rgba(12,18,28,.96),rgba(10,15,22,.92));border:1px solid rgba(255,255,255,.05)!important;border-radius:16px;padding:16px!important}
+.pulse-eyebrow{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#8fa4b8;margin-bottom:6px}
+.pulse-config-title{font-size:20px;font-weight:700;line-height:1.15;color:#dce6f0}
+.pulse-config-copy,.pulse-config-meta{color:#8fa1b4!important}
+.pulse-config-item-title{font-size:13px;font-weight:600;color:#d4deea;line-height:1.2}
+.pulse-config-card{background:rgba(255,255,255,.02)!important;border-color:rgba(255,255,255,.05)!important}
+.pulse-config-card .sub,.pulse-targeting-shell .sub{color:#8ea0b2!important}
+.pulse-quick-setup{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 14px;margin:0 0 12px;border-radius:12px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}
+.pulse-quick-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.pulse-meeting-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.pulse-meeting-chip{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:#0c141d;color:#dce6f3;font-weight:600;cursor:pointer}
+.pulse-meeting-chip span{font-size:11px;color:#8fb0cf}
+.pulse-meeting-chip.is-primary{border-color:rgba(197,255,0,.35);box-shadow:0 0 0 1px rgba(197,255,0,.08) inset;color:var(--accent)}
+.pulse-targeting-shell textarea,.pulse-config-card input,.pulse-config-card select{background:#0c141d;color:#cfdae6;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px}
+.pulse-targeting-head .tag{background:rgba(77,214,255,.12);border-color:rgba(77,214,255,.28);color:#8ed7ff}
+@media (max-width:840px){.pulse-quick-setup{flex-direction:column}.pulse-quick-actions{justify-content:flex-start}}

@@ -926,6 +926,74 @@ function pulseTargetingSummary(targeting = {}){
   return segments.length ? segments.join(' · ') : 'No specific follow list. Pulse runs across the full premium feed.';
 }
 
+function isPulseRaceFinished(race){
+  const statusBits = [
+    race?.race_status,
+    race?.status,
+    race?.resultStatus,
+    race?.state,
+    race?.raceState,
+  ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean);
+  if (statusBits.some(value => ['closed','final','finalized','resulted','settled','complete','completed','abandoned'].includes(value))) {
+    return true;
+  }
+  if (race?.hasResult === true || race?.resulted === true || race?.isResulted === true || race?.isFinished === true || race?.raceSettled === true) {
+    return true;
+  }
+  if (Array.isArray(race?.results) && race.results.length) return true;
+  if (race?.result && typeof race.result === 'object' && Object.keys(race.result || {}).length) return true;
+  return false;
+}
+
+function pulseMeetingPriority(meeting = '', country = '', activeRaceCount = 0){
+  const meetingName = String(meeting || '').trim().toLowerCase();
+  const selected = String(selectedMeeting || '').trim().toLowerCase();
+  if (!meetingName) return 99;
+  if (selected && selected !== 'all' && meetingName === selected) return 0;
+  if (meetingName === 'pukekohe') return 1;
+  if (String(country || '').trim().toUpperCase() === 'NZ') return 2;
+  if (activeRaceCount > 0) return 3;
+  return 4;
+}
+
+async function getPulseTargetOptions(){
+  const all = await loadAllRacesUnfiltered();
+  const liveRaces = (all || []).filter(r => !isPulseRaceFinished(r));
+  const countries = Array.from(new Set(liveRaces.map(r => String(r.country || '').trim()).filter(Boolean))).sort();
+  const meetingStats = new Map();
+  liveRaces.forEach(r => {
+    const meeting = String(r.meeting || '').trim();
+    const country = String(r.country || '').trim();
+    const raceNo = String(r.race_number || r.race || '').replace(/^R/i,'').trim();
+    if (!meeting) return;
+    if (!meetingStats.has(meeting)) {
+      meetingStats.set(meeting, { meeting, country, activeRaceCount: 0, nextRace: null });
+    }
+    const item = meetingStats.get(meeting);
+    item.country = item.country || country;
+    if (raceNo) {
+      item.activeRaceCount += 1;
+      const raceInt = Number(raceNo);
+      if (Number.isFinite(raceInt)) item.nextRace = item.nextRace == null ? raceInt : Math.min(item.nextRace, raceInt);
+    }
+  });
+  const meetingCards = Array.from(meetingStats.values()).sort((a, b) => {
+    const rankDiff = pulseMeetingPriority(a.meeting, a.country, a.activeRaceCount) - pulseMeetingPriority(b.meeting, b.country, b.activeRaceCount);
+    if (rankDiff !== 0) return rankDiff;
+    if ((a.nextRace ?? 999) !== (b.nextRace ?? 999)) return (a.nextRace ?? 999) - (b.nextRace ?? 999);
+    return a.meeting.localeCompare(b.meeting);
+  });
+  const meetings = meetingCards.map(item => item.meeting);
+  const races = liveRaces
+    .map(r => ({
+      key: `${String(r.meeting || '').trim()}::${String(r.race_number || r.race || '').replace(/^R/i,'').trim()}`,
+      label: `${String(r.country || '').trim() ? `${String(r.country || '').trim()} · ` : ''}${String(r.meeting || '').trim()} R${String(r.race_number || r.race || '').replace(/^R/i,'').trim()}`
+    }))
+    .filter(r => r.key && r.label)
+    .sort((a,b) => a.label.localeCompare(b.label));
+  return { countries, meetings, races, meetingCards };
+}
+
 async function loadPulseConfig(){
   const res = await fetchLocal('./api/v1/pulse-config', { cache: 'no-store' });
   const payload = await res.json().catch(() => ({}));
@@ -935,6 +1003,7 @@ async function loadPulseConfig(){
 
 async function savePulseConfig(next = {}){
   const payload = {
+    enabled: next.enabled ?? pulseConfigState.enabled,
     alertTypes: {
       ...pulseConfigState.alertTypes,
       ...(next.alertTypes || {}),
@@ -942,7 +1011,8 @@ async function savePulseConfig(next = {}){
     thresholds: {
       ...pulseConfigState.thresholds,
       ...(next.thresholds || {}),
-    }
+    },
+    targeting: normalizePulseTargeting(next.targeting || pulseConfigState.targeting || {}),
   };
   const res = await fetchLocal('./api/v1/pulse-config', {
     method: 'PUT',
@@ -965,56 +1035,75 @@ function pulseTypeMeta(){
   ];
 }
 
-function renderPulseConfigPanel(){
+async function renderPulseConfigPanel(){
   const cfg = $('alertsConfigPanel');
   if (!cfg) return;
   const meta = pulseTypeMeta();
   const thresholds = normalizePulseThresholds(pulseConfigState.thresholds || {});
   const targeting = normalizePulseTargeting(pulseConfigState.targeting || {});
+  const targetOptions = await getPulseTargetOptions().catch(() => ({ countries: [], meetings: [], races: [], meetingCards: [] }));
   const updatedMeta = pulseConfigState.updatedAt
     ? `Saved ${new Date(pulseConfigState.updatedAt).toLocaleString()}${pulseConfigState.updatedBy ? ` by ${escapeHtml(String(pulseConfigState.updatedBy))}` : ''}`
     : 'Using default pulse config';
   cfg.innerHTML = `
-    <div class='row' style='grid-template-columns:1fr'>
+    <div class='row pulse-config-hero' style='grid-template-columns:1fr'>
       <div>
-        <div><b>Shared Pulse Config</b></div>
-        <div class='sub' style='margin-top:4px'>Tenant-scoped premium config. Control Pulse enablement, follow scope, and alert families across web + mobile.</div>
-        <div class='sub' style='margin-top:4px'>${updatedMeta}</div>
+        <div class='pulse-eyebrow'>Pulse Control</div>
+        <div class='pulse-config-title'>Premium signal scope, thresholds, and delivery</div>
+        <div class='sub pulse-config-copy'>Tenant-scoped premium config across web + mobile. Keep this calm, selective, and actionable.</div>
+        <div class='sub pulse-config-meta'>${updatedMeta}</div>
       </div>
     </div>
     <label class='row pulse-config-card pulse-config-card-accent' style='grid-template-columns:auto 1fr;align-items:center;gap:12px'>
       <input id='pulseEnabledToggle' type='checkbox' ${pulseConfigState.enabled !== false ? 'checked' : ''} />
       <div>
-        <div><b>Pulse enabled</b> <span class='tag value'>PREMIUM</span></div>
-        <div class='sub'>Master switch. Enabled by default. Jump Pulse logic stays intact inside this gate.</div>
+        <div class='pulse-config-item-title'>Pulse enabled <span class='tag value'>PREMIUM</span></div>
+        <div class='sub'>Master switch for BETMAN Pulse. Jump Pulse remains inside this gate.</div>
       </div>
     </label>
     <div class='pulse-targeting-shell'>
       <div class='pulse-targeting-head'>
         <div>
-          <div><b>Follow scope</b></div>
+          <div class='pulse-config-item-title'>Follow scope</div>
           <div class='sub'>Choose whether Pulse follows countries, meetings, specific races, or any mixed watchlist match.</div>
         </div>
         <div class='tag ew'>${escapeHtml(pulseTargetingModeLabel(targeting.mode))}</div>
       </div>
+      <div class='pulse-quick-setup'>
+        <div>
+          <div class='pulse-config-item-title'>Fast setup for today</div>
+          <div class='sub'>Live meetings only. Pukekohe is promoted when available so Pulse can be focused in seconds.</div>
+        </div>
+        <div class='pulse-quick-actions'>
+          ${targetOptions.meetings.includes('Pukekohe') ? `<button id='pulseQuickPukekoheBtn' class='btn btn-ghost compact-btn'>Focus Pukekohe</button>` : ''}
+          ${String(selectedMeeting || '').trim() && String(selectedMeeting || '').trim() !== 'ALL' ? `<button id='pulseQuickSelectedMeetingBtn' class='btn btn-ghost compact-btn'>Use ${escapeHtml(String(selectedMeeting).trim())}</button>` : ''}
+        </div>
+      </div>
+      ${targetOptions.meetingCards.length ? `<div class='pulse-meeting-chip-row'>${targetOptions.meetingCards.slice(0, 10).map(item => `<button type='button' class='pulse-meeting-chip ${String(item.meeting).trim().toLowerCase() === 'pukekohe' ? 'is-primary' : ''}' data-meeting='${escapeAttr(item.meeting)}'>${escapeHtml(item.country ? `${item.country} · ` : '')}${escapeHtml(item.meeting)}${item.nextRace != null ? ` <span>R${escapeHtml(String(item.nextRace))}</span>` : ''}${item.activeRaceCount ? ` <span>${escapeHtml(String(item.activeRaceCount))} live</span>` : ''}</button>`).join('')}</div>` : ''}
       <div class='pulse-targeting-modes'>
         ${['all','countries','meetings','races','mixed'].map(mode => `<label class='pulse-mode-pill ${targeting.mode === mode ? 'active' : ''}'><input type='radio' name='pulseTargetMode' value='${mode}' ${targeting.mode === mode ? 'checked' : ''} /> <span>${escapeHtml(pulseTargetingModeLabel(mode))}</span></label>`).join('')}
       </div>
       <div class='pulse-targeting-grid'>
         <label>
-          <div><b>Countries</b></div>
-          <div class='sub'>One per line: NZ, AUS, HK.</div>
-          <textarea id='pulseTargetCountries' rows='3' placeholder='NZ&#10;AUS'>${escapeHtml(targeting.countries.join('\n'))}</textarea>
+          <div class='pulse-config-item-title'>Countries</div>
+          <div class='sub'>Search and add live countries.</div>
+          <input id='pulseTargetCountriesInput' list='pulseTargetCountriesList' placeholder='Add country' />
+          <datalist id='pulseTargetCountriesList'>${targetOptions.countries.map(value => `<option value='${escapeAttr(value)}'></option>`).join('')}</datalist>
+          <textarea id='pulseTargetCountries' rows='3' placeholder='Selected countries'>${escapeHtml(targeting.countries.join('\n'))}</textarea>
         </label>
         <label>
-          <div><b>Meetings</b></div>
-          <div class='sub'>Exact meeting names.</div>
-          <textarea id='pulseTargetMeetings' rows='3' placeholder='Pukekohe&#10;Randwick'>${escapeHtml(targeting.meetings.join('\n'))}</textarea>
+          <div class='pulse-config-item-title'>Meetings</div>
+          <div class='sub'>Search and add live meetings.</div>
+          <input id='pulseTargetMeetingsInput' list='pulseTargetMeetingsList' placeholder='Add meeting' />
+          <datalist id='pulseTargetMeetingsList'>${targetOptions.meetings.map(value => `<option value='${escapeAttr(value)}'></option>`).join('')}</datalist>
+          <textarea id='pulseTargetMeetings' rows='3' placeholder='Selected meetings'>${escapeHtml(targeting.meetings.join('\n'))}</textarea>
         </label>
         <label>
-          <div><b>Races</b></div>
-          <div class='sub'>Format: Meeting | R#</div>
-          <textarea id='pulseTargetRaces' rows='3' placeholder='Pukekohe | R1&#10;Randwick | R7'>${escapeHtml(targeting.races.map(value => value.replace('::', ' | R')).join('\n'))}</textarea>
+          <div class='pulse-config-item-title'>Races</div>
+          <div class='sub'>Search live races only. Finished races are excluded.</div>
+          <input id='pulseTargetRacesInput' list='pulseTargetRacesList' placeholder='Add race' />
+          <datalist id='pulseTargetRacesList'>${targetOptions.races.map(value => `<option value='${escapeAttr(value.label)}'></option>`).join('')}</datalist>
+          <textarea id='pulseTargetRaces' rows='3' placeholder='Selected races'>${escapeHtml(targeting.races.map(value => value.replace('::', ' | R')).join('\n'))}</textarea>
         </label>
       </div>
       <div class='sub' style='margin-top:8px'>${escapeHtml(pulseTargetingSummary(targeting))}</div>
@@ -1023,33 +1112,33 @@ function renderPulseConfigPanel(){
       <label class='row pulse-config-card' style='grid-template-columns:auto 1fr;align-items:center;gap:12px'>
         <input type='checkbox' class='pulse-config-toggle' data-key='${item.key}' ${pulseConfigState.alertTypes[item.key] ? 'checked' : ''} />
         <div>
-          <div><b>${item.label}</b></div>
+          <div class='pulse-config-item-title'>${item.label}</div>
           <div class='sub'>${item.desc}</div>
         </div>
       </label>
     `).join('')}
     <div class='row pulse-config-card' style='grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px'>
       <label>
-        <div><b>Minimum severity</b></div>
+        <div class='pulse-config-item-title'>Minimum severity</div>
         <div class='sub'>Hide lower-severity alerts unless tracked-runner override applies.</div>
         <select id='pulseThresholdSeverity'>
           ${PULSE_SEVERITY_LEVELS.map(level => `<option value='${level}' ${thresholds.minSeverity === level ? 'selected' : ''}>${level}</option>`).join('')}
         </select>
       </label>
       <label>
-        <div><b>Max minutes to jump</b></div>
+        <div class='pulse-config-item-title'>Max minutes to jump</div>
         <div class='sub'>Blank = no time gate.</div>
         <input id='pulseThresholdMinutes' type='number' min='0' step='1' value='${thresholds.maxMinsToJump ?? ''}' />
       </label>
       <label>
-        <div><b>Minimum move %</b></div>
+        <div class='pulse-config-item-title'>Minimum move %</div>
         <div class='sub'>Blank = no percentage gate.</div>
         <input id='pulseThresholdMovePct' type='number' min='0' step='0.1' value='${thresholds.minMovePct ?? ''}' />
       </label>
       <label class='row' style='grid-template-columns:auto 1fr;align-items:center;gap:12px;margin-top:20px'>
         <input id='pulseThresholdTrackedOverride' type='checkbox' ${thresholds.trackedRunnerOverride ? 'checked' : ''} />
         <div>
-          <div><b>Tracked runner override</b></div>
+          <div class='pulse-config-item-title'>Tracked runner override</div>
           <div class='sub'>Let tracked runners bypass severity / time / move gates.</div>
         </div>
       </label>
@@ -1060,6 +1149,69 @@ function renderPulseConfigPanel(){
     </div>`;
 
   const status = $('pulseConfigStatus');
+  const addPulseTargetValue = (inputId, targetId, transform = (v) => v) => {
+    const input = $(inputId);
+    const target = $(targetId);
+    if (!input || !target) return;
+    input.addEventListener('change', () => {
+      const raw = String(input.value || '').trim();
+      if (!raw) return;
+      const next = transform(raw);
+      if (!next) return;
+      const existing = target.value.split(/\n+/).map(v => String(v || '').trim()).filter(Boolean);
+      if (!existing.includes(next)) existing.push(next);
+      target.value = existing.join('\n');
+      input.value = '';
+      target.dispatchEvent(new Event('change'));
+    });
+  };
+  addPulseTargetValue('pulseTargetCountriesInput', 'pulseTargetCountries');
+  addPulseTargetValue('pulseTargetMeetingsInput', 'pulseTargetMeetings');
+  addPulseTargetValue('pulseTargetRacesInput', 'pulseTargetRaces', (value) => value.includes(' · ') ? value.split(' · ').slice(1).join(' · ').replace(/\s+R/i, ' | R') : value);
+
+  const setPulseMeetingFocus = async (meetingName) => {
+    const meeting = normalizePulseMeetingName(meetingName);
+    if (!meeting) return;
+    const btn = $('savePulseConfigBtn');
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = `Saving ${meeting}…`;
+    try {
+      await savePulseConfig({
+        enabled: true,
+        targeting: {
+          mode: 'meetings',
+          countries: [],
+          meetings: [meeting],
+          races: [],
+        },
+      });
+      await renderPulseConfigPanel();
+      if ($('pulseConfigStatus')) $('pulseConfigStatus').textContent = `Saved · focused on ${meeting}`;
+    } catch (err) {
+      if (status) status.textContent = `Save failed: ${err?.message || 'unknown error'}`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  $('pulseQuickPukekoheBtn')?.addEventListener('click', () => setPulseMeetingFocus('Pukekohe'));
+  $('pulseQuickSelectedMeetingBtn')?.addEventListener('click', () => setPulseMeetingFocus(String(selectedMeeting || '').trim()));
+  cfg.querySelectorAll('.pulse-meeting-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = $('pulseTargetMeetings');
+      if (!target) return;
+      const meeting = normalizePulseMeetingName(btn.dataset.meeting || '');
+      if (!meeting) return;
+      const existing = target.value.split(/\n+/).map(v => String(v || '').trim()).filter(Boolean);
+      if (!existing.includes(meeting)) existing.push(meeting);
+      target.value = existing.join('\n');
+      const modeInput = cfg.querySelector('input[name="pulseTargetMode"][value="meetings"]');
+      if (modeInput) modeInput.checked = true;
+      cfg.querySelectorAll('.pulse-mode-pill').forEach(pill => pill.classList.toggle('active', pill.querySelector('input')?.checked));
+      if (status) status.textContent = `${meeting} added — save to apply`;
+    });
+  });
+
     cfg.querySelectorAll('.pulse-config-toggle, #pulseEnabledToggle, input[name="pulseTargetMode"], #pulseTargetCountries, #pulseTargetMeetings, #pulseTargetRaces, #pulseThresholdSeverity, #pulseThresholdMinutes, #pulseThresholdMovePct, #pulseThresholdTrackedOverride').forEach(input => {
       input.addEventListener('change', () => {
         if (status) status.textContent = 'Unsaved changes';
@@ -1855,22 +2007,6 @@ async function loadStatus(){
     localStorage.setItem('earlyWindowMin', String(earlyWindowMin));
     localStorage.setItem('aiWindowMin', String(aiWindowMin));
 
-    const balanceEl = $('balance');
-    if (balanceEl) balanceEl.textContent = `$${(data.balance || 0).toFixed(2)}`;
-    const bankEl = $('bank');
-    if (bankEl) bankEl.textContent = data.bank || '—';
-    const hist = data.pnlHistory || [];
-    const latest = hist[hist.length-1];
-    const prev = hist[hist.length-2];
-    const bankLog = $('bankPnlLog');
-    if (bankLog) {
-      if (!latest) bankLog.textContent = 'P&L log: —';
-      else {
-        const sign = Number(latest.pnl || 0) > 0 ? '+' : '';
-        const prevTxt = prev ? ` · Prev ${prev.date}: ${Number(prev.pnl||0)>0?'+':''}$${Number(prev.pnl||0).toFixed(2)}` : '';
-        bankLog.textContent = `P&L log: ${latest.date} ${sign}$${Number(latest.pnl||0).toFixed(2)}${prevTxt}`;
-      }
-    }
     const openBetsEl = $('openBets');
     if (openBetsEl) openBetsEl.textContent = data.openBets || 0;
     const todaysStakeEl = $('todaysStake');
@@ -10739,7 +10875,7 @@ function renderAnalysis(race, modeOverride){
     const trackBtnClass = trackedBet ? 'btn btn-ghost compact-btn track-runner-btn is-tracked' : 'btn btn-ghost compact-btn track-runner-btn';
     const runnerBtn = `<button class='bet-btn analysis-odds-runner-btn' data-meeting='${escapeAttr(race.meeting)}' data-race='${escapeAttr(race.race_number || race.race || '')}' data-runner='${escapeAttr(cleanRunnerText(r.name))}'><span class='bet-icon'>🐎</span>${cleanRunnerText(r.name)}</button>`;
     const trackBtn = `<button class='${trackBtnClass}' type='button' data-track-runner='1' data-meeting='${escapeAttr(race.meeting)}' data-race='${escapeAttr(race.race_number || race.race || '')}' data-runner='${escapeAttr(cleanRunnerText(r.name))}'>${trackBtnLabel}</button>`;
-    const runnerCell = `<div class='runner-name-cell'>${runnerBtn}${trackBtn}${tags}</div>`;
+    const runnerCell = `<div class='runner-name-cell'>${runnerBtn}${tags}</div>`;
     const numberRaw = r.number ?? r.runner_number ?? r.saddle_number ?? r.horse_number ?? r.program_number ?? r.tab_no ?? null;
     const runnerNumber = (numberRaw === 0 || numberRaw) ? String(numberRaw).trim() : '';
     const formSignal = runnerFormSignal(r);
@@ -10758,7 +10894,7 @@ function renderAnalysis(race, modeOverride){
     const trainerCell = escapeHtml(r.trainer || '—');
     const jockeyEdge = jockeyEdgePct(r);
     const jockeyEdgeTxt = Number.isFinite(jockeyEdge) ? `${jockeyEdge >= 0 ? '+' : ''}${jockeyEdge.toFixed(1)} pts` : '—';
-    return `<tr><td class='runner-num-cell'>${escapeHtml(runnerNumber || '—')}</td><td>${runnerCell}</td><td>${escapeHtml(r.barrier || '—')}</td><td>${jockeyCell}</td><td>${trainerCell}</td><td>${formCell}</td><td>${jockeyEdgeTxt}</td><td>${pedigreeFitTxt}</td><td>${pedigreeConfidenceTxt}</td><td>${pedigreeEdgeTxt}</td><td class='odds-cell ${winClass}'>${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeled) ? modeled.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(implied) ? implied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(edge) ? (edge>=0?'+':'')+edge.toFixed(1)+' pts' : '—'}</td><td class='odds-cell ${placeClass}'>${Number.isFinite(placeOdds) ? placeOdds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeledPlace) ? modeledPlace.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeImplied) ? placeImplied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeEdge) ? (placeEdge>=0?'+':'')+placeEdge.toFixed(1)+' pts' : '—'}</td></tr>`;
+    return `<tr><td class='track-cell'>${trackBtn}</td><td class='runner-num-cell'>${escapeHtml(runnerNumber || '—')}</td><td>${runnerCell}</td><td>${escapeHtml(r.barrier || '—')}</td><td>${jockeyCell}</td><td>${trainerCell}</td><td>${formCell}</td><td>${jockeyEdgeTxt}</td><td>${pedigreeFitTxt}</td><td>${pedigreeConfidenceTxt}</td><td>${pedigreeEdgeTxt}</td><td class='odds-cell ${winClass}'>${Number.isFinite(odds) ? odds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeled) ? modeled.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(implied) ? implied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(edge) ? (edge>=0?'+':'')+edge.toFixed(1)+' pts' : '—'}</td><td class='odds-cell ${placeClass}'>${Number.isFinite(placeOdds) ? placeOdds.toFixed(2) : '—'}</td><td>${Number.isFinite(modeledPlace) ? modeledPlace.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeImplied) ? placeImplied.toFixed(1)+'%' : '—'}</td><td>${Number.isFinite(placeEdge) ? (placeEdge>=0?'+':'')+placeEdge.toFixed(1)+' pts' : '—'}</td></tr>`;
   }).join('');
   const topEdgeRunner = winEdgeData.slice().sort((a,b)=>b.edge-a.edge)[0]?.name || 'No clear overs';
   const punterPanel = `<ul>
@@ -10875,7 +11011,7 @@ function renderAnalysis(race, modeOverride){
           <button id='pollOddsBtn' class='btn btn-ghost compact-btn' type='button'>Poll Odds</button>
         </div>
         <div class='analysis-table-scroll'>
-          <table class='analysis-table'><tr><th title='Saddle / runner number'>#</th><th>Runner</th><th title='Barrier draw'>Gate</th><th>Jockey</th><th>Trainer</th><th title='Recent form pattern + status'>Form</th><th title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>Jockey Edge <span class='help-hint' title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>?</span></th><th title='Pedigree fit score for this race archetype'>Ped Fit</th><th title='Confidence in pedigree assessment'>Ped Conf</th><th title='Field-relative pedigree edge'>Ped Edge</th><th title='Current market win odds'>Win Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Win Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Win Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Win Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th><th title='Current market place odds'>Place Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Place Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Place Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Place Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th></tr>${oddsRows}</table>
+          <table class='analysis-table'><tr><th title='Track runner'></th><th title='Saddle / runner number'>#</th><th>Runner</th><th title='Barrier draw'>Gate</th><th>Jockey</th><th>Trainer</th><th title='Recent form pattern + status'>Form</th><th title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>Jockey Edge <span class='help-hint' title='Jockey edge vs field average model % (same race). Positive = jockey riding stronger modeled book.'>?</span></th><th title='Pedigree fit score for this race archetype'>Ped Fit</th><th title='Confidence in pedigree assessment'>Ped Conf</th><th title='Field-relative pedigree edge'>Ped Edge</th><th title='Current market win odds'>Win Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Win Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Win Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Win Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th><th title='Current market place odds'>Place Odds</th><th title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>Place Model% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.model)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>Place Implied% <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.implied)}'>?</span></th><th title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>Place Edge <span class='help-hint' title='${escapeAttr(SIGNAL_GLOSSARY.edge)}'>?</span></th></tr>${oddsRows}</table>
         </div>
       </div>
       <div class='analysis-split'>
@@ -12769,7 +12905,7 @@ async function renderAuthPulseSettingsPanel(){
     `;
     $('openPulseConfigFromAuth')?.addEventListener('click', () => {
       toggleAuthModal(false);
-      setActivePage('alerts');
+      setActivePage('pulse');
       setActiveAlertsTab('config');
       renderPulseConfigPanel();
     });
