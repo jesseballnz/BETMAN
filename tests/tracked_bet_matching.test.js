@@ -63,4 +63,38 @@ assert.deepStrictEqual(
   }
 );
 
+assert.deepStrictEqual(
+  buildTrackedSettlement(
+    { result: 'win', return_units: 1.7, profit_units: 0.7, stake_units: 1 },
+    { stake: 10, entryOdds: 1.7, settledAt: '2026-03-31T01:00:00.000Z' },
+  ),
+  {
+    status: 'settled',
+    result: 'won',
+    settledAt: '2026-03-31T01:00:00.000Z',
+    payout: 17,
+    profit: 7,
+    roi: 0.7,
+    position: null,
+    winner: null,
+  }
+);
+
+assert.deepStrictEqual(
+  buildTrackedSettlement(
+    { result: 'loss', stake_units: 1 },
+    { stake: 10, entryOdds: 3.2, settledAt: '2026-03-31T02:00:00.000Z' },
+  ),
+  {
+    status: 'settled',
+    result: 'lost',
+    settledAt: '2026-03-31T02:00:00.000Z',
+    payout: 0,
+    profit: -10,
+    roi: -1,
+    position: null,
+    winner: null,
+  }
+);
+
 console.log('tracked_bet_matching.test.js: ok');

@@ -112,17 +112,52 @@ function toFiniteNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function scaleSettlementValue(value, trackedStake, unitStake) {
+  if (!Number.isFinite(value)) return null;
+  if (!Number.isFinite(trackedStake) || trackedStake <= 0) return Number(value);
+  if (!Number.isFinite(unitStake) || unitStake <= 0) return Number(value);
+  return Number(value) * (Number(trackedStake) / Number(unitStake));
+}
+
+function roundMoney(value) {
+  if (!Number.isFinite(value)) return null;
+  return Math.round(Number(value) * 100) / 100;
+}
+
 function buildTrackedSettlement(row = {}, fallback = {}) {
   const result = canonicalTrackedResult(row.result || fallback.result);
-  const payout = toFiniteNumber(row.payout ?? row.return_units ?? fallback.payout);
-  const profit = toFiniteNumber(row.profit ?? row.profit_units ?? fallback.profit);
+  const trackedStake = toFiniteNumber(fallback.stake ?? fallback.stake_units);
+  const unitStake = toFiniteNumber(row.stake_units ?? 1);
+  const scaledPayout = scaleSettlementValue(toFiniteNumber(row.payout ?? row.return_units), trackedStake, unitStake);
+  const scaledProfit = scaleSettlementValue(toFiniteNumber(row.profit ?? row.profit_units), trackedStake, unitStake);
+  const odds = toFiniteNumber(fallback.entryOdds ?? fallback.odds ?? row.odds);
+
+  let payout = scaledPayout;
+  let profit = scaledProfit;
+
+  if (!Number.isFinite(payout) && result === 'won' && Number.isFinite(trackedStake) && Number.isFinite(odds)) {
+    payout = trackedStake * odds;
+  }
+  if (!Number.isFinite(profit) && Number.isFinite(payout) && Number.isFinite(trackedStake)) {
+    profit = payout - trackedStake;
+  }
+  if (!Number.isFinite(payout) && result === 'lost' && Number.isFinite(trackedStake)) {
+    payout = 0;
+  }
+  if (!Number.isFinite(profit) && result === 'lost' && Number.isFinite(trackedStake)) {
+    profit = -trackedStake;
+  }
+
+  const roi = toFiniteNumber(row.roi ?? fallback.roi)
+    ?? (Number.isFinite(profit) && Number.isFinite(trackedStake) && trackedStake > 0 ? (profit / trackedStake) : null);
+
   return {
     status: result === 'pending' ? 'active' : 'settled',
     result,
     settledAt: row.settledAt || row.settled_at || fallback.settledAt || null,
-    payout,
-    profit,
-    roi: toFiniteNumber(row.roi ?? fallback.roi),
+    payout: roundMoney(payout),
+    profit: roundMoney(profit),
+    roi,
     position: row.position ?? fallback.position ?? null,
     winner: row.winner ?? fallback.winner ?? null,
   };

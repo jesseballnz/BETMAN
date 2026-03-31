@@ -972,12 +972,16 @@ function buildTrackedEditorHtml(row){
   const result = escapeHtml(String(row?.result || 'pending').toUpperCase());
   const currentOdds = formatTrackedOddsValue(row?.currentOdds);
   const currentOddsMeta = row?.currentOddsSource ? ` <span class='sub'>(${escapeHtml(String(row.currentOddsSource))})</span>` : '';
+  const settlementLine = String(row?.status || '') === 'settled'
+    ? `<div><b>Settlement:</b> Return ${fmtUnits(row?.payout)} · P/L ${fmtUnits(row?.profit)} · ROI ${fmtPct(row?.roi)}</div>`
+    : '';
   return `
     <div class='tracked-editor' data-tracked-edit-root='1' data-id='${escapeAttr(String(row?.id || ''))}'>
       <div class='horse-meta' style='margin-bottom:12px'>
         <div><b>Race:</b> ${meeting} R${race}</div>
         <div><b>Status:</b> ${status} · <b>Result:</b> ${result}</div>
         <div><b>Current Odds:</b> ${currentOdds}${currentOddsMeta}</div>
+        ${settlementLine}
       </div>
       <div class='filters' style='align-items:flex-end'>
         <label style='display:flex;flex-direction:column;gap:6px;min-width:180px'>
@@ -1077,7 +1081,7 @@ async function renderTrackedShell(){
     table.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No ${trackedTab} tracked runners</div></div>`;
     return;
   }
-  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Odds</div><div class='right'>Stake / Actions</div></div>` + filtered.map(r => {
+  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Odds</div><div class='right'>Stake / Settlement / Actions</div></div>` + filtered.map(r => {
     const result = String(r.result || 'pending').toLowerCase();
     const badge = result === 'won' ? 'value' : (result === 'lost' ? 'danger' : 'ew');
     const entryOdds = formatTrackedOddsValue(r.entryOdds ?? r.odds);
@@ -1085,13 +1089,16 @@ async function renderTrackedShell(){
     const currentSub = r.currentOddsSource
       ? `Current ${currentOdds} · ${escapeHtml(String(r.currentOddsSource))}`
       : `Current ${currentOdds}`;
+    const settlementSub = String(r.status || '') === 'settled'
+      ? `Return ${fmtUnits(r.payout)} · P/L ${fmtUnits(r.profit)} · ROI ${fmtPct(r.roi)}`
+      : 'Awaiting result';
     return `<div class='row tracked-row' data-id='${escapeAttr(String(r.id || ''))}' data-meeting='${escapeAttr(String(r.meeting || ''))}' data-race='${escapeAttr(String(r.race || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>
       <div><span class='badge'>${escapeHtml(String(r.meeting || ''))}</span> R${escapeHtml(String(r.race || ''))}</div>
       <div>${escapeHtml(String(r.selection || ''))}<div class='sub'>${escapeHtml(String(r.betType || 'Win'))}${r.jumpsIn ? ` · ${escapeHtml(String(r.jumpsIn))}` : ''}</div></div>
       <div>${escapeHtml(String(r.status || 'active'))}<div class='sub'><span class='tag ${badge}'>${escapeHtml(result.toUpperCase())}</span></div></div>
       <div>Entry ${entryOdds}<div class='sub'>${currentSub}</div></div>
       <div class='right'>
-        <div>${r.stake != null ? escapeHtml(String(r.stake)) : '—'}<div class='sub'>stake</div></div>
+        <div>${r.stake != null ? escapeHtml(String(r.stake)) : '—'}<div class='sub'>stake · ${settlementSub}</div></div>
         <button class='btn btn-ghost compact-btn tracked-edit-btn' data-id='${escapeAttr(String(r.id || ''))}' data-selection='${escapeAttr(String(r.selection || ''))}'>Edit</button>
         <button class='btn btn-ghost compact-btn tracked-remove-btn' data-id='${escapeAttr(String(r.id || ''))}'>Untrack</button>
       </div>
