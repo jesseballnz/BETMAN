@@ -1194,6 +1194,7 @@ async function renderPulseConfigPanel(){
         },
       });
       await renderPulseConfigPanel();
+      await renderAlertsPanel();
       if ($('pulseConfigStatus')) $('pulseConfigStatus').textContent = `Saved · focused on ${meeting}`;
     } catch (err) {
       if (status) status.textContent = `Save failed: ${err?.message || 'unknown error'}`;
@@ -1585,25 +1586,47 @@ function trackedPriorityRank(row){
   return 1;
 }
 
+function trackedSettledBucket(row){
+  const settledAt = row?.settledAt ? new Date(row.settledAt) : null;
+  if (!settledAt || Number.isNaN(settledAt.getTime())) return 'settled';
+  const now = new Date();
+  const settledDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year:'numeric', month:'2-digit', day:'2-digit' }).format(settledAt);
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year:'numeric', month:'2-digit', day:'2-digit' }).format(now);
+  return settledDay === today ? 'settled' : 'history';
+}
+
 async function renderTrackedShell(){
   const table = $('trackedTable');
   if (!table) return;
   const rows = await loadTrackedBetsCache(true);
   const filtered = rows
-    .filter(r => trackedTab === 'settled' ? String(r.status) === 'settled' : String(r.status) !== 'settled')
+    .filter(r => {
+      const status = String(r.status || '').toLowerCase();
+      if (trackedTab === 'active') return status !== 'settled';
+      if (trackedTab === 'settled') return status === 'settled' && trackedSettledBucket(r) === 'settled';
+      if (trackedTab === 'history') return status === 'settled' && trackedSettledBucket(r) === 'history';
+      return false;
+    })
     .sort((a, b) => {
       const pr = trackedPriorityRank(b) - trackedPriorityRank(a);
       if (pr !== 0) return pr;
       const am = Number(a?.minsToJump);
       const bm = Number(b?.minsToJump);
       if (Number.isFinite(am) && Number.isFinite(bm) && am !== bm) return am - bm;
-      return String(b?.trackedAt || '').localeCompare(String(a?.trackedAt || ''));
+      return String(b?.settledAt || b?.trackedAt || '').localeCompare(String(a?.settledAt || a?.trackedAt || ''));
     });
   if (!filtered.length) {
     table.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No ${trackedTab} tracked runners</div></div>`;
     return;
   }
-  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Odds</div><div class='right'>Stake / Settlement / Actions</div></div>` + filtered.map((r, index) => {
+  const groupedHistory = trackedTab === 'history'
+    ? filtered.reduce((acc, row) => {
+        const day = row?.settledAt ? new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland', weekday:'short', day:'numeric', month:'short' }).format(new Date(row.settledAt)) : 'Unknown day';
+        (acc[day] ||= []).push(row);
+        return acc;
+      }, {})
+    : null;
+  const renderRows = (items) => items.map((r, index) => {
     const result = canonicalTrackedResultLabel(r.result);
     const badge = result === 'won' ? 'value' : (result === 'lost' ? 'danger' : 'ew');
     const entryOdds = formatTrackedOddsValue(r.entryOdds ?? r.odds);
@@ -1632,6 +1655,11 @@ async function renderTrackedShell(){
       </div>
     </div>`;
   }).join('');
+  if (trackedTab === 'history') {
+    table.innerHTML = Object.entries(groupedHistory || {}).map(([day, rows]) => `<div class='row header'><div style='grid-column:1/-1'>${escapeHtml(day)}</div></div><div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Odds</div><div class='right'>Stake / Settlement / Actions</div></div>${renderRows(rows)}`).join('');
+    return;
+  }
+  table.innerHTML = `<div class='row header'><div>Race</div><div>Selection</div><div>Status</div><div>Odds</div><div class='right'>Stake / Settlement / Actions</div></div>` + renderRows(filtered);
 
   let draggedTrackedId = null;
   table.querySelectorAll('.tracked-row').forEach(row => {
