@@ -865,14 +865,12 @@ function createApiHandler(deps) {
       const settledRows = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
       const raceResultIndex = buildRaceResultIndex(settledRows);
       const normalize = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
-      const mine = trackedRows.filter((row) => normalize(row.username) === normalize(principal.username));
-      const resolved = mine.map((row) => resolveTrackedBet(row, settledRows, raceResultIndex));
+      const resolved = trackedRows.map((row) => resolveTrackedBet(row, settledRows, raceResultIndex));
 
       if (req.method === 'GET') {
-        if (JSON.stringify(mine) !== JSON.stringify(resolved)) {
-          const others = trackedRows.filter((row) => normalize(row.username) !== normalize(principal.username));
+        if (JSON.stringify(trackedRows) !== JSON.stringify(resolved)) {
           fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
-          fs.writeFileSync(trackedPath, JSON.stringify([...others, ...resolved], null, 2));
+          fs.writeFileSync(trackedPath, JSON.stringify(resolved, null, 2));
         }
         return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBets: resolved }, 200, rateInfo), true;
       }
@@ -886,6 +884,8 @@ function createApiHandler(deps) {
           const next = {
             id: `${Date.now()}-${Math.random().toString(36).slice(2,9)}`,
             username: principal.username,
+            createdBy: principal.username,
+            trackedBy: principal.username,
             meeting: payload.meeting,
             race: String(payload.race || ''),
             selection: payload.selection,
@@ -948,7 +948,7 @@ function createApiHandler(deps) {
       }
 
       if (req.method === 'DELETE') {
-        const updated = trackedRows.filter((row) => !(String(row.id) === trackedId && (principal.isAdmin || normalize(row.username) === normalize(principal.username))));
+        const updated = trackedRows.filter((row) => String(row.id) !== trackedId);
         fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
         fs.writeFileSync(trackedPath, JSON.stringify(updated, null, 2));
         return apiJson(req, res, { ok: true, api_version: API_VERSION }, 200, rateInfo), true;
