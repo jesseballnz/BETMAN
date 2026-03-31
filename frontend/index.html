@@ -826,10 +826,24 @@
       <div class="section-head">
         <h3>Alerts</h3>
         <div class="section-actions">
+          <button id="clearGenericAlertsBtn" class="btn btn-ghost compact-btn">Clear Filters</button>
           <button id="refreshGenericAlertsBtn" class="btn btn-ghost compact-btn">Refresh</button>
         </div>
       </div>
-      <div class="sub" style="margin:0 0 12px 0">Broad market monitoring across movers, drifts, flips, and jump-window signals. Use this for generic surveillance. Pulse remains the premium curated layer.</div>
+      <div class="alerts-engine-hero">
+        <div>
+          <div class="alerts-engine-eyebrow">Generic engine</div>
+          <div class="alerts-engine-title">Broad race surveillance without premium gating</div>
+          <div class="sub alerts-engine-copy">Alerts is the simple market monitor: movers, drifts, flips, and jump-window signals across the board. No push logic. No premium curation. Pulse remains the separate premium layer.</div>
+        </div>
+        <div class="alerts-engine-note">Use Alerts to scan the wider board, then click through into workspace when something matters.</div>
+      </div>
+      <div class="perf-kpis perf-kpis-secondary generic-alerts-summary-strip generic-alerts-meta-strip">
+        <div class="perf-card"><div class="label">Live feed</div><div id="genericAlertsLiveCount" class="value">0</div><div class="sub" id="genericAlertsLiveLabel">alerts in feed</div></div>
+        <div class="perf-card"><div class="label">Action stack</div><div id="genericAlertsActionCount" class="value">0</div><div class="sub">highest urgency in current filter</div></div>
+        <div class="perf-card"><div class="label">Hot / critical</div><div id="genericAlertsHotCount" class="value">0</div><div class="sub">strong mover pressure</div></div>
+        <div class="perf-card"><div class="label">History matches</div><div id="genericAlertsHistoryCount" class="value">0</div><div class="sub" id="genericAlertsHistoryLabel">recent audit trail</div></div>
+      </div>
       <div class="perf-kpis perf-kpis-secondary pulse-filter-strip generic-alerts-filter-strip" style="margin:0 0 14px 0;gap:10px;align-items:end">
         <div class="perf-card pulse-filter-card" style="min-width:180px;flex:1">
           <div class="label">Country</div>
@@ -864,12 +878,7 @@
           <input id="genericAlertsSearch" type="search" placeholder="Runner, meeting, note" style="width:100%;margin-top:6px;background:#0d1520;border:1px solid rgba(255,255,255,.08);color:#cfd8e3;border-radius:10px;padding:10px 12px;outline:none" />
         </div>
       </div>
-
-      <div class="perf-kpis perf-kpis-secondary pulse-summary-strip">
-        <div class="perf-card"><div class="label">Action</div><div id="genericAlertsActionCount" class="value">0</div></div>
-        <div class="perf-card"><div class="label">Hot/Critical</div><div id="genericAlertsHotCount" class="value">0</div></div>
-        <div class="perf-card"><div class="label">Live</div><div id="genericAlertsLiveCount" class="value">0</div></div>
-      </div>
+      <div id="genericAlertsFilterSummary" class="alerts-filter-summary">Showing full engine feed.</div>
 
       <div class="perf-grid">
         <div class="perf-section perf-wide pulse-feed-panel" style="margin-top:12px">
@@ -879,7 +888,7 @@
         </div>
         <div class="perf-section perf-wide pulse-history-panel">
           <h4>Recent Alert History</h4>
-          <div class="sub">Latest alert audit trail without premium gating.</div>
+          <div class="sub">Readable recent history so search and retrospective review stay useful.</div>
           <div id="genericAlertsHistoryTable" class="table"></div>
         </div>
       </div>

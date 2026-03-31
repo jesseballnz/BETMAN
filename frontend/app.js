@@ -1756,6 +1756,56 @@ function genericAlertSortValue(row){
   return (sev * 100000) + (tracked * 10000) + (absMove * 100) + minsRank;
 }
 
+function formatAlertRelativeTime(ts){
+  const time = parseTimeValue(ts);
+  if (!Number.isFinite(time)) return '—';
+  const diffMs = Date.now() - time;
+  const absMinutes = Math.round(Math.abs(diffMs) / 60000);
+  if (absMinutes < 1) return 'just now';
+  if (absMinutes < 60) return diffMs >= 0 ? `${absMinutes}m ago` : `in ${absMinutes}m`;
+  const absHours = Math.round(absMinutes / 60);
+  if (absHours < 24) return diffMs >= 0 ? `${absHours}h ago` : `in ${absHours}h`;
+  const absDays = Math.round(absHours / 24);
+  return diffMs >= 0 ? `${absDays}d ago` : `in ${absDays}d`;
+}
+
+function buildGenericAlertsFilterSummary({ alerts = [], historyRows = [], countryFilter = 'all', meetingFilter = 'all', severityFilter = 'all', typeFilter = 'all', search = '' } = {}){
+  const bits = [];
+  if (countryFilter !== 'all') bits.push(countryFilter);
+  if (meetingFilter !== 'all') bits.push(meetingFilter);
+  if (severityFilter !== 'all') bits.push(severityFilter);
+  if (typeFilter !== 'all') bits.push(typeFilter);
+  if (search) bits.push(`search “${search}”`);
+  const scope = bits.length ? bits.join(' · ') : 'full engine feed';
+  return `Showing ${alerts.length} live / ${historyRows.length} history for ${scope}.`;
+}
+
+function buildGenericAlertHistoryCardMarkup(a){
+  const sev = String(a?.severity || 'WATCH').toLowerCase();
+  const result = String(a?.result || (a?.raceSettled ? 'settled' : a?.status || '') || '').trim();
+  const winner = String(a?.winner || '').trim();
+  const position = a?.position != null ? `Pos ${a.position}` : '';
+  const resultBits = [result, position, winner ? `Winner ${winner}` : ''].filter(Boolean);
+  const movePctNum = Number(a?.movePct);
+  const movePct = Number.isFinite(movePctNum) ? `${movePctNum > 0 ? '+' : ''}${movePctNum.toFixed(1)}%` : '—';
+  const jumpText = Number.isFinite(Number(a?.minsToJump)) ? `${Number(a.minsToJump)}m` : '—';
+  return `<div class='generic-alert-history-card ${sev}'>
+    <div class='generic-alert-history-top'>
+      <div>
+        <div class='generic-alert-history-title'>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))} · ${escapeHtml(String(a?.selection || '—'))}</div>
+        <div class='generic-alert-history-meta'>${escapeHtml(alertTypeTag(a?.type))} · ${escapeHtml(String(a?.country || '—'))} · ${escapeHtml(formatAlertRelativeTime(a?.ts))}</div>
+      </div>
+      <span class='alert-badge ${sev}'>${escapeHtml(String(a?.severity || 'WATCH'))}</span>
+    </div>
+    <div class='generic-alert-history-grid'>
+      <div><span>Move</span><strong>${escapeHtml(String(a?.fromOdds ?? '—'))} → ${escapeHtml(String(a?.toOdds ?? '—'))}</strong><em>${escapeHtml(movePct)}</em></div>
+      <div><span>Jump</span><strong>${escapeHtml(jumpText)}</strong><em>${escapeHtml(String(a?.status || '—'))}</em></div>
+      <div><span>Outcome</span><strong>${escapeHtml(resultBits.join(' · ') || 'Pending')}</strong><em>${escapeHtml(String(a?.action || 'Watch'))}</em></div>
+    </div>
+    ${a?.interpretation ? `<div class='generic-alert-history-note'>${escapeHtml(String(a.interpretation))}</div>` : ''}
+  </div>`;
+}
+
 function buildAlertCardMarkup(a, options = {}){
   const sev = String(a?.severity || 'WATCH').toLowerCase();
   const title = escapeHtml(String(a?.title || `${a?.meeting || '—'} R${a?.race || ''}`));
@@ -1771,17 +1821,18 @@ function buildAlertCardMarkup(a, options = {}){
   const movePct = Number.isFinite(movePctNum) ? `${movePctNum}%` : '—';
   const minsNum = Number(a?.minsToJump);
   const mins = Number.isFinite(minsNum) ? `${minsNum}m` : '—';
+  const timeMeta = a?.ts ? formatAlertRelativeTime(a.ts) : '';
   const signalImg = alertTypeImage(a?.type);
   const typeLower = String(a?.type || '').toLowerCase();
   const directionClass = typeLower === 'hot_plunge' ? 'comp-green' : (typeLower === 'hot_drift' ? 'comp-red' : '');
-  return `<div class='alert-card ${sev} ${directionClass} alert-row' data-meeting='${escapeAttr(String(a?.meeting || ''))}' data-race='${escapeAttr(String(a?.race || ''))}' style='cursor:pointer'>
+  return `<div class='alert-card ${sev} ${directionClass} ${options.generic ? 'generic-alert-card' : ''} alert-row' data-meeting='${escapeAttr(String(a?.meeting || ''))}' data-race='${escapeAttr(String(a?.race || ''))}' style='cursor:pointer'>
     <div class='alert-card-hero'>
       ${signalImg ? `<img class='alert-signal-img' src='${signalImg}' alt='${escapeHtml(alertTypeTag(a?.type))}' />` : `<div class='alert-signal-img'></div>`}
       <div>
         <div class='alert-card-top'>
           <div>
             <div class='alert-card-title'>${title}</div>
-            <div class='alert-card-sub'>${escapeHtml(String(a?.country || '—'))} • ${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))} • ${escapeHtml(alertTypeTag(a?.type))}</div>
+            <div class='alert-card-sub'>${escapeHtml(String(a?.country || '—'))} • ${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))} • ${escapeHtml(alertTypeTag(a?.type))}${timeMeta ? ` • ${escapeHtml(timeMeta)}` : ''}</div>
           </div>
           <span class='alert-badge ${sev}'>${escapeHtml(String(a?.severity || 'WATCH'))}</span>
         </div>
@@ -1856,6 +1907,10 @@ async function renderGenericAlertsShell(){
   $('genericAlertsActionCount') && ($('genericAlertsActionCount').textContent = String(actionCount));
   $('genericAlertsHotCount') && ($('genericAlertsHotCount').textContent = String(hotCount));
   $('genericAlertsLiveCount') && ($('genericAlertsLiveCount').textContent = String(alerts.length));
+  $('genericAlertsHistoryCount') && ($('genericAlertsHistoryCount').textContent = String(historyRows.length));
+  $('genericAlertsLiveLabel') && ($('genericAlertsLiveLabel').textContent = alerts.length === 1 ? 'alert in feed' : 'alerts in feed');
+  $('genericAlertsHistoryLabel') && ($('genericAlertsHistoryLabel').textContent = historyRows.length === 1 ? 'history match' : 'history matches');
+  $('genericAlertsFilterSummary') && ($('genericAlertsFilterSummary').textContent = buildGenericAlertsFilterSummary({ alerts, historyRows, countryFilter, meetingFilter, severityFilter, typeFilter, search }));
   if (live) {
     live.innerHTML = alerts.length
       ? `<div class='alert-cards'>${alerts.map(a => buildAlertCardMarkup(a, { generic: true })).join('')}</div>`
@@ -1864,19 +1919,7 @@ async function renderGenericAlertsShell(){
   }
   if (hist) {
     hist.innerHTML = historyRows.length
-      ? `<div class='row header'><div>When</div><div>Severity</div><div>Type</div><div>Race</div><div class='right'>Runner / Status</div></div>` + historyRows.slice(0, 80).map(a => {
-          const result = String(a?.result || (a?.raceSettled ? 'settled' : '') || '').trim();
-          const winner = String(a?.winner || '').trim();
-          const position = a?.position != null ? String(a.position) : '';
-          const resultBits = [result, position ? `Pos ${position}` : '', winner ? `Winner ${winner}` : ''].filter(Boolean).join(' · ');
-          return `<div class='row'>
-            <div>${escapeHtml(String(a?.ts || '—'))}</div>
-            <div>${escapeHtml(String(a?.severity || '—'))}</div>
-            <div>${escapeHtml(alertTypeTag(a?.type))}</div>
-            <div>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))}</div>
-            <div class='right'>${escapeHtml(String(a?.selection || '—'))}${resultBits ? `<div class='sub'>${escapeHtml(resultBits)}</div>` : ''}</div>
-          </div>`;
-        }).join('')
+      ? `<div class='generic-alert-history-list'>${historyRows.slice(0, 80).map(a => buildGenericAlertHistoryCardMarkup(a)).join('')}</div>`
       : `<div class='row'><div style='grid-column:1/-1'>No alert history yet</div></div>`;
   }
 }
@@ -11659,6 +11702,14 @@ $('refreshAlertsBtn')?.addEventListener('click', () => renderAlertsShell());
 ($('pulseCountryFilter') || $('alertsCountryFilter'))?.addEventListener('change', () => renderAlertsShell());
 ($('pulseMeetingFilter') || $('alertsMeetingFilter'))?.addEventListener('change', () => renderAlertsShell());
 $('refreshGenericAlertsBtn')?.addEventListener('click', () => renderGenericAlertsShell());
+$('clearGenericAlertsBtn')?.addEventListener('click', () => {
+  if ($('genericAlertsCountryFilter')) $('genericAlertsCountryFilter').value = 'all';
+  if ($('genericAlertsMeetingFilter')) $('genericAlertsMeetingFilter').value = 'all';
+  if ($('genericAlertsSeverityFilter')) $('genericAlertsSeverityFilter').value = 'all';
+  if ($('genericAlertsTypeFilter')) $('genericAlertsTypeFilter').value = 'all';
+  if ($('genericAlertsSearch')) $('genericAlertsSearch').value = '';
+  renderGenericAlertsShell();
+});
 $('genericAlertsCountryFilter')?.addEventListener('change', () => renderGenericAlertsShell());
 $('genericAlertsMeetingFilter')?.addEventListener('change', () => renderGenericAlertsShell());
 $('genericAlertsSeverityFilter')?.addEventListener('change', () => renderGenericAlertsShell());
