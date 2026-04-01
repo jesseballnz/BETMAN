@@ -1107,11 +1107,10 @@ async function renderPulseConfigPanel(){
       <div class='pulse-quick-setup'>
         <div>
           <div class='pulse-config-item-title'>Fast setup for today</div>
-          <div class='sub'>Live meetings only. Pukekohe is promoted when available so Pulse can be narrowed in seconds.</div>
+          <div class='sub'>Select meeting and hit Fast Setup to follow meeting.</div>
         </div>
         <div class='pulse-quick-actions'>
-          ${targetOptions.meetings.includes('Pukekohe') ? `<button id='pulseQuickPukekoheBtn' class='btn btn-ghost compact-btn'>Focus Pukekohe</button>` : ''}
-          ${String(selectedMeeting || '').trim() && String(selectedMeeting || '').trim() !== 'ALL' ? `<button id='pulseQuickSelectedMeetingBtn' class='btn btn-ghost compact-btn'>Use ${escapeHtml(String(selectedMeeting).trim())}</button>` : ''}
+          ${String(selectedMeeting || '').trim() && String(selectedMeeting || '').trim() !== 'ALL' ? `<button id='pulseQuickSelectedMeetingBtn' class='btn btn-ghost compact-btn'>Use ${escapeHtml(String(selectedMeeting).trim())}</button>` : `<span class='sub'>Select a meeting first.</span>`}
         </div>
       </div>
       ${targetOptions.meetingCards.length ? `<div class='pulse-meeting-chip-row'>${targetOptions.meetingCards.slice(0, 10).map(item => `<button type='button' class='pulse-meeting-chip ${String(item.meeting).trim().toLowerCase() === 'pukekohe' ? 'is-primary' : ''}' data-meeting='${escapeAttr(item.meeting)}'>${escapeHtml(item.country ? `${item.country} · ` : '')}${escapeHtml(item.meeting)}${item.nextRace != null ? ` <span>R${escapeHtml(String(item.nextRace))}</span>` : ''}${item.activeRaceCount ? ` <span>${escapeHtml(String(item.activeRaceCount))} live</span>` : ''}</button>`).join('')}</div>` : ''}
@@ -1245,7 +1244,6 @@ async function renderPulseConfigPanel(){
     }
   };
 
-  $('pulseQuickPukekoheBtn')?.addEventListener('click', () => setPulseMeetingFocus('Pukekohe'));
   $('pulseQuickSelectedMeetingBtn')?.addEventListener('click', () => setPulseMeetingFocus(String(selectedMeeting || '').trim()));
   cfg.querySelectorAll('.pulse-meeting-chip').forEach(btn => {
     btn.addEventListener('click', () => {
