@@ -955,10 +955,31 @@ function pulseMeetingPriority(meeting = '', country = '', activeRaceCount = 0){
   const selected = String(selectedMeeting || '').trim().toLowerCase();
   if (!meetingName) return 99;
   if (selected && selected !== 'all' && meetingName === selected) return 0;
-  if (meetingName === 'pukekohe') return 1;
-  if (String(country || '').trim().toUpperCase() === 'NZ') return 2;
-  if (activeRaceCount > 0) return 3;
+  if (activeRaceCount > 0) return 1;
+  if (String(country || '').trim().toUpperCase() === String(selectedCountry || '').trim().toUpperCase()) return 2;
+  if (String(country || '').trim().toUpperCase() === 'NZ') return 3;
   return 4;
+}
+
+let pulseConfigFlash = '';
+
+function setPulseConfigFlash(message = ''){
+  pulseConfigFlash = String(message || '').trim();
+  const status = $('pulseConfigStatus');
+  if (status && pulseConfigFlash) status.textContent = pulseConfigFlash;
+}
+
+function updatePulseMeetingAwareUi(){
+  const quickBtn = $('pulseQuickSelectedMeetingBtn');
+  if (quickBtn) {
+    const meetingLabel = String(selectedMeeting || '').trim();
+    quickBtn.textContent = meetingLabel && meetingLabel !== 'ALL' ? `Use ${meetingLabel}` : 'Select a meeting first';
+    quickBtn.disabled = !meetingLabel || meetingLabel === 'ALL';
+  }
+  const quickEmpty = $('pulseQuickSelectedMeetingEmpty');
+  if (quickEmpty) quickEmpty.style.display = (selectedMeeting && selectedMeeting !== 'ALL') ? 'none' : '';
+  const liveRules = $('pulseLiveRulesSummary');
+  if (liveRules) liveRules.textContent = pulseTargetingSummary(pulseConfigState?.targeting || {});
 }
 
 function pulseFocusedMeetingFromTargeting(targeting = {}){
@@ -1110,12 +1131,24 @@ async function renderPulseConfigPanel(){
           <div class='sub'>Select meeting and hit Fast Setup to follow meeting.</div>
         </div>
         <div class='pulse-quick-actions'>
-          ${String(selectedMeeting || '').trim() && String(selectedMeeting || '').trim() !== 'ALL' ? `<button id='pulseQuickSelectedMeetingBtn' class='btn btn-ghost compact-btn'>Use ${escapeHtml(String(selectedMeeting).trim())}</button>` : `<span class='sub'>Select a meeting first.</span>`}
+          <button id='pulseQuickSelectedMeetingBtn' class='btn btn-ghost compact-btn' ${String(selectedMeeting || '').trim() && String(selectedMeeting || '').trim() !== 'ALL' ? '' : 'disabled'}>Use ${escapeHtml(String(selectedMeeting || '').trim() && String(selectedMeeting || '').trim() !== 'ALL' ? String(selectedMeeting).trim() : 'selected meeting')}</button>
+          <span id='pulseQuickSelectedMeetingEmpty' class='sub' ${String(selectedMeeting || '').trim() && String(selectedMeeting || '').trim() !== 'ALL' ? "style='display:none'" : ''}>Select a meeting first.</span>
         </div>
       </div>
-      ${targetOptions.meetingCards.length ? `<div class='pulse-meeting-chip-row'>${targetOptions.meetingCards.slice(0, 10).map(item => `<button type='button' class='pulse-meeting-chip ${String(item.meeting).trim().toLowerCase() === 'pukekohe' ? 'is-primary' : ''}' data-meeting='${escapeAttr(item.meeting)}'>${escapeHtml(item.country ? `${item.country} · ` : '')}${escapeHtml(item.meeting)}${item.nextRace != null ? ` <span>R${escapeHtml(String(item.nextRace))}</span>` : ''}${item.activeRaceCount ? ` <span>${escapeHtml(String(item.activeRaceCount))} live</span>` : ''}</button>`).join('')}</div>` : ''}
+      ${targetOptions.meetingCards.length ? `<div class='pulse-meeting-chip-row'>${targetOptions.meetingCards.slice(0, 10).map(item => `<button type='button' class='pulse-meeting-chip' data-meeting='${escapeAttr(item.meeting)}'>${escapeHtml(item.country ? `${item.country} · ` : '')}${escapeHtml(item.meeting)}${item.nextRace != null ? ` <span>R${escapeHtml(String(item.nextRace))}</span>` : ''}${item.activeRaceCount ? ` <span>${escapeHtml(String(item.activeRaceCount))} live</span>` : ''}</button>`).join('')}</div>` : ''}
       <div class='pulse-targeting-modes'>
         ${['all','countries','meetings','races','mixed'].map(mode => `<label class='pulse-mode-pill ${targeting.mode === mode ? 'active' : ''}'><input type='radio' name='pulseTargetMode' value='${mode}' ${targeting.mode === mode ? 'checked' : ''} /> <span>${escapeHtml(pulseTargetingModeLabel(mode))}</span></label>`).join('')}
+      </div>
+      <div class='row pulse-config-card' style='grid-template-columns:1fr auto;gap:12px;align-items:center'>
+        <div>
+          <div class='pulse-config-item-title'>Current Live Rules</div>
+          <div id='pulseLiveRulesSummary' class='sub'>${escapeHtml(pulseTargetingSummary(targeting))}</div>
+        </div>
+        <div class='pulse-quick-actions'>
+          <button id='pulseApplyMeetingsBtn' class='btn btn-ghost compact-btn'>Apply Meetings</button>
+          <button id='pulseApplyRacesBtn' class='btn btn-ghost compact-btn'>Apply Races</button>
+          <button id='pulseClearScopeBtn' class='btn btn-ghost compact-btn'>Clear Rules</button>
+        </div>
       </div>
       <div class='pulse-targeting-grid'>
         <label>
@@ -1184,6 +1217,8 @@ async function renderPulseConfigPanel(){
     </div>`;
 
   const status = $('pulseConfigStatus');
+  updatePulseMeetingAwareUi();
+  if (status && pulseConfigFlash) status.textContent = pulseConfigFlash;
   const addPulseTargetValue = (inputId, targetId, transform = (v) => v) => {
     const input = $(inputId);
     const target = $(targetId);
@@ -1235,14 +1270,68 @@ async function renderPulseConfigPanel(){
         },
       });
       await renderPulseConfigPanel();
-      await renderAlertsPanel();
-      if ($('pulseConfigStatus')) $('pulseConfigStatus').textContent = `Saved · focused on ${meeting}`;
+      await renderAlertsShell();
+      setPulseConfigFlash(`Saved · focused on ${meeting}`);
+      updatePulseMeetingAwareUi();
     } catch (err) {
       if (status) status.textContent = `Save failed: ${err?.message || 'unknown error'}`;
     } finally {
       if (btn) btn.disabled = false;
     }
   };
+
+  const applyPulseScope = async (kind = 'meetings') => {
+    const btn = kind === 'races' ? $('pulseApplyRacesBtn') : $('pulseApplyMeetingsBtn');
+    const meetings = String($('pulseTargetMeetings')?.value || '').split(/[\n,]+/).map(v => normalizePulseMeetingName(v)).filter(Boolean);
+    const races = String($('pulseTargetRaces')?.value || '').split(/[\n,]+/).map(v => normalizePulseRaceTarget(v)).filter(Boolean);
+    const nextTargeting = {
+      mode: kind === 'races' ? (races.length ? 'races' : 'meetings') : (meetings.length ? 'meetings' : 'all'),
+      countries: String($('pulseTargetCountries')?.value || '').split(/[\n,]+/).map(v => normalizePulseCountry(v)).filter(Boolean),
+      meetings,
+      races,
+    };
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = kind === 'races' ? 'Applying races…' : 'Applying meetings…';
+    try {
+      await savePulseConfig({ targeting: nextTargeting, enabled: !!$('pulseEnabledToggle')?.checked });
+      const summary = pulseTargetingSummary(nextTargeting);
+      if ($('pulseLiveRulesSummary')) $('pulseLiveRulesSummary').textContent = summary;
+      setPulseConfigFlash(kind === 'races' ? `Applied races · ${summary}` : `Applied meetings · ${summary}`);
+      await renderAlertsShell();
+    } catch (err) {
+      if (status) status.textContent = `Apply failed: ${err?.message || 'unknown error'}`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  $('pulseApplyMeetingsBtn')?.addEventListener('click', () => applyPulseScope('meetings'));
+  $('pulseApplyRacesBtn')?.addEventListener('click', () => applyPulseScope('races'));
+  $('pulseClearScopeBtn')?.addEventListener('click', async () => {
+    const btn = $('pulseClearScopeBtn');
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'Clearing live rules…';
+    try {
+      if ($('pulseTargetCountries')) $('pulseTargetCountries').value = '';
+      if ($('pulseTargetMeetings')) $('pulseTargetMeetings').value = '';
+      if ($('pulseTargetRaces')) $('pulseTargetRaces').value = '';
+      const allMode = cfg.querySelector('input[name="pulseTargetMode"][value="all"]');
+      if (allMode) allMode.checked = true;
+      cfg.querySelectorAll('.pulse-mode-pill').forEach(pill => pill.classList.toggle('active', pill.querySelector('input')?.checked));
+      syncPulseMeetingChipState();
+      await savePulseConfig({
+        enabled: !!$('pulseEnabledToggle')?.checked,
+        targeting: { mode: 'all', countries: [], meetings: [], races: [] },
+      });
+      if ($('pulseLiveRulesSummary')) $('pulseLiveRulesSummary').textContent = pulseTargetingSummary({ mode: 'all', countries: [], meetings: [], races: [] });
+      setPulseConfigFlash('Cleared live rules · full premium feed active');
+      await renderAlertsShell();
+    } catch (err) {
+      if (status) status.textContent = `Clear failed: ${err?.message || 'unknown error'}`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
 
   $('pulseQuickSelectedMeetingBtn')?.addEventListener('click', () => setPulseMeetingFocus(String(selectedMeeting || '').trim()));
   cfg.querySelectorAll('.pulse-meeting-chip').forEach(btn => {
@@ -1289,8 +1378,9 @@ async function renderPulseConfigPanel(){
     if (status) status.textContent = 'Saving…';
     try {
       await savePulseConfig({ enabled: !!$('pulseEnabledToggle')?.checked, alertTypes: nextAlertTypes, thresholds: nextThresholds, targeting: nextTargeting });
+      if ($('pulseLiveRulesSummary')) $('pulseLiveRulesSummary').textContent = pulseTargetingSummary(nextTargeting);
+      setPulseConfigFlash(`Saved · ${pulseTargetingSummary(nextTargeting)}`);
       renderPulseConfigPanel();
-      if ($('pulseConfigStatus')) $('pulseConfigStatus').textContent = 'Saved';
     } catch (err) {
       if (status) status.textContent = `Save failed: ${err?.message || 'unknown error'}`;
     } finally {
@@ -3004,6 +3094,7 @@ function renderMeetingList(rows){
     renderInteresting(latestInterestingRows || []);
     renderMarketMovers(latestMarketMovers || []);
     refreshTabAccess();
+    updatePulseMeetingAwareUi();
   };
   wrap.appendChild(all);
 
@@ -3030,6 +3121,7 @@ function renderMeetingList(rows){
       renderInteresting(latestInterestingRows || []);
       renderMarketMovers(latestMarketMovers || []);
       refreshTabAccess();
+      updatePulseMeetingAwareUi();
     };
     wrap.appendChild(b);
   });
@@ -3509,6 +3601,7 @@ function inheritMoveTags(meeting, race, runner){
 function renderWorkspaceSignalPanels(){
   const moversTable = $('workspaceMoversTable');
   const interestingTable = $('workspaceInterestingTable');
+  if (!moversTable && !interestingTable) return;
   if (moversTable) {
     const scopedMovers = (latestMarketMovers || []).filter(r => meetingMatches(r.meeting)).filter(selectionIsUpcoming).slice(0, 6);
     moversTable.innerHTML = '';
@@ -11991,6 +12084,7 @@ document.querySelectorAll('.pill[data-day]').forEach(p=>{
     persistMeetingLock();
     const meetingSel = $('meetingSelect');
     if (meetingSel) meetingSel.value = 'ALL';
+    updatePulseMeetingAwareUi();
     await triggerPoll();
   });
 });
@@ -12002,6 +12096,7 @@ $('countrySelect')?.addEventListener('change', async (e)=>{
   const meetingSel = $('meetingSelect');
   if (meetingSel) meetingSel.value = 'ALL';
   renderMeetingIntelPanel();
+  updatePulseMeetingAwareUi();
   await triggerPoll();
 });
 $('meetingSelect')?.addEventListener('change', async (e)=>{
@@ -12032,6 +12127,7 @@ $('meetingSelect')?.addEventListener('change', async (e)=>{
   renderMarketMovers(latestMarketMovers || []);
   refreshTabAccess();
   renderMeetingIntelPanel();
+  updatePulseMeetingAwareUi();
 });
 $('meetingSearchBtn')?.addEventListener('click', async ()=>{
   await handleMeetingSearchSubmit();

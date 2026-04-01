@@ -781,26 +781,6 @@
             <button class="btn btn-ghost compact-btn pulse-subtab" data-pulse-tab="history">History</button>
             <button class="btn btn-ghost compact-btn pulse-subtab" data-pulse-tab="config">Control</button>
           </div>
-          <div class="pulse-watchbar">
-            <div class="pulse-watchbar-copy">
-              <div class="pulse-watchbar-label">Watch bar</div>
-              <div class="pulse-watchbar-title">Focus the feed without losing the premium feel.</div>
-            </div>
-            <div class="perf-kpis perf-kpis-secondary pulse-filter-strip">
-              <div class="perf-card pulse-filter-card pulse-filter-input-card">
-                <div class="label">Country</div>
-                <select id="pulseCountryFilter" class="pulse-filter-select">
-                  <option value="all">All countries</option>
-                </select>
-              </div>
-              <div class="perf-card pulse-filter-card pulse-filter-input-card">
-                <div class="label">Meeting</div>
-                <select id="pulseMeetingFilter" class="pulse-filter-select">
-                  <option value="all">All meetings</option>
-                </select>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div class="pulse-subpanel active" data-pulse-panel="live">
@@ -867,6 +847,26 @@
           <div class="sub alerts-engine-copy">Alerts is the simple market monitor: movers, drifts, flips, and jump-window signals across the board. No push logic. No premium curation. Pulse remains the separate premium layer.</div>
         </div>
         <div class="alerts-engine-note">Use Alerts to scan the wider board, then click through into workspace when something matters.</div>
+      </div>
+      <div class="pulse-watchbar" style="margin:0 0 14px 0">
+        <div class="pulse-watchbar-copy">
+          <div class="pulse-watchbar-label">Watch bar</div>
+          <div class="pulse-watchbar-title">Focus the live premium feed while you scan the wider alerts board.</div>
+        </div>
+        <div class="perf-kpis perf-kpis-secondary pulse-filter-strip">
+          <div class="perf-card pulse-filter-card pulse-filter-input-card">
+            <div class="label">Country</div>
+            <select id="pulseCountryFilter" class="pulse-filter-select">
+              <option value="all">All countries</option>
+            </select>
+          </div>
+          <div class="perf-card pulse-filter-card pulse-filter-input-card">
+            <div class="label">Meeting</div>
+            <select id="pulseMeetingFilter" class="pulse-filter-select">
+              <option value="all">All meetings</option>
+            </select>
+          </div>
+        </div>
       </div>
       <div class="perf-kpis perf-kpis-secondary generic-alerts-summary-strip generic-alerts-meta-strip">
         <div class="perf-card"><div class="label">Live feed</div><div id="genericAlertsLiveCount" class="value">0</div><div class="sub" id="genericAlertsLiveLabel">alerts in feed</div></div>
