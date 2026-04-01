@@ -961,6 +961,44 @@ function pulseMeetingPriority(meeting = '', country = '', activeRaceCount = 0){
   return 4;
 }
 
+function pulseFocusedMeetingFromTargeting(targeting = {}){
+  const normalized = normalizePulseTargeting({ targeting });
+  if (normalized.mode === 'meetings' && normalized.meetings.length === 1) return normalized.meetings[0];
+  if (normalized.mode === 'races' && normalized.races.length === 1) return String(normalized.races[0]).split('::')[0] || '';
+  if (normalized.mode === 'mixed' && normalized.meetings.length === 1) return normalized.meetings[0];
+  return '';
+}
+
+function buildPulseMeetingCards(rows = [], seedMeetings = []){
+  const meetingStats = new Map();
+  const ensureMeeting = (meeting, country = '') => {
+    const label = normalizePulseMeetingName(meeting);
+    if (!label) return null;
+    if (!meetingStats.has(label)) {
+      meetingStats.set(label, { meeting: label, country: String(country || '').trim(), activeRaceCount: 0, nextRace: null });
+    }
+    const item = meetingStats.get(label);
+    if (!item.country && country) item.country = String(country || '').trim();
+    return item;
+  };
+  (seedMeetings || []).forEach(raw => ensureMeeting(raw));
+  (rows || []).forEach(r => {
+    const item = ensureMeeting(r?.meeting, r?.country);
+    if (!item) return;
+    const raceNo = String(r?.race_number || r?.race || '').replace(/^R/i, '').trim();
+    if (!raceNo) return;
+    item.activeRaceCount += 1;
+    const raceInt = Number(raceNo);
+    if (Number.isFinite(raceInt)) item.nextRace = item.nextRace == null ? raceInt : Math.min(item.nextRace, raceInt);
+  });
+  return Array.from(meetingStats.values()).sort((a, b) => {
+    const rankDiff = pulseMeetingPriority(a.meeting, a.country, a.activeRaceCount) - pulseMeetingPriority(b.meeting, b.country, b.activeRaceCount);
+    if (rankDiff !== 0) return rankDiff;
+    if ((a.nextRace ?? 999) !== (b.nextRace ?? 999)) return (a.nextRace ?? 999) - (b.nextRace ?? 999);
+    return a.meeting.localeCompare(b.meeting);
+  });
+}
+
 async function getPulseTargetOptions(targeting = {}){
   const all = await loadAllRacesUnfiltered();
   const selected = normalizePulseTargeting({ targeting });
@@ -973,29 +1011,13 @@ async function getPulseTargetOptions(targeting = {}){
     : byCountry;
   const candidateRaces = byMeeting;
   const countries = Array.from(new Set(liveRaces.map(r => String(r.country || '').trim()).filter(Boolean))).sort();
-  const meetingStats = new Map();
-  candidateRaces.forEach(r => {
-    const meeting = String(r.meeting || '').trim();
-    const country = String(r.country || '').trim();
-    const raceNo = String(r.race_number || r.race || '').replace(/^R/i,'').trim();
-    if (!meeting) return;
-    if (!meetingStats.has(meeting)) {
-      meetingStats.set(meeting, { meeting, country, activeRaceCount: 0, nextRace: null });
-    }
-    const item = meetingStats.get(meeting);
-    item.country = item.country || country;
-    if (raceNo) {
-      item.activeRaceCount += 1;
-      const raceInt = Number(raceNo);
-      if (Number.isFinite(raceInt)) item.nextRace = item.nextRace == null ? raceInt : Math.min(item.nextRace, raceInt);
-    }
-  });
-  const meetingCards = Array.from(meetingStats.values()).sort((a, b) => {
-    const rankDiff = pulseMeetingPriority(a.meeting, a.country, a.activeRaceCount) - pulseMeetingPriority(b.meeting, b.country, b.activeRaceCount);
-    if (rankDiff !== 0) return rankDiff;
-    if ((a.nextRace ?? 999) !== (b.nextRace ?? 999)) return (a.nextRace ?? 999) - (b.nextRace ?? 999);
-    return a.meeting.localeCompare(b.meeting);
-  });
+  const seedMeetings = [
+    ...currentStatusMeetings(),
+    ...selected.meetings,
+    pulseFocusedMeetingFromTargeting(selected),
+    normalizePulseMeetingName(selectedMeeting === 'ALL' ? '' : selectedMeeting),
+  ].filter(Boolean);
+  const meetingCards = buildPulseMeetingCards(candidateRaces, seedMeetings);
   const meetings = meetingCards.map(item => item.meeting);
   const races = candidateRaces
     .map(r => ({
@@ -1182,6 +1204,20 @@ async function renderPulseConfigPanel(){
   addPulseTargetValue('pulseTargetMeetingsInput', 'pulseTargetMeetings');
   addPulseTargetValue('pulseTargetRacesInput', 'pulseTargetRaces', (value) => value.includes(' · ') ? value.split(' · ').slice(1).join(' · ').replace(/\s+R/i, ' | R') : value);
 
+  const syncPulseMeetingChipState = () => {
+    const target = $('pulseTargetMeetings');
+    const selectedMeetings = String(target?.value || '')
+      .split(/[\n,]+/)
+      .map(v => normalizePulseMeetingName(v).toLowerCase())
+      .filter(Boolean);
+    const selectedSet = new Set(selectedMeetings);
+    cfg.querySelectorAll('.pulse-meeting-chip').forEach(chip => {
+      const meeting = normalizePulseMeetingName(chip.dataset.meeting || '').toLowerCase();
+      chip.classList.toggle('active', !!meeting && selectedSet.has(meeting));
+      chip.setAttribute('aria-pressed', selectedSet.has(meeting) ? 'true' : 'false');
+    });
+  };
+
   const setPulseMeetingFocus = async (meetingName) => {
     const meeting = normalizePulseMeetingName(meetingName);
     if (!meeting) return;
@@ -1220,14 +1256,12 @@ async function renderPulseConfigPanel(){
       const modeInput = cfg.querySelector('input[name="pulseTargetMode"][value="meetings"]');
       if (modeInput) modeInput.checked = true;
       cfg.querySelectorAll('.pulse-mode-pill').forEach(pill => pill.classList.toggle('active', pill.querySelector('input')?.checked));
-      cfg.querySelectorAll('.pulse-meeting-chip').forEach(chip => chip.classList.toggle('active', chip === btn));
-      const quickBtn = $('pulseQuickSelectedMeetingBtn');
-      if (quickBtn) quickBtn.textContent = `Use ${meeting}`;
-      const focusBtn = $('pulseQuickPukekoheBtn');
-      if (focusBtn && meeting.toLowerCase() !== 'pukekohe') focusBtn.textContent = `Focus ${meeting}`;
+      syncPulseMeetingChipState();
       if (status) status.textContent = `${meeting} selected — use the button to apply instantly`;
     });
   });
+  $('pulseTargetMeetings')?.addEventListener('change', syncPulseMeetingChipState);
+  syncPulseMeetingChipState();
 
     cfg.querySelectorAll('.pulse-config-toggle, #pulseEnabledToggle, input[name="pulseTargetMode"], #pulseTargetCountries, #pulseTargetMeetings, #pulseTargetRaces, #pulseThresholdSeverity, #pulseThresholdMinutes, #pulseThresholdMovePct, #pulseThresholdTrackedOverride').forEach(input => {
       input.addEventListener('change', () => {
@@ -1771,9 +1805,21 @@ async function hydrateAlertsMeetingFilter(alerts){
   const sel = $('pulseMeetingFilter') || $('alertsMeetingFilter');
   if (!sel) return;
   const prev = sel.value || 'all';
-  const meetings = Array.from(new Set((alerts || []).map(a => String(a?.meeting || '').trim()).filter(Boolean))).sort((a,b) => a.localeCompare(b));
+  let candidateMeetings = (alerts || []).map(a => String(a?.meeting || '').trim()).filter(Boolean);
+  try {
+    const options = await getPulseTargetOptions(pulseConfigState?.targeting || {});
+    candidateMeetings = candidateMeetings.concat(options?.meetings || []);
+  } catch {}
+  candidateMeetings = candidateMeetings.concat(currentStatusMeetings());
+  const focusedMeeting = pulseFocusedMeetingFromTargeting(pulseConfigState?.targeting || {});
+  if (focusedMeeting) candidateMeetings.push(focusedMeeting);
+  if (selectedMeeting && selectedMeeting !== 'ALL') candidateMeetings.push(String(selectedMeeting).trim());
+  const meetings = Array.from(new Set(candidateMeetings.map(v => String(v || '').trim()).filter(Boolean))).sort((a,b) => a.localeCompare(b));
   sel.innerHTML = [`<option value="all">All meetings</option>`].concat(meetings.map(m => `<option value="${escapeAttr(m)}">${escapeHtml(m)}</option>`)).join('');
-  sel.value = meetings.includes(prev) || prev === 'all' ? prev : 'all';
+  const preferred = meetings.includes(prev)
+    ? prev
+    : (focusedMeeting && meetings.includes(focusedMeeting) ? focusedMeeting : 'all');
+  sel.value = preferred;
 }
 
 async function hydrateAlertsCountryFilter(alerts){
@@ -1825,6 +1871,49 @@ function buildGenericAlertsFilterSummary({ alerts = [], historyRows = [], countr
   if (search) bits.push(`search “${search}”`);
   const scope = bits.length ? bits.join(' · ') : 'full engine feed';
   return `Showing ${alerts.length} live / ${historyRows.length} history for ${scope}.`;
+}
+
+function buildAlertIdentityKey(row = {}){
+  const meeting = normalizeMeetingKey(row?.meeting || '');
+  const race = normalizeRaceNumberValue(row?.race || '');
+  const selection = normalizeRunnerName(row?.selection || '');
+  if (!meeting || !race || !selection) return '';
+  return `${meeting}|${race}|${selection}`;
+}
+
+function alertRowBelongsInHistory(row, activeTrackedKeys = new Set()){
+  const status = String(row?.status || '').trim().toLowerCase();
+  if (status === 'live' || status === 'active' || status === 'pending') return false;
+  if (row?.trackedRunner && activeTrackedKeys.has(buildAlertIdentityKey(row))) return false;
+  if (row?.raceSettled === true) return true;
+  if (status === 'settled' || status === 'closed' || status === 'history' || status === 'resolved') return true;
+  return false;
+}
+
+function buildPulseHistoryCardMarkup(a){
+  const sev = String(a?.severity || 'WATCH').toLowerCase();
+  const result = String(a?.result || (a?.raceSettled ? 'settled' : a?.status || '') || '').trim();
+  const winner = String(a?.winner || '').trim();
+  const position = a?.position != null ? `Pos ${a.position}` : '';
+  const resultBits = [result, position, winner ? `Winner ${winner}` : ''].filter(Boolean);
+  const movePctNum = Number(a?.movePct);
+  const movePct = Number.isFinite(movePctNum) ? `${movePctNum > 0 ? '+' : ''}${movePctNum.toFixed(1)}%` : '—';
+  const jumpText = Number.isFinite(Number(a?.minsToJump)) ? `${Number(a.minsToJump)}m` : '—';
+  return `<div class='pulse-history-card ${sev}'>
+    <div class='pulse-history-top'>
+      <div>
+        <div class='pulse-history-title'>${escapeHtml(String(a?.meeting || '—'))} R${escapeHtml(String(a?.race || ''))} · ${escapeHtml(String(a?.selection || '—'))}</div>
+        <div class='pulse-history-meta'>${escapeHtml(alertTypeTag(a?.type))} · ${escapeHtml(String(a?.country || '—'))} · ${escapeHtml(formatAlertRelativeTime(a?.ts))}</div>
+      </div>
+      <span class='alert-badge ${sev}'>${escapeHtml(String(a?.severity || 'WATCH'))}</span>
+    </div>
+    <div class='pulse-history-grid'>
+      <div><span>Move</span><strong>${escapeHtml(String(a?.fromOdds ?? '—'))} → ${escapeHtml(String(a?.toOdds ?? '—'))}</strong><em>${escapeHtml(movePct)}</em></div>
+      <div><span>Jump</span><strong>${escapeHtml(jumpText)}</strong><em>${escapeHtml(String(a?.status || '—'))}</em></div>
+      <div><span>Outcome</span><strong>${escapeHtml(resultBits.join(' · ') || 'Pending')}</strong><em>${escapeHtml(String(a?.action || 'Watch'))}</em></div>
+    </div>
+    ${a?.interpretation ? `<div class='pulse-history-note'>${escapeHtml(String(a.interpretation))}</div>` : ''}
+  </div>`;
 }
 
 function buildGenericAlertHistoryCardMarkup(a){
@@ -1923,10 +2012,17 @@ async function renderGenericAlertsShell(){
   const live = $('genericAlertsLiveTable');
   const hist = $('genericAlertsHistoryTable');
   if (!live && !hist) return;
-  const feed = await fetchLocal('./api/v1/alerts-feed', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] }));
-  const history = await fetchLocal('./api/v1/alerts-history', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] }));
+  const [feed, history, trackedRows] = await Promise.all([
+    fetchLocal('./api/v1/alerts-feed', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] })),
+    fetchLocal('./api/v1/alerts-history', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ alerts: [] })),
+    loadTrackedBetsCache(true).catch(() => [])
+  ]);
   const liveRows = Array.isArray(feed?.alerts) ? feed.alerts : [];
   const historyRowsRaw = Array.isArray(history?.alerts) ? history.alerts : (Array.isArray(history) ? history : []);
+  const activeTrackedKeys = new Set((trackedRows || [])
+    .filter(row => String(row?.status || '').trim().toLowerCase() !== 'settled')
+    .map(buildAlertIdentityKey)
+    .filter(Boolean));
   const combined = liveRows.concat(historyRowsRaw);
   hydrateGenericAlertsSelect('genericAlertsCountryFilter', combined.map(a => a?.country), 'All countries');
   hydrateGenericAlertsSelect('genericAlertsMeetingFilter', combined.map(a => a?.meeting), 'All meetings');
@@ -1948,7 +2044,10 @@ async function renderGenericAlertsShell(){
     return true;
   };
   const alerts = liveRows.filter(matchesGenericFilter).sort((a, b) => genericAlertSortValue(b) - genericAlertSortValue(a));
-  const historyRows = historyRowsRaw.filter(matchesGenericFilter).sort((a, b) => String(b?.ts || '').localeCompare(String(a?.ts || '')));
+  const historyRows = historyRowsRaw
+    .filter(a => alertRowBelongsInHistory(a, activeTrackedKeys))
+    .filter(matchesGenericFilter)
+    .sort((a, b) => String(b?.ts || '').localeCompare(String(a?.ts || '')));
   const actionCount = alerts.filter(a => String(a?.severity || '') === 'ACTION').length;
   const hotCount = alerts.filter(a => ['HOT', 'CRITICAL', 'ACTION'].includes(String(a?.severity || ''))).length;
   $('genericAlertsActionCount') && ($('genericAlertsActionCount').textContent = String(actionCount));
@@ -2742,11 +2841,56 @@ async function loadAllRacesUnfiltered(){
   const dateStr = fmtDate(baseDate);
   try {
     const res = await fetchLocal(`./api/races?date=${dateStr}&limit=5000`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.races || []).map(sanitizeRaceObject);
+    let data = null;
+    if (res.ok) data = await res.json();
+    if (!data || !Array.isArray(data.races) || !data.races.length) {
+      const fallbackPaths = [`./data/races-${dateStr}.json`, './data/races.json'];
+      for (const path of fallbackPaths) {
+        try {
+          const fallback = await fetchLocal(path, { cache: 'no-store' });
+          if (!fallback.ok) continue;
+          const payload = await fallback.json();
+          if (payload && Array.isArray(payload.races) && payload.races.length) {
+            data = payload;
+            break;
+          }
+        } catch {}
+      }
+    }
+    let rows = (data?.races || []).map(sanitizeRaceObject);
+    if (selectedDay === 'today') {
+      try {
+        const prev = new Date(baseDate);
+        prev.setDate(prev.getDate() - 1);
+        const prevStr = fmtDate(prev);
+        const rPrev = await fetchLocal(`./api/races?date=${prevStr}&limit=5000`, { cache: 'no-store' });
+        if (rPrev.ok) {
+          const prevData = await rPrev.json();
+          const nowMs = Date.now();
+          const yesterdayActive = (prevData.races || [])
+            .map(sanitizeRaceObject)
+            .filter(r => {
+              const st = String(r.race_status || '').toLowerCase();
+              if (['final','closed','abandoned','resulted'].includes(st)) return false;
+              const t = parseTimeValue(r.advertised_start || r.start_time_nz);
+              if (!Number.isFinite(t)) return true;
+              return t >= (nowMs - 8 * 60 * 60 * 1000);
+            });
+          if (yesterdayActive.length) {
+            const seen = new Set(rows.map(r => String(r.key || `${r.country}|${r.meeting}|${r.race_number}`)));
+            yesterdayActive.forEach(r => {
+              const key = String(r.key || `${r.country}|${r.meeting}|${r.race_number}`);
+              if (seen.has(key)) return;
+              rows.push(r);
+              seen.add(key);
+            });
+          }
+        }
+      } catch {}
+    }
+    return rows;
   } catch {
-    return [];
+    return (lastRacesSnapshot || []).slice();
   }
 }
 

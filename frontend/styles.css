@@ -892,7 +892,10 @@ body.dragging-ai-chat .ai-chat-head{cursor:grabbing}
 .pulse-meeting-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
 .pulse-meeting-chip{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:#0c141d;color:#dce6f3;font-weight:600;cursor:pointer}
 .pulse-meeting-chip span{font-size:11px;color:#8fb0cf}
+.pulse-meeting-chip.active{border-color:rgba(86,182,255,.48);box-shadow:0 0 0 1px rgba(86,182,255,.12) inset;background:rgba(17,34,51,.92);color:#f3f8ff}
+.pulse-meeting-chip.active span{color:#b9d7f2}
 .pulse-meeting-chip.is-primary{border-color:rgba(197,255,0,.35);box-shadow:0 0 0 1px rgba(197,255,0,.08) inset;color:var(--accent)}
+.pulse-meeting-chip.is-primary.active{border-color:rgba(197,255,0,.52);box-shadow:0 0 0 1px rgba(197,255,0,.14) inset,0 10px 24px rgba(197,255,0,.08)}
 .pulse-targeting-shell{margin:4px 0 12px;padding:16px;border-radius:18px;background:rgba(11,18,28,.62);border:1px solid rgba(255,255,255,.06)}
 .pulse-targeting-shell textarea,.pulse-config-card input,.pulse-config-card select{background:#0c141d;color:#cfdae6;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:11px 12px}
 .pulse-targeting-head .tag{background:rgba(77,214,255,.12);border-color:rgba(77,214,255,.28);color:#8ed7ff}
