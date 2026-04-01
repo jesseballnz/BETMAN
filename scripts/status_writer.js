@@ -221,14 +221,17 @@ status.dailyPnlOpening = daily.openingTotal;
 status.pnlHistory = nextHist.slice(-7);
 
 const apiSmoke = loadJson(apiSmokePath, null);
-const smokeOk = !!(apiSmoke && Array.isArray(apiSmoke.results) && apiSmoke.results.every(r => {
+const smokePresent = !!(apiSmoke && Array.isArray(apiSmoke.results));
+const smokeOk = !!(smokePresent && apiSmoke.results.every(r => {
   if (String(r.url || '').includes('/insights/sync') && Number(r.status) === 415) return true;
   return !!r.ok;
 }));
-status.apiStatus = smokeOk ? 'OK' : 'FAIL';
-status.apiStatusPublic = smokeOk ? 'OK' : 'FAIL';
+const smokeStatus = !smokePresent ? 'UNVERIFIED' : (smokeOk ? 'OK' : 'FAIL');
+status.apiStatus = smokeStatus;
+status.apiStatusPublic = smokeStatus;
 status.apiStatusDetail = {
   smokeOk,
+  smokePresent,
   smokeCheckedAt: apiSmoke?.checkedAt || null
 };
 

@@ -1144,12 +1144,13 @@ async function renderPulseConfigPanel(){
       <div class='sub' style='margin-top:8px'>${escapeHtml(pulseTargetingSummary(targeting))}</div>
     </div>
     ${meta.map(item => `
-      <label class='row pulse-config-card' style='grid-template-columns:auto 1fr;align-items:center;gap:12px'>
+      <label class='row pulse-config-card ${pulseConfigState.alertTypes[item.key] ? '' : 'is-disabled'}' style='grid-template-columns:auto 1fr auto;align-items:center;gap:12px'>
         <input type='checkbox' class='pulse-config-toggle' data-key='${item.key}' ${pulseConfigState.alertTypes[item.key] ? 'checked' : ''} />
         <div>
           <div class='pulse-config-item-title'>${item.label}</div>
           <div class='sub'>${item.desc}</div>
         </div>
+        <span class='tag ${pulseConfigState.alertTypes[item.key] ? 'win' : ''}'>${pulseConfigState.alertTypes[item.key] ? 'Enabled' : 'Disabled'}</span>
       </label>
     `).join('')}
     <div class='row pulse-config-card' style='grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px'>
@@ -1392,6 +1393,46 @@ function computeTrackRunnerPayload(race, runner, extras = {}){
     jumpsIn: eta && eta !== '—' ? eta : (extras.jumpsIn ?? null),
     note: extras.note ?? null,
     source: extras.source || 'web-runner'
+  };
+}
+
+function buildRaceTrackingPayloads(race, extras = {}){
+  const runners = Array.isArray(race?.runners) ? race.runners : [];
+  return runners
+    .map(runner => computeTrackRunnerPayload(race, runner, extras))
+    .filter(payload => payload?.meeting && payload?.race && payload?.selection);
+}
+
+async function trackAllRunnersInRace(race, extras = {}){
+  if (!race) return { created: 0, duplicates: 0, attempted: 0 };
+  const payloads = buildRaceTrackingPayloads(race, extras);
+  let created = 0;
+  let duplicates = 0;
+  for (const payload of payloads) {
+    const res = await fetchLocal('./api/v1/tracked-bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => null);
+    const data = res ? await res.json().catch(() => null) : null;
+    if (data?.duplicate) duplicates += 1;
+    else if (res?.ok) created += 1;
+  }
+  await refreshTrackedUi({ force: true, rerenderAnalysis: true, rerenderTracked: true });
+  return { created, duplicates, attempted: payloads.length };
+}
+
+function nextBestCandidates(decision = {}){
+  const recommendedKey = normalizeRunnerName(decision?.recommendedKey || '');
+  const recommendedName = cleanRunnerText(decision?.recommendedName || '');
+  let oddsRunner = decision?.oddsRunner || null;
+  const oddsRunnerKey = normalizeRunnerName(oddsRunner?.norm || oddsRunner?.runner?.name || oddsRunner?.runner?.runner_name || '');
+  if (recommendedKey && oddsRunnerKey && recommendedKey === oddsRunnerKey) oddsRunner = null;
+  return {
+    recommendedName,
+    recommendedKey,
+    oddsRunner,
+    oddsRunnerKey: oddsRunner ? normalizeRunnerName(oddsRunner?.norm || oddsRunner?.runner?.name || oddsRunner?.runner?.runner_name || '') : ''
   };
 }
 
@@ -1803,7 +1844,7 @@ async function renderTrackedShell(){
 
 async function hydrateAlertsMeetingFilter(alerts){
   const sel = $('pulseMeetingFilter') || $('alertsMeetingFilter');
-  if (!sel) return;
+  if (!sel) return 'all';
   const prev = sel.value || 'all';
   let candidateMeetings = (alerts || []).map(a => String(a?.meeting || '').trim()).filter(Boolean);
   try {
@@ -1816,19 +1857,29 @@ async function hydrateAlertsMeetingFilter(alerts){
   if (selectedMeeting && selectedMeeting !== 'ALL') candidateMeetings.push(String(selectedMeeting).trim());
   const meetings = Array.from(new Set(candidateMeetings.map(v => String(v || '').trim()).filter(Boolean))).sort((a,b) => a.localeCompare(b));
   sel.innerHTML = [`<option value="all">All meetings</option>`].concat(meetings.map(m => `<option value="${escapeAttr(m)}">${escapeHtml(m)}</option>`)).join('');
+  const selectedMeetingLabel = selectedMeeting && selectedMeeting !== 'ALL' ? String(selectedMeeting).trim() : '';
   const preferred = meetings.includes(prev)
     ? prev
-    : (focusedMeeting && meetings.includes(focusedMeeting) ? focusedMeeting : 'all');
+    : (focusedMeeting && meetings.includes(focusedMeeting) ? focusedMeeting : (selectedMeetingLabel && meetings.includes(selectedMeetingLabel) ? selectedMeetingLabel : 'all'));
   sel.value = preferred;
+  return preferred;
 }
 
 async function hydrateAlertsCountryFilter(alerts){
   const sel = $('pulseCountryFilter') || $('alertsCountryFilter');
-  if (!sel) return;
+  if (!sel) return 'all';
   const prev = sel.value || 'all';
-  const countries = Array.from(new Set((alerts || []).map(a => String(a?.country || '').trim()).filter(Boolean))).sort((a,b) => a.localeCompare(b));
+  const seeded = [];
+  if (selectedCountry && selectedCountry !== 'ALL') seeded.push(String(selectedCountry).trim());
+  const targetingCountries = normalizePulseTargeting(pulseConfigState?.targeting || {}).countries || [];
+  seeded.push(...targetingCountries);
+  const countries = Array.from(new Set(seeded.concat((alerts || []).map(a => String(a?.country || '').trim())).filter(Boolean))).sort((a,b) => a.localeCompare(b));
   sel.innerHTML = [`<option value="all">All countries</option>`].concat(countries.map(country => `<option value="${escapeAttr(country)}">${escapeHtml(country)}</option>`)).join('');
-  sel.value = countries.includes(prev) || prev === 'all' ? prev : 'all';
+  const preferred = countries.includes(prev)
+    ? prev
+    : (selectedCountry && selectedCountry !== 'ALL' && countries.includes(String(selectedCountry).trim()) ? String(selectedCountry).trim() : 'all');
+  sel.value = preferred;
+  return preferred;
 }
 
 function hydrateGenericAlertsSelect(selectId, values, allLabel){
@@ -2087,10 +2138,10 @@ async function renderAlertsShell(){
     .map(buildAlertIdentityKey)
     .filter(Boolean));
   const allAlerts = filterPulseAlerts(Array.isArray(feed?.alerts) ? feed.alerts : []);
-  hydrateAlertsCountryFilter(allAlerts);
-  hydrateAlertsMeetingFilter(allAlerts);
-  const countryFilter = String(($('pulseCountryFilter') || $('alertsCountryFilter'))?.value || 'all');
-  const meetingFilter = String(($('pulseMeetingFilter') || $('alertsMeetingFilter'))?.value || 'all');
+  const [countryFilter, meetingFilter] = await Promise.all([
+    hydrateAlertsCountryFilter(allAlerts),
+    hydrateAlertsMeetingFilter(allAlerts)
+  ]);
   const alerts = allAlerts.filter(a => (countryFilter === 'all' ? true : String(a?.country || '') === countryFilter) && (meetingFilter === 'all' ? true : String(a?.meeting || '') === meetingFilter));
   const critical = alerts.filter(a => String(a?.severity || '') === 'CRITICAL').length;
   const hot = alerts.filter(a => String(a?.severity || '') === 'HOT').length;
@@ -2135,6 +2186,9 @@ function setActivePage(page){
     setActivePerformanceTab('overview');
     loadPerformance();
     loadRuntimeHealth();
+  }
+  if (page === 'workspace') {
+    renderWorkspaceSignalPanels();
   }
   if (page === 'alerts') {
     renderGenericAlertsShell();
@@ -2333,6 +2387,7 @@ async function loadStatus(){
     renderInteresting(latestInterestingRows);
     renderMarketMovers(latestMarketMovers);
     renderSuggested(filteredSuggested);
+    renderWorkspaceSignalPanels();
     renderMultis(filteredSuggested);
     renderNextPlanned(filteredSuggested);
     renderRaces(racesCache);
@@ -3451,6 +3506,125 @@ function findMoverRow(meeting, race, runner){
 function inheritMoveTags(meeting, race, runner){
   const row = findMoverRow(meeting, race, runner);
   return row ? buildMoveTags(row) : [];
+}
+
+function renderWorkspaceSignalPanels(){
+  const moversTable = $('workspaceMoversTable');
+  const interestingTable = $('workspaceInterestingTable');
+  if (moversTable) {
+    const scopedMovers = (latestMarketMovers || []).filter(r => meetingMatches(r.meeting)).filter(selectionIsUpcoming).slice(0, 6);
+    moversTable.innerHTML = '';
+    const header = document.createElement('div');
+    header.className = 'row header';
+    header.innerHTML = `<div>Race</div><div>Runner</div><div>Signal</div><div class='right'>Jump</div>`;
+    moversTable.appendChild(header);
+    if (!scopedMovers.length) {
+      const empty = document.createElement('div');
+      empty.className = 'row';
+      empty.innerHTML = `<div style='grid-column:1/-1'>No market movers in the current meeting yet.</div>`;
+      moversTable.appendChild(empty);
+    } else {
+      scopedMovers.forEach(r => {
+        const row = document.createElement('div');
+        const move = Number(r.pctMove || 0);
+        const severity = Math.abs(move) >= 12 ? 'critical' : (Math.abs(move) >= 6 ? 'hot' : 'watch');
+        const directionLabel = move < 0 ? 'Firmed' : 'Drifted';
+        row.className = `row workspace-signal-rich ${move < 0 ? 'workspace-firm' : 'workspace-drift'}`;
+        row.innerHTML = `
+          <div><button class='bet-btn race-cell-btn movers-race-btn workspace-mini-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
+          <div><button class='bet-btn movers-runner-btn workspace-mini-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-runner='${escapeAttr(String(r.runner || ''))}'><span class='bet-icon'>🐎</span>${escapeHtml(String(r.runner || ''))}</button></div>
+          <div class='workspace-signal-cell'>
+            <div class='workspace-signal-line'>
+              <span class='workspace-severity-chip ${severity}'>${severity.toUpperCase()}</span>
+              <span class='tag ${move < 0 ? 'firm' : 'drift'}'>${directionLabel} ${Math.abs(move).toFixed(1)}%</span>
+            </div>
+            <div class='sub'>${escapeHtml(String(r.fromOdds ?? '—'))} → ${escapeHtml(String(r.toOdds ?? '—'))}</div>
+            <div class='workspace-signal-actions'>
+              <button class='btn btn-ghost compact-btn workspace-action-btn workspace-track-runner-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-runner='${escapeAttr(String(r.runner || ''))}'>Track runner</button>
+              <button class='btn btn-ghost compact-btn workspace-action-btn workspace-watch-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'>Watch race</button>
+            </div>
+          </div>
+          <div class='right'>${buildJumpCell(r.meeting, r.race, r.eta || '—')}</div>
+        `;
+        moversTable.appendChild(row);
+      });
+    }
+  }
+  if (interestingTable) {
+    const scopedInteresting = filterInterestingByWhy(latestInterestingRows || []).filter(r => meetingMatches(r.meeting)).filter(selectionIsUpcoming).slice(0, 6);
+    interestingTable.innerHTML = '';
+    const header = document.createElement('div');
+    header.className = 'row header';
+    header.innerHTML = `<div>Race</div><div>Runner</div><div>Signal</div><div class='right'>Jump</div>`;
+    interestingTable.appendChild(header);
+    if (!scopedInteresting.length) {
+      const empty = document.createElement('div');
+      empty.className = 'row';
+      empty.innerHTML = `<div style='grid-column:1/-1'>No interesting runners in the current meeting right now.</div>`;
+      interestingTable.appendChild(empty);
+    } else {
+      scopedInteresting.forEach(r => {
+        const row = document.createElement('div');
+        row.className = 'row workspace-signal-rich workspace-interesting';
+        row.innerHTML = `
+          <div><button class='bet-btn race-cell-btn interesting-race-btn workspace-mini-btn' data-meeting='${r.meeting}' data-race='${r.race}'><span class="badge">${r.meeting}</span> R${r.race}</button></div>
+          <div><button class='bet-btn interesting-btn workspace-mini-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-runner='${escapeAttr(cleanRunnerText(r.runner))}'><span class='bet-icon'>🧠</span>${escapeHtml(cleanRunnerText(r.runner))}</button></div>
+          <div class='workspace-signal-cell'>
+            <div class='workspace-signal-line'><span class='workspace-severity-chip hot'>SIGNAL</span>${buildInterestingTags(r).join(' ')}</div>
+            <div class='sub'>${escapeHtml(r.reason || 'Interesting profile')}</div>
+            <div class='workspace-signal-actions'>
+              <button class='btn btn-ghost compact-btn workspace-action-btn workspace-track-runner-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-runner='${escapeAttr(cleanRunnerText(r.runner))}'>Track runner</button>
+              <button class='btn btn-ghost compact-btn workspace-action-btn workspace-watch-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'>Watch race</button>
+            </div>
+          </div>
+          <div class='right'>${buildJumpCell(r.meeting, r.race, r.eta || '—')}</div>
+        `;
+        interestingTable.appendChild(row);
+      });
+    }
+    attachInterestingHandlers();
+  }
+  document.querySelectorAll('.workspace-open-tab-btn').forEach(btn => {
+    btn.onclick = () => setActivePage(btn.dataset.openPage || 'workspace');
+  });
+  const bindWorkspaceRaceAction = (selector, handler) => {
+    document.querySelectorAll(selector).forEach(btn => btn.onclick = handler);
+  };
+  bindWorkspaceRaceAction('#workspaceMoversTable .movers-race-btn', async (e) => {
+    const btn = e.currentTarget;
+    const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
+    if (!race) return alert('Race not found in cache yet. Try Refresh.');
+    await selectRace(race.key);
+    $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Loaded from Workspace Market Movers</div>`;
+  });
+  bindWorkspaceRaceAction('#workspaceMoversTable .movers-runner-btn', async (e) => {
+    const btn = e.currentTarget;
+    const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
+    if (!race) return alert('Race not found in cache yet. Try Refresh.');
+    await selectRace(race.key);
+    $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Focused from Workspace Market Movers: ${escapeHtml(String(btn.dataset.runner || ''))}</div>`;
+  });
+  bindWorkspaceRaceAction('.workspace-watch-race-btn', async (e) => {
+    const btn = e.currentTarget;
+    const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
+    if (!race) return alert('Race not found in cache yet. Try Refresh.');
+    const result = await trackAllRunnersInRace(race, { betType: 'Watch', source: 'web-watch-race', note: 'Watch race from workspace' }).catch(() => null);
+    if (result) alert(`Watch race: ${result.created} added, ${result.duplicates} already tracked.`);
+  });
+  bindWorkspaceRaceAction('.workspace-track-runner-btn', async (e) => {
+    const btn = e.currentTarget;
+    const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
+    if (!race) return alert('Race not found in cache yet. Try Refresh.');
+    const selNorm = normalizeRunnerName(String(btn.dataset.runner || '').trim());
+    const runner = (race.runners || []).find(x => {
+      const nm = normalizeRunnerName(String(x.name || x.runner_name || x.selection || '').trim());
+      return nm === selNorm || nm.includes(selNorm) || selNorm.includes(nm);
+    });
+    if (!runner) return;
+    const outcome = await toggleTrackedRunner(race, runner).catch(() => null);
+    if (outcome?.action === 'tracked') alert(`Tracked ${cleanRunnerText(runner.name || runner.runner_name || btn.dataset.runner || 'runner')}.`);
+    else if (outcome?.action === 'untracked') alert(`Untracked ${cleanRunnerText(runner.name || runner.runner_name || btn.dataset.runner || 'runner')}.`);
+  });
 }
 
 function renderInteresting(rows){
@@ -5399,22 +5573,48 @@ function renderNextPlanned(rows){
   if (!table) return;
   table.innerHTML = '';
   const plannedSource = (rows && rows.length) ? rows : (latestSuggestedBets || []);
-  let scoped = baseSuggestedRows(plannedSource)
-    .filter(r => jumpsInToMinutes(r.jumpsIn) <= Number(earlyWindowMin || 180));
-  if (!scoped.length && selectedMeeting && selectedMeeting !== 'ALL') {
-    scoped = (latestSuggestedBets || plannedSource)
-      .filter(r => meetingMatches(r.meeting))
+  const plannedWindow = Number(earlyWindowMin || 180);
+  const actionableTiers = new Set(['bet_now','queue']);
+  const actionableTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
+
+  let scoped = (latestUpcomingBets || [])
+    .filter(selectionIsUpcoming)
+    .filter(r => !selectedMeeting || selectedMeeting === 'ALL' || meetingMatches(r.meeting))
+    .slice()
+    .sort((a,b) => jumpsInToMinutes(a.eta || a.jumpsIn || a.sortTime) - jumpsInToMinutes(b.eta || b.jumpsIn || b.sortTime));
+
+  if (!scoped.length) {
+    scoped = baseSuggestedRows(plannedSource)
+      .filter(selectionIsUpcoming)
+      .filter(r => actionableTypes.has(String(r.type || 'win').toLowerCase()))
+      .filter(r => actionableTiers.has(String(r.capitalTier || '').toLowerCase()))
+      .filter(r => jumpsInToMinutes(r.jumpsIn) <= plannedWindow)
+      .filter(r => !selectedMeeting || selectedMeeting === 'ALL' || meetingMatches(r.meeting))
       .slice()
-      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn))
-      .slice(0, 5);
+      .sort((a,b) => {
+        const at = String(a.capitalTier || '').toLowerCase() === 'bet_now' ? 0 : 1;
+        const bt = String(b.capitalTier || '').toLowerCase() === 'bet_now' ? 0 : 1;
+        if (at !== bt) return at - bt;
+        return jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn);
+      });
   }
-  if (!scoped.length && (!selectedMeeting || selectedMeeting === 'ALL')) {
-    scoped = (rows || [])
+
+  if (!scoped.length) {
+    scoped = baseSuggestedRows(plannedSource)
+      .filter(selectionIsUpcoming)
+      .filter(r => actionableTypes.has(String(r.type || 'win').toLowerCase()))
+      .filter(r => jumpsInToMinutes(r.jumpsIn) <= plannedWindow)
+      .filter(r => !selectedMeeting || selectedMeeting === 'ALL' || meetingMatches(r.meeting))
       .slice()
-      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn))
-      .slice(0, 5);
+      .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
   }
-  updateNextRaceCountdown(scoped);
+
+  updateNextRaceCountdown(scoped.map(r => ({
+    meeting: r.meeting,
+    race: r.race,
+    selection: r.selection,
+    jumpsIn: r.jumpsIn || r.eta || r.sortTime || '—'
+  })));
   const top = scoped.slice(0,5);
   if (!top.length) {
     const empty = document.createElement('div');
@@ -9743,6 +9943,26 @@ function attachAnalysisSelectionHandlers(race){
     };
   });
 
+  const watchRaceBtn = $('analysisWatchRaceBtn');
+  if (watchRaceBtn) {
+    watchRaceBtn.onclick = async () => {
+      if (!selectedRace) return alert('Select a race first.');
+      const result = await trackAllRunnersInRace(selectedRace, { betType: 'Watch', source: 'web-watch-race', note: 'Watch race from analysis' }).catch(() => null);
+      if (!result) return alert('Failed to watch race.');
+      alert(`Watch race: ${result.created} added, ${result.duplicates} already tracked.`);
+    };
+  }
+
+  const trackAllBtn = $('analysisTrackAllRunnersBtn');
+  if (trackAllBtn) {
+    trackAllBtn.onclick = async () => {
+      if (!selectedRace) return alert('Select a race first.');
+      const result = await trackAllRunnersInRace(selectedRace, { betType: 'Win', source: 'web-track-all-runners', note: 'Track all runners in race from analysis' }).catch(() => null);
+      if (!result) return alert('Failed to track all runners.');
+      alert(`Track all runners: ${result.created} added, ${result.duplicates} already tracked.`);
+    };
+  }
+
   const speedToggle = $('analysisSpeedToggle');
   if (speedToggle) {
     speedToggle.onclick = async () => {
@@ -11025,12 +11245,21 @@ function renderAnalysis(race, modeOverride){
     return Number.isFinite(score) ? score : null;
   };
 
+  const sanitizedDecision = nextBestCandidates({
+    recommendedName: picked || null,
+    recommendedKey,
+    oddsRunner: finalOddsRunner
+  });
+  recommendedKey = sanitizedDecision.recommendedKey;
+  finalOddsRunner = sanitizedDecision.oddsRunner;
+  oddsRunnerKey = sanitizedDecision.oddsRunnerKey;
+
   const decisionEngine = {
     recommended: {
-      name: picked || null,
+      name: sanitizedDecision.recommendedName || null,
       key: recommendedKey,
       status: recommendedStatus,
-      signalStrength: calcSignalStrength(picked)
+      signalStrength: calcSignalStrength(sanitizedDecision.recommendedName)
     },
     oddsRunner: {
       name: finalOddsRunner?.runner?.name || null,
@@ -11067,6 +11296,7 @@ function renderAnalysis(race, modeOverride){
   // Tag sanity audit (avoid contradictory labels).
   const tagAuditIssues = [];
   if (recommendedKey && oddsRunnerKey && recommendedKey === oddsRunnerKey) {
+    finalOddsRunner = null;
     oddsRunnerKey = '';
     tagAuditIssues.push('odds_runner_same_as_recommended');
   }
@@ -11074,6 +11304,7 @@ function renderAnalysis(race, modeOverride){
     const recRunner = runners.find(r => normalizeRunnerName(r.name || r.runner_name || '') === recommendedKey);
     const recForm = runnerFormSignal(recRunner || {}).status;
     if (recForm === 'COLD') {
+      picked = modelFav ? cleanRunnerText(modelFav) : '';
       recommendedKey = modelFav ? normalizeRunnerName(modelFav) : '';
       tagAuditIssues.push('recommended_was_cold_form');
     }
@@ -13085,7 +13316,7 @@ function updateApiKeyPanel(){
   panel.classList.toggle('hidden', !apiKeyEligible);
   if (!apiKeyEligible) {
     const status = $('apiKeyStatus');
-    if (status) status.textContent = 'API keys are only available on BETMAN API plans.';
+    if (status) status.textContent = 'API keys are only available on BETMAN Pulse. Live Haptics and Heat Maps. plans.';
     clearApiKeySecretDisplay();
     return;
   }
@@ -13096,7 +13327,7 @@ function updateApiKeyPanel(){
       const tail = apiKeyPreview ? ` (ending ${apiKeyPreview})` : '';
       status.textContent = `API key generated ${ts}${tail}. Generate again to rotate.`;
     } else {
-      status.textContent = 'Generate an API key to call the BETMAN API via HTTP Basic auth.';
+      status.textContent = 'Generate an API key to call BETMAN Pulse. Live Haptics and Heat Maps. via HTTP Basic auth.';
     }
   }
   const secretWrap = $('apiKeySecretWrap');
@@ -13166,7 +13397,7 @@ async function loadOfferStrip(){
     const cards = [
       { key: 'single_day', title: 'BETMAN Single DAY', note: '24-hour racing access. Perfect for QR-code offers and trial conversion.', cls: 'pricing-card-tester' },
       { key: 'single', title: 'Weekly Subscription', note: 'Weekly access for individual punters.', cls: 'pricing-card-single' },
-      { key: 'commercial', title: 'BETMAN API', note: 'Multi-user / business access.', cls: 'pricing-card-commercial' }
+      { key: 'commercial', title: 'BETMAN Pulse. Live Haptics and Heat Maps.', note: 'Multi-user / business access.', cls: 'pricing-card-commercial' }
     ].filter(x => out?.[x.key]?.paymentLink);
     el.innerHTML = cards.map(card => {
       const item = out[card.key] || {};
@@ -13224,12 +13455,16 @@ async function renderAuthPulseSettingsPanel(){
     const cfg = await loadPulseConfig();
     const thresholds = cfg?.thresholds || {};
     const alertTypes = cfg?.alertTypes || {};
+    const targeting = normalizePulseTargeting(cfg?.targeting || {});
+    const alertTypeMarkup = pulseTypeMeta().map(item => `<div style='display:flex;justify-content:space-between;gap:10px'><span>${escapeHtml(item.label)}</span><span class='tag ${alertTypes[item.key] ? 'win' : ''}'>${alertTypes[item.key] ? 'Enabled' : 'Disabled'}</span></div>`).join('');
     root.innerHTML = `
+      <div class='row'><div><b>Pulse feed</b></div><div>${cfg?.enabled === false ? 'Disabled' : 'Enabled'}</div></div>
+      <div class='row'><div><b>Scope</b></div><div>${escapeHtml(pulseTargetingSummary(targeting))}</div></div>
       <div class='row'><div><b>Time gate</b></div><div>${thresholds.maxMinsToJump == null ? 'Off' : `${thresholds.maxMinsToJump} minutes to jump`}</div></div>
       <div class='row'><div><b>Minimum severity</b></div><div>${escapeHtml(String(thresholds.minSeverity || 'WATCH'))}</div></div>
       <div class='row'><div><b>Minimum move %</b></div><div>${thresholds.minMovePct == null ? 'Off' : `${thresholds.minMovePct}%`}</div></div>
       <div class='row'><div><b>Tracked override</b></div><div>${thresholds.trackedRunnerOverride ? 'On' : 'Off'}</div></div>
-      <div class='row'><div><b>Alert types</b></div><div>${['plunges','drifts','conflicts','selectionFlips','preJumpHeat','jumpPulse'].filter(k => alertTypes[k]).join(' · ') || 'None enabled'}</div></div>
+      <div class='row'><div><b>Alert rules</b></div><div style='display:grid;gap:6px'>${alertTypeMarkup}</div></div>
       <div class='row'><div style='grid-column:1/-1'><button id='openPulseConfigFromAuth' class='btn btn-ghost compact-btn'>Open Full Pulse Config</button></div></div>
     `;
     $('openPulseConfigFromAuth')?.addEventListener('click', () => {
@@ -13302,7 +13537,7 @@ async function changeMyPassword(){
 
 async function generateApiKey(){
   if (!apiKeyEligible) {
-    return alert('API keys are only available on BETMAN API plans.');
+    return alert('API keys are only available on BETMAN Pulse. Live Haptics and Heat Maps. plans.');
   }
   if (!confirm('Generate a new API key? This will revoke any previous key.')) return;
   try {
@@ -13380,7 +13615,7 @@ async function createAuthUser(){
   const hasCompany = !!companyName;
   if (((planType === 'single' || planType === 'single_day') && !hasPersonName) || (planType === 'commercial' && !hasCompany) || !email || !password) {
     return alert(planType === 'commercial'
-      ? 'BETMAN API plan requires Company name, email, and password.'
+      ? 'BETMAN Pulse. Live Haptics and Heat Maps. plan requires Company name, email, and password.'
       : 'Single User / Single DAY plan requires First + Last name, email, and password.');
   }
 

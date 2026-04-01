@@ -192,12 +192,30 @@
       <div id="meetingIntelPanel" class="analysis" style="margin-bottom:10px;display:none"></div>
       <div class="scroller" id="meetingList"></div>
       <div class="scroller" id="racesScroller"></div>
+      <div class="workspace-live-grid">
+        <div class="analysis workspace-signal-panel">
+          <div class="section-head">
+            <h4>Market Movers</h4>
+            <button class="btn btn-ghost compact-btn workspace-open-tab-btn" data-open-page="movers">Open full tab</button>
+          </div>
+          <div class="table workspace-mini-table" id="workspaceMoversTable"></div>
+        </div>
+        <div class="analysis workspace-signal-panel">
+          <div class="section-head">
+            <h4>Interesting Runners</h4>
+            <button class="btn btn-ghost compact-btn workspace-open-tab-btn" data-open-page="interesting">Open full tab</button>
+          </div>
+          <div class="table workspace-mini-table" id="workspaceInterestingTable"></div>
+        </div>
+      </div>
       <div class="analysis" id="analysisPanel">
         <div class="analysis-header">
           <h4 id="analysisTitle">Select a race</h4>
           <div class="btn-row">
             <button id="analysisSimulationLaunch" class="btn" data-launch-ai="true">ODDS &amp; AI ENGINE</button>
             <button id="analysisSpeedToggle" class="btn btn-ghost" type="button">Speed Analysis</button>
+            <button id="analysisWatchRaceBtn" class="btn btn-ghost" type="button">Watch Race</button>
+            <button id="analysisTrackAllRunnersBtn" class="btn btn-ghost" type="button">Track All Runners</button>
             <button id="pickAiMultiBtn" class="btn btn-ghost">Pick 2‑Race Multi</button>
             <button id="pickAiMulti3Btn" class="btn btn-ghost">Pick 3‑Race Multi</button>
             <button id="pickAiMulti4Btn" class="btn btn-ghost">Pick 4‑Race Multi</button>
@@ -970,14 +988,14 @@
         <button id="selfChangePasswordBtn" class="btn btn-ghost">Update My Password</button>
 
         <div id="apiKeyPanel" class="auth-api-key hidden">
-          <div style="margin-bottom:10px"><b>BETMAN API Key</b></div>
+          <div style="margin-bottom:10px"><b>BETMAN Pulse Key</b></div>
           <div id="apiKeyStatus" class="sub" style="margin-bottom:10px"></div>
           <div class="btn-row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">
             <button id="generateApiKeyBtn" class="btn btn-ghost">Generate API Key</button>
             <button id="apiKeyCopyBtn" class="btn btn-ghost compact-btn" style="display:none">Copy</button>
           </div>
           <div id="apiKeySecretWrap" class="api-key-secret hidden">
-            <input id="apiKeySecretValue" type="text" readonly value="" aria-label="BETMAN API key" />
+            <input id="apiKeySecretValue" type="text" readonly value="" aria-label="BETMAN Pulse key" />
             <div class="sub" style="margin-top:6px">Copy and store this key securely. It will not be shown again.</div>
           </div>
         </div>
@@ -1003,7 +1021,7 @@
               <select id="createUserPlanType" style="width:100%">
                 <option value="single">Weekly Subscription</option>
                 <option value="single_day">BETMAN Single DAY</option>
-                <option value="commercial">BETMAN API</option>
+                <option value="commercial">BETMAN Pulse. Live Haptics and Heat Maps.</option>
               </select>
             </div>
             <div class="ai-chat-input-row" style="margin-bottom:8px"><input id="createUserFirstName" type="text" placeholder="First name" /></div>

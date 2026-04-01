@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 /* Public API smoke checks for TAB endpoints. */
+const fs = require('fs');
+const path = require('path');
 const https = require('https');
 
 function get(url){
@@ -22,7 +24,13 @@ function get(url){
   ];
   const results = [];
   for (const u of urls) results.push(await get(u));
-  console.log(JSON.stringify({ checkedAt: new Date().toISOString(), results }, null, 2));
+  const payload = { checkedAt: new Date().toISOString(), results };
+  const outPath = path.join(process.cwd(), 'memory', 'api-smoke-public.json');
+  try {
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(payload, null, 2));
+  } catch {}
+  console.log(JSON.stringify(payload, null, 2));
   const failed = results.filter(r => {
     if (r.url.includes('/insights/sync') && r.status === 415) return false; // endpoint reachable; expects specific content-type payload
     return !r.ok;
