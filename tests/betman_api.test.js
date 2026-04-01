@@ -584,6 +584,39 @@ asyncTests.push((async () => {
   console.log('  ✓ tracked-bets private tenant uses tenant-owned files');
 })());
 
+// 22b. tracked-bets POST de-dupes active runner tracking across numbering/race label variants
+asyncTests.push((async () => {
+  const testKey = generateApiKey();
+  const trackedRows = [
+    { id: 'existing-1', username: 'alice', meeting: 'Newcastle', race: 'R1', selection: '7. Cavalry', betType: 'Win', status: 'active', result: 'pending', trackedAt: '2026-03-31T03:00:00.000Z' },
+  ];
+  const handler = makeHandler({
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [{ key: testKey, label: 'Test', active: true }] }], adminApiKeys: [] }),
+    loadJson: (p, f) => {
+      if (p.includes('tracked_bets.json')) return trackedRows;
+      if (p.includes('settled_bets.json')) return [];
+      return f;
+    },
+    rootDir: ROOT,
+  });
+  const req = fakePostReq('/api/v1/tracked-bets', {
+    meeting: 'Newcastle',
+    race: '1',
+    selection: 'Cavalry',
+    betType: 'Win',
+    odds: 4.4,
+  }, { 'x-api-key': testKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/tracked-bets');
+  await handler(req, res, url);
+  await new Promise(r => setTimeout(r, 25));
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.duplicate, true);
+  assert.strictEqual(parsed.trackedBet.id, 'existing-1');
+  console.log('  ✓ tracked-bets POST prevents duplicate active rows');
+})());
+
 // 23. Models endpoint
 asyncTests.push((async () => {
   const testKey = generateApiKey();

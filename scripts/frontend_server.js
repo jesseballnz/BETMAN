@@ -1159,7 +1159,12 @@ function saveAuthState(next){
 }
 
 function normalizeRunnerName(name){
-  return String(name || '').replace(/^[0-9]+\.\s*/, '').trim().toLowerCase();
+  return String(name || '')
+    .replace(/^\s*(?:#?\d+|\(\d+\))\s*[.\-:)]*\s*/i, '')
+    .replace(/^\s*runner\s*\d+\s*[.\-:)]*\s*/i, '')
+    .replace(/^\s*emerg(?:ency)?\s*\d+\s*[.\-:)]*\s*/i, '')
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeMeetingName(name){
@@ -1200,19 +1205,19 @@ function resolveTrackedCurrentOdds(row, options) {
     return { currentOdds: runnerOdds, currentOddsSource: runnerSource || 'races' };
   }
 
-  if (persistedCurrent != null) {
-    return {
-      currentOdds: persistedCurrent,
-      currentOddsSource: row?.currentOddsSource || (raceFinished ? 'last known' : 'current'),
-    };
-  }
-
   if (!raceFinished && moverOdds != null) {
     return { currentOdds: moverOdds, currentOddsSource: moverSource || 'market-movers' };
   }
 
   if (!raceFinished && suggestedOdds != null) {
     return { currentOdds: suggestedOdds, currentOddsSource: suggestedSource || 'suggested-bets' };
+  }
+
+  if (persistedCurrent != null) {
+    return {
+      currentOdds: persistedCurrent,
+      currentOddsSource: row?.currentOddsSource || (raceFinished ? 'last known' : 'cached'),
+    };
   }
 
   if (entryOdds != null) {
@@ -1682,6 +1687,19 @@ function buildTrackedBetLiveContext(tenantId = 'default') {
   }
 
   return { raceMap, runnerMap, moverMap, suggestedMap };
+}
+
+function buildTrackedIdentityKey(row) {
+  return normalizeTrackedKey(row?.meeting, row?.race, row?.selection);
+}
+
+function findTrackedDuplicate(rows = [], candidate = {}) {
+  const targetKey = buildTrackedIdentityKey(candidate);
+  if (!targetKey || targetKey.endsWith('|')) return null;
+  return (Array.isArray(rows) ? rows : []).find((row) => {
+    if (String(row?.status || '').toLowerCase() === 'settled') return false;
+    return buildTrackedIdentityKey(row) === targetKey;
+  }) || null;
 }
 
 function enrichTrackedBetWithCurrentOdds(row, liveContext) {
@@ -6213,8 +6231,12 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
           settledAt: null,
         };
         if (!next.meeting || !next.race || !next.selection) return okJson(res, { ok: false, error: 'invalid_payload' }, 400, req);
+        const duplicate = findTrackedDuplicate(allTracked, next);
+        if (duplicate) {
+          return okJson(res, { ok: true, trackedBet: enrichTrackedBetWithCurrentOdds(resolveTrackedBet(duplicate, settled, raceResultIndex), liveContext), duplicate: true }, 200, req);
+        }
         writeJson(trackedPath, [next, ...allTracked]);
-        return okJson(res, { ok: true, trackedBet: next }, 200, req);
+        return okJson(res, { ok: true, trackedBet: enrichTrackedBetWithCurrentOdds(next, liveContext) }, 200, req);
       });
       return;
     }

@@ -148,4 +148,33 @@ assert.deepStrictEqual(
   }
 );
 
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(sandbox.enrichTrackedBetWithCurrentOdds(
+    {
+      meeting: 'Newcastle',
+      race: 'R1',
+      selection: 'Cavalry',
+      currentOdds: 5.5,
+      currentOddsSource: 'cached-live',
+      entryOdds: 4.4,
+    },
+    {
+      raceMap: new Map([[raceKey, { meeting: 'Newcastle', race_number: '1', race_status: 'OPEN' }]]),
+      runnerMap: new Map(),
+      moverMap: new Map([[trackedKey, { currentOdds: 6.8, source: 'market-movers' }]]),
+      suggestedMap: new Map(),
+    },
+  ))),
+  {
+    meeting: 'Newcastle',
+    race: 'R1',
+    selection: 'Cavalry',
+    currentOdds: 6.8,
+    currentOddsSource: 'market-movers',
+    entryOdds: 4.4,
+    odds: 4.4,
+    raceStatus: 'OPEN',
+  }
+);
+
 console.log('frontend_tracked_bets.test.js: ok');

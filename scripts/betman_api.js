@@ -386,6 +386,36 @@ function normalizeTrackedMultiPayload(payload = {}) {
   };
 }
 
+function normalizeTrackedRunnerName(value) {
+  return String(value || '')
+    .replace(/^\s*(?:#?\d+|\(\d+\))\s*[.\-:)]*\s*/i, '')
+    .replace(/^\s*runner\s*\d+\s*[.\-:)]*\s*/i, '')
+    .replace(/^\s*emerg(?:ency)?\s*\d+\s*[.\-:)]*\s*/i, '')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeTrackedRace(value) {
+  return String(value || '').replace(/^R/i, '').trim();
+}
+
+function buildTrackedIdentityKey(row = {}) {
+  return [
+    String(row.meeting || '').trim().toLowerCase(),
+    normalizeTrackedRace(row.race || row.race_number),
+    normalizeTrackedRunnerName(row.selection || row.runner || row.name),
+  ].join('|');
+}
+
+function findTrackedDuplicate(rows = [], candidate = {}) {
+  const targetKey = buildTrackedIdentityKey(candidate);
+  if (!targetKey || targetKey.endsWith('|')) return null;
+  return (Array.isArray(rows) ? rows : []).find((row) => {
+    if (String(row?.status || '').toLowerCase() === 'settled') return false;
+    return buildTrackedIdentityKey(row) === targetKey;
+  }) || null;
+}
+
 /* ── Route handler factory ─────────────────────────────────────────── */
 
 /**
@@ -875,7 +905,7 @@ function createApiHandler(deps) {
       const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
       const settledRows = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
       const raceResultIndex = buildRaceResultIndex(settledRows);
-      const normalize = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+      const normalize = (s) => normalizeTrackedRunnerName(s);
       const privateTenantScope = isPrivateTenantPrincipal(principal);
       const visibleTracked = privateTenantScope
         ? trackedRows
@@ -925,6 +955,10 @@ function createApiHandler(deps) {
             ...normalizeTrackedMultiPayload(payload),
           };
           if (!next.meeting || !next.race || !next.selection) return apiError(req, res, 400, 'invalid_payload', 'meeting, race, and selection are required.', rateInfo);
+          const duplicate = findTrackedDuplicate(trackedRows, next);
+          if (duplicate) {
+            return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: resolveTrackedBet(duplicate, settledRows, raceResultIndex), duplicate: true }, 200, rateInfo);
+          }
           fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
           fs.writeFileSync(trackedPath, JSON.stringify([next, ...trackedRows], null, 2));
           return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: next }, 200, rateInfo);
@@ -938,7 +972,7 @@ function createApiHandler(deps) {
       const trackedPath = resolveTenantOwnedDataPath(tenantId, 'tracked_bets.json');
       const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
       const trackedId = decodeURIComponent(route.split('/').pop() || '');
-      const normalize = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+      const normalize = (s) => normalizeTrackedRunnerName(s);
       const privateTenantScope = isPrivateTenantPrincipal(principal);
 
       if (req.method === 'PATCH') {
