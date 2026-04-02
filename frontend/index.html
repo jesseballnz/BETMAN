@@ -750,6 +750,8 @@
         <button class="btn btn-ghost compact-btn tracked-subtab" data-tracked-tab="settled">Settled</button>
         <button class="btn btn-ghost compact-btn tracked-subtab" data-tracked-tab="history">History</button>
       </div>
+      <div id="trackedSummaryStrip" class="perf-kpis perf-kpis-secondary" style="margin:0 0 10px 0"></div>
+      <div id="trackedSummaryNote" class="sub" style="margin:0 0 10px 0">Loading tracked summary…</div>
       <div id="trackedTable" class="table"></div>
     </section>
 
@@ -848,7 +850,7 @@
         </div>
         <div class="alerts-engine-note">Use Alerts to scan the wider board, then click through into workspace when something matters.</div>
       </div>
-      <div class="pulse-watchbar" style="margin:0 0 14px 0">
+      <div id="alertsPulseWatchbar" class="pulse-watchbar" style="margin:0 0 14px 0">
         <div class="pulse-watchbar-copy">
           <div class="pulse-watchbar-label">Watch bar</div>
           <div class="pulse-watchbar-title">Focus the live premium feed while you scan the wider alerts board.</div>
