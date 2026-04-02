@@ -100,6 +100,12 @@ let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null
 let aiModelsCache = { ts: 0, payload: null };
 
 const PULSE_SEVERITY_LEVELS = Object.freeze(['WATCH', 'HOT', 'CRITICAL', 'ACTION']);
+const PULSE_ALLOWLIST = new Set(
+  String(process.env.BETMAN_PULSE_ALLOWLIST || 'betman,test@betman.co.nz')
+    .split(',')
+    .map((value) => normalizeUsername(value))
+    .filter(Boolean)
+);
 
 const DEFAULT_PULSE_CONFIG = Object.freeze({
   enabled: true,
@@ -300,7 +306,7 @@ function pulseConfigKeyForAlertType(type){
 }
 
 function loadPulseConfig(tenantId = 'default'){
-  const filePath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', PULSE_CONFIG_FILE), PULSE_CONFIG_FILE);
+  const filePath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', PULSE_CONFIG_FILE), PULSE_CONFIG_FILE);
   const raw = loadJson(filePath, DEFAULT_PULSE_CONFIG);
   return normalizePulseConfig(raw);
 }
@@ -974,6 +980,18 @@ function isProtectedBetmanAccount(value){
     .join('|')
     .toLowerCase();
   return haystack.includes('betman');
+}
+
+function hasPulseAccess(principal){
+  if (!principal) return false;
+  if (principal.isAdmin) return true;
+  return PULSE_ALLOWLIST.has(normalizeUsername(principal.username || ''));
+}
+
+function requirePulseAccess(req, res){
+  const principal = req.authPrincipal;
+  if (hasPulseAccess(principal)) return true;
+  return okJson(res, { ok: false, error: 'pulse_not_allowed' }, 403, req), false;
 }
 
 function isValidEmail(v){
@@ -5604,8 +5622,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         try { payload = body ? JSON.parse(body) : {}; } catch {}
         const principal = req.authPrincipal;
         const userRecord = getUserRecordByPrincipal(principal);
-        const planType = userRecord?.planType || null;
-        const eligible = !!(principal?.isAdmin || planType === 'commercial');
+        const eligible = hasPulseAccess(principal);
         if (!eligible) {
           return okJson(res, { ok: false, error: 'api_key_not_allowed' }, 403);
         }
@@ -5909,7 +5926,8 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const userComplimentary = !!userRecord?.openaiComplimentary;
     const openAiComplimentary = OPENAI_COMPLIMENTARY_GLOBAL && userComplimentary;
     const planType = userRecord?.planType || (principal?.isAdmin ? 'admin' : null);
-    const apiKeyEligible = !!(principal?.isAdmin || userRecord?.planType === 'commercial');
+    const pulseEligible = hasPulseAccess(principal);
+    const apiKeyEligible = pulseEligible;
     const adminMeta = authState.adminMeta || {};
     const apiKeyCreatedAt = principal?.isAdmin ? (adminMeta.apiKeyCreatedAt || null) : (userRecord?.apiKeyCreatedAt || null);
     const apiKeyPreview = principal?.isAdmin ? (adminMeta.apiKeyPreview || null) : (userRecord?.apiKeyPreview || null);
@@ -5922,6 +5940,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       rawTenantId: principal?.tenantId || 'default',
       isAdmin: !!principal?.isAdmin,
       planType,
+      pulseEligible,
       apiKeyEligible,
       apiKeyCreatedAt,
       apiKeyPreview,
@@ -6104,7 +6123,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
 
   if (req.method === 'GET' && url.pathname === '/api/v1/alerts-feed') {
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-    const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'alerts_feed.json'), 'alerts_feed.json');
+    const p = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'alerts_feed.json'), 'alerts_feed.json');
     const payload = loadJson(p, { updatedAt: null, alerts: [] });
     pulseConfigState = loadPulseConfig(tenantId);
     return okJson(res, {
@@ -6115,7 +6134,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
 
   if (req.method === 'GET' && url.pathname === '/api/v1/alerts-history') {
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-    const p = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'alerts_history.json'), 'alerts_history.json');
+    const p = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'alerts_history.json'), 'alerts_history.json');
     const payload = loadJson(p, []);
     pulseConfigState = loadPulseConfig(tenantId);
     return okJson(res, filterPulseAlerts(Array.isArray(payload) ? payload : []));
@@ -6124,6 +6143,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
   if (url.pathname === '/api/v1/pulse-config') {
     const principal = req.authPrincipal;
     if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
+    if (!requirePulseAccess(req, res)) return;
     const tenantId = principal.effectiveTenantId || 'default';
 
     if (req.method === 'GET') {

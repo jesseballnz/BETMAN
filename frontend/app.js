@@ -510,6 +510,7 @@ let latestMarketOddsHistory = {};
 let latestMarketOddsSnapshot = {};
 let latestUpcomingBets = [];
 let latestDataVersion = 0;
+let pulseEligible = false;
 let apiKeyEligible = false;
 let apiKeyCreatedAt = null;
 let apiKeyPreview = null;
@@ -717,6 +718,12 @@ function refreshTabAccess(){
       btn.style.display = isAdminUser ? '' : 'none';
       btn.disabled = !isAdminUser;
       btn.title = isAdminUser ? '' : 'Admin only';
+      return;
+    }
+    if (p === 'pulse') {
+      btn.style.display = pulseEligible ? '' : 'none';
+      btn.disabled = !pulseEligible || !unlocked;
+      btn.title = !pulseEligible ? 'Pulse is restricted to the BETMAN allowlist' : (unlocked ? '' : 'Select a meeting in Meeting Workspace first');
       return;
     }
     if (p === 'workspace' || p === 'help' || p === 'autobet' || p === 'tracked' || p === 'heatmap') {
@@ -1430,6 +1437,37 @@ function canonicalTrackedResultLabel(value){
   return 'pending';
 }
 
+function trackedSummaryMetrics(rows = []){
+  const filtered = Array.isArray(rows) ? rows : [];
+  const meetings = new Set();
+  const races = new Set();
+  let activeCount = 0;
+  filtered.forEach((row) => {
+    const meeting = String(row?.meeting || '').trim();
+    const race = String(row?.race || '').trim();
+    const status = String(row?.status || '').toLowerCase();
+    if (meeting) meetings.add(meeting.toLowerCase());
+    if (meeting || race) races.add(`${meeting.toLowerCase()}|${race.toLowerCase()}`);
+    if (status !== 'settled') activeCount += 1;
+  });
+  return { total: filtered.length, meetings: meetings.size, races: races.size, active: activeCount };
+}
+
+function renderTrackedSummary(rows = []){
+  const summary = $('trackedSummaryStrip');
+  const note = $('trackedSummaryNote');
+  if (!summary) return;
+  const metrics = trackedSummaryMetrics(rows);
+  const cards = [
+    { label: trackedTab === 'active' ? 'active runners in view' : 'still active overall', value: metrics.active },
+    { label: trackedTab === 'active' ? 'tracked meetings' : 'meetings in view', value: metrics.meetings },
+    { label: trackedTab === 'active' ? 'tracked races' : 'races in view', value: metrics.races },
+    { label: trackedTab === 'active' ? 'rows in view' : 'rows in this tab', value: metrics.total },
+  ];
+  summary.innerHTML = cards.map(card => `<div class='perf-card'><div class='label'>${escapeHtml(card.label)}</div><div class='value'>${escapeHtml(String(card.value))}</div></div>`).join('');
+  if (note) note.textContent = metrics.total ? `Tracking ${metrics.meetings} meeting${metrics.meetings === 1 ? '' : 's'} across ${metrics.races} race${metrics.races === 1 ? '' : 's'} in ${trackedTab}.` : `No ${trackedTab} tracked runners.`;
+}
+
 function normalizeSettledResultValue(value){
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return 'pending';
@@ -1797,6 +1835,7 @@ async function renderTrackedShell(){
       if (Number.isFinite(am) && Number.isFinite(bm) && am !== bm) return am - bm;
       return String(b?.settledAt || b?.trackedAt || '').localeCompare(String(a?.settledAt || a?.trackedAt || ''));
     });
+  renderTrackedSummary(filtered);
   if (!filtered.length) {
     table.innerHTML = `<div class='row'><div style='grid-column:1/-1'>No ${trackedTab} tracked runners</div></div>`;
     return;
@@ -2257,6 +2296,7 @@ async function renderAlertsShell(){
 }
 
 function setActivePage(page){
+  if (page === 'pulse' && !pulseEligible) page = 'alerts';
   if ((page === 'bakeoff' || page === 'performance') && !isAdminUser) page = 'workspace';
   if (page !== 'workspace' && selectedMeeting === 'ALL') {
     if (page !== 'help' && page !== 'autobet' && (page !== 'performance' || !isAdminUser)) page = 'workspace';
@@ -13404,13 +13444,18 @@ function clearApiKeySecretDisplay(){
   if (secretWrap) secretWrap.classList.add('hidden');
 }
 
+function updatePulseEntitlementUi(){
+  const watchbar = $('alertsPulseWatchbar');
+  if (watchbar) watchbar.style.display = pulseEligible ? '' : 'none';
+}
+
 function updateApiKeyPanel(){
   const panel = $('apiKeyPanel');
   if (!panel) return;
   panel.classList.toggle('hidden', !apiKeyEligible);
   if (!apiKeyEligible) {
     const status = $('apiKeyStatus');
-    if (status) status.textContent = 'API keys are only available on BETMAN Pulse. Live Haptics and Heat Maps. plans.';
+    if (status) status.textContent = pulseEligible ? 'API key generation is not enabled for this account.' : 'Pulse/API access is only available to the BETMAN allowlist.';
     clearApiKeySecretDisplay();
     return;
   }
@@ -13516,12 +13561,14 @@ async function loadAuthenticatedUser(){
     const last = String(cfg?.currentUserLastName || cfg?.lastName || cfg?.profile?.lastName || '').trim();
     currentUserDisplayName = [first, last].filter(Boolean).join(' ').trim() || u || 'User';
     isAdminUser = !!cfg?.isAdmin;
+    pulseEligible = !!cfg?.pulseEligible;
     apiKeyEligible = !!cfg?.apiKeyEligible;
     apiKeyCreatedAt = cfg?.apiKeyCreatedAt || null;
     apiKeyPreview = cfg?.apiKeyPreview || null;
     el.textContent = `Authenticated User ${u || '—'}`;
   } catch {
     isAdminUser = false;
+    pulseEligible = false;
     currentUserDisplayName = 'User';
     el.textContent = 'Authenticated User —';
     apiKeyEligible = false;
@@ -13537,13 +13584,19 @@ async function loadAuthenticatedUser(){
   }
   applyPerformanceVisibility();
   refreshTabAccess();
+  updatePulseEntitlementUi();
   updateApiKeyPanel();
+  if (!pulseEligible && activePage === 'pulse') setActivePage('workspace');
   if (!isAdminUser && (activePage === 'bakeoff' || activePage === 'performance')) setActivePage('workspace');
 }
 
 async function renderAuthPulseSettingsPanel(){
   const root = $('authPulseSettingsBody');
   if (!root) return;
+  if (!pulseEligible) {
+    root.innerHTML = `<div class='row'><div style='grid-column:1/-1'><b>Pulse</b> is hidden for this account. Alerts remains available as the broad market monitor; premium Pulse stays restricted to the BETMAN allowlist.</div></div>`;
+    return;
+  }
   root.innerHTML = `<div class='row'><div style='grid-column:1/-1'>Loading Pulse settings…</div></div>`;
   try {
     const cfg = await loadPulseConfig();
@@ -13579,14 +13632,17 @@ async function openAuthModal(){
     const current = await fetchLocal('./api/auth-config').then(r=>r.json());
     if (current?.username) $('authUsername').value = current.username;
     isAdmin = !!current?.isAdmin;
+    pulseEligible = !!current?.pulseEligible;
     apiKeyEligible = !!current?.apiKeyEligible;
     apiKeyCreatedAt = current?.apiKeyCreatedAt || null;
     apiKeyPreview = current?.apiKeyPreview || null;
   } catch {
+    pulseEligible = false;
     apiKeyEligible = false;
     apiKeyCreatedAt = null;
     apiKeyPreview = null;
   }
+  updatePulseEntitlementUi();
   updateApiKeyPanel();
   await renderAuthPulseSettingsPanel();
 
@@ -13631,7 +13687,7 @@ async function changeMyPassword(){
 
 async function generateApiKey(){
   if (!apiKeyEligible) {
-    return alert('API keys are only available on BETMAN Pulse. Live Haptics and Heat Maps. plans.');
+    return alert(pulseEligible ? 'API key generation is not enabled for this account.' : 'Pulse/API access is only available to the BETMAN allowlist.');
   }
   if (!confirm('Generate a new API key? This will revoke any previous key.')) return;
   try {

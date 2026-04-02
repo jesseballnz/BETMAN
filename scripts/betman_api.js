@@ -23,6 +23,12 @@ const DEFAULT_RATE_LIMIT   = Number(process.env.BETMAN_API_RATE_LIMIT   || 60); 
 const DEFAULT_RATE_WINDOW  = Number(process.env.BETMAN_API_RATE_WINDOW  || 60);   // window in seconds
 const TAB_BASE = 'https://api.tab.co.nz/affiliates/v1';
 const PULSE_CONFIG_FILE = 'pulse_config.json';
+const PULSE_ALLOWLIST = new Set(
+  String(process.env.BETMAN_PULSE_ALLOWLIST || 'betman,test@betman.co.nz')
+    .split(',')
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+);
 const DEFAULT_PULSE_CONFIG = Object.freeze({
   enabled: true,
   alertTypes: {
@@ -578,18 +584,25 @@ function createApiHandler(deps) {
     return !!principal && !principal.isAdmin && effectiveTenantId(principal) !== 'default';
   }
 
+  function normalizePrincipalUsername(value) {
+    const raw = String(value || '').trim();
+    return raw.includes('@') ? raw.toLowerCase() : raw;
+  }
+
+  function hasPulseAccess(principal = null) {
+    if (!principal) return false;
+    if (principal.isAdmin) return true;
+    return PULSE_ALLOWLIST.has(normalizePrincipalUsername(principal.username || ''));
+  }
+
   function loadPulseConfigForTenant(tenantId = 'default') {
-    const filePath = resolveTenantPathById
-      ? resolveTenantPathById(tenantId, path.join(dataDir, PULSE_CONFIG_FILE), PULSE_CONFIG_FILE)
-      : path.join(dataDir, PULSE_CONFIG_FILE);
+    const filePath = resolveTenantOwnedDataPath(tenantId, PULSE_CONFIG_FILE);
     const raw = loadJson(filePath, DEFAULT_PULSE_CONFIG);
     return normalizePulseConfig(raw);
   }
 
   function savePulseConfigForTenant(tenantId = 'default', payload = {}, principal = null) {
-    const filePath = resolveTenantPathById
-      ? resolveTenantPathById(tenantId, path.join(dataDir, PULSE_CONFIG_FILE), PULSE_CONFIG_FILE)
-      : path.join(dataDir, PULSE_CONFIG_FILE);
+    const filePath = resolveTenantOwnedDataPath(tenantId, PULSE_CONFIG_FILE);
     const next = normalizePulseConfig({
       ...payload,
       updatedAt: new Date().toISOString(),
@@ -1072,10 +1085,11 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/alerts-feed ───────────────────────────────────── */
     if (req.method === 'GET' && route === '/alerts-feed') {
+      if (!hasPulseAccess(principal)) {
+        return apiError(req, res, 403, 'pulse_not_allowed', 'Pulse access is restricted for this account.', rateInfo), true;
+      }
       const tenantId = effectiveTenantId(principal);
-      const dataPath = resolveTenantPathById
-        ? resolveTenantPathById(tenantId, path.join(dataDir, 'alerts_feed.json'), 'alerts_feed.json')
-        : path.join(dataDir, 'alerts_feed.json');
+      const dataPath = resolveTenantOwnedDataPath(tenantId, 'alerts_feed.json');
       const data = loadJson(dataPath, { updatedAt: null, alerts: [] });
       const config = loadPulseConfigForTenant(tenantId);
       return apiJson(req, res, {
@@ -1088,10 +1102,11 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/alerts-history ────────────────────────────────── */
     if (req.method === 'GET' && route === '/alerts-history') {
+      if (!hasPulseAccess(principal)) {
+        return apiError(req, res, 403, 'pulse_not_allowed', 'Pulse access is restricted for this account.', rateInfo), true;
+      }
       const tenantId = effectiveTenantId(principal);
-      const dataPath = resolveTenantPathById
-        ? resolveTenantPathById(tenantId, path.join(dataDir, 'alerts_history.json'), 'alerts_history.json')
-        : path.join(dataDir, 'alerts_history.json');
+      const dataPath = resolveTenantOwnedDataPath(tenantId, 'alerts_history.json');
       const data = loadJson(dataPath, []);
       const config = loadPulseConfigForTenant(tenantId);
       return apiJson(req, res, {
@@ -1103,6 +1118,9 @@ function createApiHandler(deps) {
 
     /* ── GET/PUT/PATCH /api/v1/pulse-config ───────────────────────── */
     if (route === '/pulse-config') {
+      if (!hasPulseAccess(principal)) {
+        return apiError(req, res, 403, 'pulse_not_allowed', 'Pulse access is restricted for this account.', rateInfo), true;
+      }
       const tenantId = effectiveTenantId(principal);
 
       if (req.method === 'GET') {

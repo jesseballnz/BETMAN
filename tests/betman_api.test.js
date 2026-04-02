@@ -288,11 +288,11 @@ asyncTests.push((async () => {
     dataDir,
     rootDir: tmpRoot,
     loadJson,
-    getSessionPrincipal: () => ({ username: 'alice', tenantId: 'acct_test', effectiveTenantId: 'acct_test' }),
+    getSessionPrincipal: () => ({ username: 'test@betman.co.nz', tenantId: 'acct_test', effectiveTenantId: 'acct_test' }),
     resolveTenantPathById,
   });
 
-  const principal = { username: 'alice', tenantId: 'acct_test', effectiveTenantId: 'acct_test' };
+  const principal = { username: 'test@betman.co.nz', tenantId: 'acct_test', effectiveTenantId: 'acct_test' };
   const putReq = fakePutReq('/api/v1/pulse-config', {
     alertTypes: { drifts: false },
     thresholds: { minSeverity: 'CRITICAL', maxMinsToJump: 10, minMovePct: 10, trackedRunnerOverride: true }
@@ -322,6 +322,25 @@ asyncTests.push((async () => {
   assert.strictEqual(feed.alerts.some((row) => row.selection === 'Tracked D'), true);
   assert.strictEqual(feed.alerts.some((row) => row.selection === 'Tracked E'), true);
   console.log('  ✓ Pulse config route persists and filters tenant alerts + thresholds');
+})());
+
+// 12b. Pulse endpoints are allowlisted even for authenticated non-admin users
+asyncTests.push((async () => {
+  const handler = makeHandler({
+    getSessionPrincipal: () => ({ username: 'badgeking1@gmail.com', tenantId: 'acct_badgeking1-gmail-com', effectiveTenantId: 'acct_badgeking1-gmail-com' }),
+    loadJson: (p, f) => {
+      if (p.includes('alerts_feed.json')) return { updatedAt: '2026-04-02T00:00:00Z', alerts: [{ selection: 'Blocked' }] };
+      return f;
+    }
+  });
+
+  const req = fakeReq('GET', '/api/v1/alerts-feed');
+  const res = fakeRes();
+  await handler(req, res, new URL('http://localhost/api/v1/alerts-feed'));
+  assert.strictEqual(res.statusCode, 403);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.error, 'pulse_not_allowed');
+  console.log('  ✓ Pulse endpoints reject authenticated users outside the allowlist');
 })());
 
 // 13. Race detail endpoint
