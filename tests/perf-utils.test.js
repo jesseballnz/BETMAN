@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { aggregateLastNDays } = require('../frontend/perf-utils');
+const { aggregateLastNDays, normalizeLedgerResult, summarizeSettledBets, groupSettledBetsByDate } = require('../frontend/perf-utils');
 
 const sampleDaily = {
   '2026-03-16': {
@@ -42,5 +42,31 @@ assert.strictEqual(agg.pick.win.wins, 5);
 assert.strictEqual(agg.pick.odds_runner.wins, 2);
 assert.strictEqual(agg.pick.ew.wins, 1);
 assert.strictEqual(agg.long.wins, 1);
+
+assert.strictEqual(normalizeLedgerResult('won'), 'win');
+assert.strictEqual(normalizeLedgerResult('placed'), 'ew_place');
+
+const settledRows = [
+  { date: '2026-03-17', meeting: 'Ellerslie', race: '2', selection: 'Alpha', result: 'win', stake_units: 1, return_units: 2.8, profit_units: 1.8 },
+  { date: '2026-03-17', meeting: 'Ellerslie', race: '5', selection: 'Bravo', result: 'loss', stake_units: 1, return_units: 0, profit_units: -1 },
+  { date: '2026-03-16', meeting: 'Pukekohe', race: '1', selection: 'Charlie', result: 'ew_place', stake_units: 2, return_units: 3.2, profit_units: 1.2 }
+];
+
+const settledSummary = summarizeSettledBets(settledRows);
+assert.deepStrictEqual(settledSummary, {
+  bets: 3,
+  stake: 4,
+  returnUnits: 6,
+  profitUnits: 2,
+  hits: 2,
+});
+
+const ledgerDays = groupSettledBetsByDate(settledRows);
+assert.strictEqual(ledgerDays.length, 2);
+assert.strictEqual(ledgerDays[0].date, '2026-03-17');
+assert.strictEqual(ledgerDays[0].summary.bets, 2);
+assert.strictEqual(ledgerDays[0].summary.profitUnits, 0.8);
+assert.strictEqual(ledgerDays[1].date, '2026-03-16');
+assert.strictEqual(ledgerDays[1].summary.hits, 1);
 
 console.log('perf-utils tests passed');

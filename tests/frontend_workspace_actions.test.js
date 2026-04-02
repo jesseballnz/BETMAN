@@ -22,6 +22,9 @@ const sandbox = {
   cleanRunnerText: (value) => String(value || '').replace(/^\d+\.\s*/, '').trim(),
   normalizeRunnerName: (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(),
   computeRaceEta: () => ({ eta: 'in 8m' }),
+  trackedGroupMeta: () => ({ isMulti: false, groupLabel: 'Multi' }),
+  escapeAttr: (value) => String(value || '').replace(/'/g, '&#39;'),
+  escapeHtml: (value) => String(value || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
 };
 vm.createContext(sandbox);
 vm.runInContext([
@@ -37,6 +40,11 @@ const race = {
     { name: '2. Bravo', fixed_win: 7.2 },
   ],
 };
+
+const watchButtonsHtml = sandbox.buildTrackRunnerButtonsHtml(race, { name: '1. Alpha' }, null);
+assert(watchButtonsHtml.includes("data-track-bet-type='Win'"));
+assert(watchButtonsHtml.includes("data-track-bet-type='Watch'"));
+assert(watchButtonsHtml.includes('>Watch<'));
 
 const payloads = JSON.parse(JSON.stringify(sandbox.buildRaceTrackingPayloads(race, {
   betType: 'Watch',

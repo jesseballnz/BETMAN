@@ -1,0 +1,163 @@
+{
+  "generatedAt": "2026-04-02T21:46:47.960Z",
+  "baseUrl": "http://127.0.0.1:8080",
+  "deterministicEvidence": {
+    "releaseCheckPulse": "[1/2] Running deterministic Pulse release evidence test\npulse release evidence test passed\n[2/2] Running existing Pulse generation regression test\nalerts_generation tests passed\nPulse release check passed.",
+    "ok": true
+  },
+  "liveProbe": {
+    "unauthHealth": {
+      "status": 401,
+      "body": {
+        "ok": false,
+        "error": "auth_required"
+      }
+    },
+    "login": {
+      "skipped": true,
+      "reason": "BETMAN_PROOF_USERNAME/BETMAN_PROOF_PASSWORD not set"
+    }
+  },
+  "fileSnapshots": {
+    "defaultAlertsFeed": {
+      "path": "frontend/data/alerts_feed.json",
+      "exists": true,
+      "mtime": "2026-04-02T21:43:17.686Z",
+      "size": 61,
+      "jsonSummary": {
+        "updatedAt": "2026-04-02T21:43:17.685Z",
+        "alertsCount": 0,
+        "topLevelKeys": [
+          "updatedAt",
+          "alerts"
+        ]
+      }
+    },
+    "defaultAlertsHistory": {
+      "path": "frontend/data/alerts_history.json",
+      "exists": true,
+      "mtime": "2026-04-02T21:43:17.686Z",
+      "size": 35752,
+      "jsonSummary": {
+        "updatedAt": null,
+        "topLevelKeys": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11"
+        ]
+      }
+    },
+    "defaultPulseConfig": {
+      "path": "frontend/data/pulse_config.json",
+      "exists": true,
+      "mtime": "2026-04-02T03:15:39.467Z",
+      "size": 749,
+      "jsonSummary": {
+        "updatedAt": "2026-04-02T03:15:39.465Z",
+        "topLevelKeys": [
+          "enabled",
+          "alertTypes",
+          "thresholds",
+          "targeting",
+          "updatedAt",
+          "updatedBy"
+        ]
+      }
+    },
+    "defaultStatus": {
+      "path": "frontend/data/status.json",
+      "exists": true,
+      "mtime": "2026-04-02T21:43:17.702Z",
+      "size": 1392341,
+      "jsonSummary": {
+        "updatedAt": "2026-04-02T21:43:05.448Z",
+        "topLevelKeys": [
+          "updatedAt",
+          "balance",
+          "bank",
+          "openBets",
+          "todaysStake",
+          "stakePerRace",
+          "upcomingBets",
+          "earlyPlans",
+          "exoticPlans",
+          "upcomingRaces",
+          "activity",
+          "exoticStakePerRace"
+        ]
+      }
+    },
+    "tenantAlertsFeed": {
+      "path": "memory/tenants/acct_test-betman-co-nz/frontend-data/alerts_feed.json",
+      "exists": true,
+      "mtime": "2026-04-02T21:46:39.266Z",
+      "size": 61,
+      "jsonSummary": {
+        "updatedAt": "2026-04-02T21:46:39.265Z",
+        "alertsCount": 0,
+        "topLevelKeys": [
+          "updatedAt",
+          "alerts"
+        ]
+      }
+    },
+    "tenantAlertsHistory": {
+      "path": "memory/tenants/acct_test-betman-co-nz/frontend-data/alerts_history.json",
+      "exists": true,
+      "mtime": "2026-04-02T21:46:39.266Z",
+      "size": 2,
+      "jsonSummary": {
+        "updatedAt": null,
+        "topLevelKeys": []
+      }
+    },
+    "tenantStatus": {
+      "path": "memory/tenants/acct_test-betman-co-nz/frontend-data/status.json",
+      "exists": true,
+      "mtime": "2026-04-02T21:46:39.276Z",
+      "size": 820573,
+      "jsonSummary": {
+        "updatedAt": "2026-04-02T21:43:05.448Z",
+        "topLevelKeys": [
+          "updatedAt",
+          "balance",
+          "bank",
+          "openBets",
+          "todaysStake",
+          "stakePerRace",
+          "upcomingBets",
+          "earlyPlans",
+          "exoticPlans",
+          "upcomingRaces",
+          "activity",
+          "exoticStakePerRace"
+        ]
+      }
+    }
+  },
+  "process": {
+    "note": "Captured live BETMAN frontend_server candidate PID 62367.",
+    "pid": "62367",
+    "ps": "62367 Fri  3 Apr 10:43:03 2026     /usr/local/bin/node scripts/frontend_server.js"
+  },
+  "assessment": {
+    "deterministicPulseEvidencePasses": true,
+    "liveUnauthHealthMatchesCurrentSourceExpectation": false,
+    "livePulseConfigReadableWithAuth": false,
+    "livePulseFeedReadableWithAuth": false,
+    "livePulseFeedUpdatedAt": null,
+    "livePulseAlertsCount": null,
+    "tenantStatusUpdatedAt": "2026-04-02T21:43:05.448Z",
+    "conclusion": "deployment_parity_gap_detected",
+    "note": "A passing deterministic Pulse release check proves source behavior under fixture control. It does not by itself prove the currently running deployed instance exposes the same behavior or currently has live Pulse signal output."
+  }
+}

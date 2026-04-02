@@ -6,7 +6,7 @@ const path = require('path');
 const dns = require('dns');
 const { mergePublicStatusLists } = require('./status_snapshot_merge');
 const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
-const { buildRaceResultIndex, resolveTrackedBet, buildVisibleSettledRows } = require('./tracked_bet_matching');
+const { buildRaceResultIndex, resolveTrackedBet, buildVisibleSettledRows, buildTrackedHistoryRows } = require('./tracked_bet_matching');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -1657,7 +1657,7 @@ function mergeSelections(explicit = [], inferred = []){
   return merged;
 }
 
-const FINISHED_RACE_STATUSES = new Set(['final', 'abandoned', 'resulted']);
+const FINISHED_RACE_STATUSES = new Set(['final', 'closed', 'finalized', 'abandoned', 'resulted', 'settled', 'complete', 'completed']);
 
 function buildTrackedBetLiveContext(tenantId = 'default') {
   const status = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json'), {});
@@ -1707,6 +1707,37 @@ function buildTrackedBetLiveContext(tenantId = 'default') {
   return { raceMap, runnerMap, moverMap, suggestedMap };
 }
 
+function resolveTrackedRaceJumpMeta(row, race) {
+  const rawStart = race?.start_time_nz || race?.start_time || race?.advertised_start || race?.jump_time || null;
+  const parsedStartMs = rawStart ? Date.parse(String(rawStart)) : NaN;
+  const raceMins = Number(race?.minsToJump ?? race?.mins_to_jump ?? race?.minutes_to_jump);
+  const fallbackMins = Number(row?.minsToJump ?? row?.mins_to_jump);
+  const minsToJump = Number.isFinite(raceMins)
+    ? raceMins
+    : (Number.isFinite(parsedStartMs)
+      ? Math.round((parsedStartMs - Date.now()) / 60000)
+      : (Number.isFinite(fallbackMins) ? fallbackMins : null));
+
+  let jumpsIn = row?.jumpsIn ?? null;
+  if (Number.isFinite(minsToJump)) {
+    if (minsToJump <= 0) {
+      jumpsIn = 'Jumped';
+    } else if (minsToJump >= 120) {
+      const hrs = Math.floor(minsToJump / 60);
+      const mins = minsToJump % 60;
+      jumpsIn = `in ${hrs}h ${mins}m`;
+    } else {
+      jumpsIn = `in ${minsToJump}m`;
+    }
+  }
+
+  return {
+    raceStartTime: rawStart || row?.raceStartTime || null,
+    minsToJump: Number.isFinite(minsToJump) ? minsToJump : null,
+    jumpsIn,
+  };
+}
+
 function buildTrackedIdentityKey(row) {
   return normalizeTrackedKey(row?.meeting, row?.race, row?.selection);
 }
@@ -1727,6 +1758,7 @@ function enrichTrackedBetWithCurrentOdds(row, liveContext) {
   const race = liveContext?.raceMap?.get(raceKey) || null;
   const raceStatus = race?.race_status || null;
   const raceFinished = FINISHED_RACE_STATUSES.has(String(raceStatus || '').toLowerCase());
+  const jumpMeta = resolveTrackedRaceJumpMeta(row, race);
   const runnerHit = liveContext?.runnerMap?.get(trackedKey);
   const moverHit = liveContext?.moverMap?.get(trackedKey);
   const suggestedHit = liveContext?.suggestedMap?.get(trackedKey);
@@ -1746,6 +1778,9 @@ function enrichTrackedBetWithCurrentOdds(row, liveContext) {
     entryOdds,
     currentOdds,
     currentOddsSource,
+    jumpsIn: jumpMeta.jumpsIn,
+    minsToJump: jumpMeta.minsToJump,
+    raceStartTime: jumpMeta.raceStartTime,
     raceStatus,
   };
 }
@@ -4551,6 +4586,26 @@ const server = http.createServer(async (req, res)=>{
     return res.end();
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/health') {
+    const statusPath = path.join(process.cwd(), 'frontend', 'data', 'status.json');
+    let status = null;
+    try { status = JSON.parse(fs.readFileSync(statusPath, 'utf8')); } catch {}
+    const apiState = String(status?.apiStatusPublic || status?.apiStatus || 'UNVERIFIED').toUpperCase();
+    const smokeFresh = status?.apiStatusDetail?.smokeFresh !== false;
+    const healthy = apiState === 'OK' && smokeFresh;
+    return okJson(res, {
+      ok: healthy,
+      service: 'betman-api',
+      apiStatus: apiState,
+      smokePresent: !!status?.apiStatusDetail?.smokePresent,
+      smokeFresh,
+      smokeCheckedAt: status?.apiStatusDetail?.smokeCheckedAt || null,
+      updatedAt: status?.updatedAt || null,
+      note: healthy ? 'public smoke healthy' : 'public smoke missing, stale, or failing',
+      ts: new Date().toISOString()
+    }, healthy ? 200 : 503);
+  }
+
   if (!requireAuth(req, res)) return;
 
   // Race analysis cache endpoints (GET)
@@ -5690,10 +5745,6 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     return send(res, 404, 'not found');
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/health') {
-    return okJson(res, { ok: true, service: 'betman-api', ts: new Date().toISOString() });
-  }
-
   /* ── API key management (session-auth) ─────────────────────────── */
   if (req.method === 'GET' && url.pathname === '/api/api-keys') {
     if (!requireAuth(req, res)) return;
@@ -6212,7 +6263,10 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       const visibleResolved = visibleTracked
         .map(row => resolveTrackedBet(row, settled, raceResultIndex))
         .sort((a,b) => String(b.trackedAt || '').localeCompare(String(a.trackedAt || '')));
-      const mine = visibleResolved.map(row => enrichTrackedBetWithCurrentOdds(row, liveContext));
+      const recoveredHistory = buildTrackedHistoryRows(principal, visibleResolved, settled, raceResultIndex);
+      const mine = [...visibleResolved, ...recoveredHistory]
+        .map(row => enrichTrackedBetWithCurrentOdds(row, liveContext))
+        .sort((a,b) => String(b.settledAt || b.trackedAt || '').localeCompare(String(a.settledAt || a.trackedAt || '')));
       if (JSON.stringify(visibleResolved) !== JSON.stringify(visibleTracked)) {
         if (privateTenantScope) {
           writeJson(trackedPath, visibleResolved);
@@ -6379,6 +6433,50 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
   const ext = path.extname(filePath).toLowerCase();
   const types = { '.html':'text/html', '.css':'text/css', '.js':'text/javascript', '.json':'application/json' };
   send(res, 200, fs.readFileSync(filePath), types[ext] || 'application/octet-stream');
+});
+
+let shutdownInProgress = false;
+
+async function shutdownServer(signal = 'unknown') {
+  if (shutdownInProgress) return;
+  shutdownInProgress = true;
+  console.log(`[runtime] received ${signal}; starting graceful shutdown`);
+
+  const forceTimer = setTimeout(() => {
+    console.error('[runtime] graceful shutdown timed out; forcing exit');
+    process.exit(1);
+  }, 10000);
+  if (typeof forceTimer.unref === 'function') forceTimer.unref();
+
+  try {
+    await new Promise((resolve) => {
+      server.close(() => resolve());
+    });
+    if (pgPool) {
+      try {
+        await pgPool.end();
+      } catch (err) {
+        console.error('[runtime] postgres pool close failed:', err?.message || err);
+      }
+    }
+    clearTimeout(forceTimer);
+    console.log('[runtime] graceful shutdown complete');
+    process.exit(0);
+  } catch (err) {
+    clearTimeout(forceTimer);
+    console.error('[runtime] shutdown failed:', err?.message || err);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => { shutdownServer('SIGTERM'); });
+process.on('SIGINT', () => { shutdownServer('SIGINT'); });
+process.on('unhandledRejection', (reason) => {
+  console.error('[runtime] unhandledRejection', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[runtime] uncaughtException', err);
+  shutdownServer('uncaughtException');
 });
 
 if (require.main === module) {

@@ -1,5 +1,7 @@
 # UI Click-through Regression Checklist — 2026-03-04 15:10 NZDT
 
+> Historical artifact only. This file records a dated regression pass and must not be used as a current release signoff.
+
 ## Scope
 Smoke + logic checks for BETMAN MVP UI/API interactions after recent changes.
 
@@ -15,9 +17,10 @@ Smoke + logic checks for BETMAN MVP UI/API interactions after recent changes.
 8. Critical UI elements present in HTML (filters/chat/auth modal/tabs) — **PASS**
 
 ## Summary
-- **8 / 8 checks passed**
-- No blocking regressions detected in tested paths.
+- **8 / 8 checks passed on 2026-03-04**
+- No blocking regressions were detected in the tested paths at that time.
 
 ## Notes
-- This checklist validates functional wiring and key behavior paths.
+- This checklist validates functional wiring and key behavior paths for that date only.
 - A visual/manual browser UX pass can be added as a separate artifact if needed (tab-by-tab screenshots + interaction video).
+- Current releases should instead use `docs/RELEASE_CHECKLIST.md` plus a dated file under `docs/release-signoffs/`.

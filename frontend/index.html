@@ -103,6 +103,26 @@
         <div class="refresh-meta" id="refreshMeta">—</div>
       </div>
 
+      <div class="page-nav-wrap">
+        <div class="sub page-nav-label">Workspace navigation</div>
+        <nav class="page-nav" aria-label="Primary workspace navigation">
+          <button class="page-tab active" data-page="workspace" title="Browse meetings, races, and open full analysis.">Meeting Workspace</button>
+          <button class="page-tab" data-page="suggested" title="Live model picks with edge and WHY tags.">Suggested Bets</button>
+          <button class="page-tab" data-page="multis" title="Same-race multis and exotic structures.">Multis</button>
+          <button class="page-tab" data-page="movers" title="Firmers/drifters and price shifts.">Market Movers</button>
+          <button class="page-tab" data-page="interesting" title="Watchlist runners and outlier signals.">Interesting Runners</button>
+          <button class="page-tab" data-page="plans" title="Next bets inside the placement window.">Bet Plans</button>
+          <button class="page-tab" data-page="autobet" title="Live bet queue + performance filters.">Autobet</button>
+          <button class="page-tab" data-page="strategy" title="Build strategy sets and export.">Strategy</button>
+          <button class="page-tab" data-page="bakeoff" title="Model comparison and bakeoff runs.">Model Bakeoff</button>
+          <button class="page-tab" data-page="performance" title="ROI, win-rate, and KPIs.">Performance</button>
+          <button class="page-tab" data-page="tracked" title="Tracked runners, active positions, and settled outcomes.">Tracked</button>
+          <button class="page-tab" data-page="heatmap" title="Thermal intake and horse heat observations.">Heatmap</button>
+          <button class="page-tab" data-page="pulse" title="Premium pulse intelligence, history, and control.">Pulse</button>
+          <button class="page-tab" data-page="alerts" title="General alerts and broader event monitoring.">Alerts</button>
+        </nav>
+      </div>
+
       <h3 class="mt-14" style="margin-top:28px">Bet Window Configuration</h3>
       <div class="filters" style="margin-top:14px">
         <label for="betWindowInput" class="sub">Window (mins)</label>
@@ -111,23 +131,6 @@
         <span id="betWindowHint" class="sub">Current: 1800m</span>
       </div>
     </section>
-
-    <nav class="page-nav">
-      <button class="page-tab active" data-page="workspace" title="Browse meetings, races, and open full analysis.">Meeting Workspace</button>
-      <button class="page-tab" data-page="suggested" title="Live model picks with edge and WHY tags.">Suggested Bets</button>
-      <button class="page-tab" data-page="multis" title="Same-race multis and exotic structures.">Multis</button>
-      <button class="page-tab" data-page="movers" title="Firmers/drifters and price shifts.">Market Movers</button>
-      <button class="page-tab" data-page="interesting" title="Watchlist runners and outlier signals.">Interesting Runners</button>
-      <button class="page-tab" data-page="plans" title="Next bets inside the placement window.">Bet Plans</button>
-      <button class="page-tab" data-page="autobet" title="Live bet queue + performance filters.">Autobet</button>
-      <button class="page-tab" data-page="strategy" title="Build strategy sets and export.">Strategy</button>
-      <button class="page-tab" data-page="bakeoff" title="Model comparison and bakeoff runs.">Model Bakeoff</button>
-      <button class="page-tab" data-page="performance" title="ROI, win-rate, and KPIs.">Performance</button>
-      <button class="page-tab" data-page="tracked" title="Tracked runners, active positions, and settled outcomes.">Tracked</button>
-      <button class="page-tab" data-page="heatmap" title="Thermal intake and horse heat observations.">Heatmap</button>
-      <button class="page-tab" data-page="pulse" title="Premium pulse intelligence, history, and control.">Pulse</button>
-      <button class="page-tab" data-page="alerts" title="General alerts and broader event monitoring.">Alerts</button>
-    </nav>
 
     <section class="section page-section" data-page="plans">
       <h3 class="mt-6">Next Suggested Bets</h3>
@@ -258,6 +261,7 @@
         <div class="section-actions">
           <button id="refreshPerformanceBtn" class="btn btn-ghost compact-btn">Refresh</button>
           <button id="trainModelsBtn" class="btn btn-ghost compact-btn">Train Models</button>
+          <button id="openLedgerBtn" class="btn btn-ghost compact-btn">Ledger</button>
         </div>
       </div>
       <div id="roiAdminHint" class="perf-hint" style="display:none">ROI figures are visible to admin only.</div>
@@ -655,6 +659,20 @@
       </div>
     </section>
 
+    <section class="section page-section" data-page="performance-ledger" style="display:none">
+      <div class="section-head">
+        <h3>Performance Ledger</h3>
+        <div class="section-actions">
+          <button id="ledgerBackBtn" class="btn btn-ghost compact-btn">Back to Performance</button>
+          <button id="refreshPerformanceBtn" class="btn btn-ghost compact-btn">Refresh</button>
+        </div>
+      </div>
+      <div class="perf-hint">Daily P&amp;L ledger from settled bets. Tap a row to open the bet profile.</div>
+      <div id="perfLedgerNote" class="sub" style="margin-bottom:8px"></div>
+      <div class="perf-kpis" id="perfLedgerSummary"></div>
+      <div id="perfLedgerTable" class="ledger-shell"></div>
+    </section>
+
     <section class="section page-section" data-page="help" style="display:none">
       <h3>BETMAN Help</h3>
       <div class="analysis-body">
@@ -855,16 +873,18 @@
           <div class="pulse-watchbar-label">Watch bar</div>
           <div class="pulse-watchbar-title">Focus the live premium feed while you scan the wider alerts board.</div>
         </div>
-        <div class="perf-kpis perf-kpis-secondary pulse-filter-strip">
-          <div class="perf-card pulse-filter-card pulse-filter-input-card">
+        <div class="perf-kpis perf-kpis-secondary pulse-filter-strip pulse-filter-strip-chips">
+          <div class="perf-card pulse-filter-card pulse-filter-chip-card">
             <div class="label">Country</div>
-            <select id="pulseCountryFilter" class="pulse-filter-select">
+            <div id="pulseCountryFilterChips" class="pulse-filter-chip-row"></div>
+            <select id="pulseCountryFilter" class="pulse-filter-select hidden">
               <option value="all">All countries</option>
             </select>
           </div>
-          <div class="perf-card pulse-filter-card pulse-filter-input-card">
+          <div class="perf-card pulse-filter-card pulse-filter-chip-card">
             <div class="label">Meeting</div>
-            <select id="pulseMeetingFilter" class="pulse-filter-select">
+            <div id="pulseMeetingFilterChips" class="pulse-filter-chip-row"></div>
+            <select id="pulseMeetingFilter" class="pulse-filter-select hidden">
               <option value="all">All meetings</option>
             </select>
           </div>

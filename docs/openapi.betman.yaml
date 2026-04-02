@@ -14,10 +14,12 @@ security:
 paths:
   /api/health:
     get:
-      summary: Health check
+      summary: Public runtime health check backed by latest smoke result
       responses:
         '200':
-          description: OK
+          description: Healthy public smoke state
+        '503':
+          description: Smoke missing, stale, or failing
   /api/status:
     get:
       summary: Current status snapshot

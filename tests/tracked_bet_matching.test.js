@@ -56,6 +56,16 @@ assert.strictEqual(winnerFallback && winnerFallback.selection, 'Cavalry');
 assert.strictEqual(winnerFallback && winnerFallback.result, 'win');
 assert.strictEqual(winnerFallback && winnerFallback.position, 1);
 
+const winnerOnlyLossFallback = matchSettledBet(
+  { meeting: 'Ashburton', race: '1', selection: 'Golden Lining', betType: 'Win' },
+  [
+    { meeting: 'Ashburton', race: '1', selection: 'Quinto', type: 'odds_runner', result: 'win', position: 1, winner: 'Quinto', settled_at: '2026-04-02T02:00:00.000Z' },
+  ]
+);
+assert.strictEqual(winnerOnlyLossFallback && winnerOnlyLossFallback.selection, 'Golden Lining');
+assert.strictEqual(winnerOnlyLossFallback && winnerOnlyLossFallback.result, 'loss');
+assert.strictEqual(winnerOnlyLossFallback && winnerOnlyLossFallback.winner, 'Quinto');
+
 const raceIndex = buildRaceResultIndex([
   { meeting: 'Newcastle', race: '1', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Cavalry', settled_at: '2026-03-31T04:05:06.000Z' },
   { meeting: 'Newcastle', race: '1', selection: 'Dubliners', type: 'odds_runner', result: 'loss', position: 8, winner: 'Cavalry' },
@@ -205,6 +215,42 @@ assert.deepStrictEqual(
     roi: -1,
     position: 4,
     winner: 'Cavalry',
+  }
+);
+
+assert.deepStrictEqual(
+  resolveTrackedBet(
+    {
+      id: 'tracked-loss-winner-only',
+      meeting: 'Ashburton',
+      race: '1',
+      selection: 'Golden Lining',
+      betType: 'Win',
+      stake: 5,
+      entryOdds: 6,
+      status: 'active',
+      result: 'pending',
+    },
+    [
+      { meeting: 'Ashburton', race: '1', selection: 'Quinto', type: 'odds_runner', result: 'win', position: 1, winner: 'Quinto', settled_at: '2026-04-02T02:00:00.000Z' },
+    ]
+  ),
+  {
+    id: 'tracked-loss-winner-only',
+    meeting: 'Ashburton',
+    race: '1',
+    selection: 'Golden Lining',
+    betType: 'Win',
+    stake: 5,
+    entryOdds: 6,
+    status: 'settled',
+    result: 'lost',
+    settledAt: '2026-04-02T02:00:00.000Z',
+    payout: 0,
+    profit: -5,
+    roi: -1,
+    position: null,
+    winner: 'Quinto',
   }
 );
 

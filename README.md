@@ -1,39 +1,43 @@
-# BETMAN Ops Snapshot (Mar 8, 2026)
+# BETMAN Operations
 
-This repo now carries two live surfaces that are sharing traffic with test customers.
+This README is operational guidance, not a release signoff.
 
-## 1. BETMAN (Racing stack)
-
-| Component | Command / Notes |
-| --- | --- |
-| Poller loop | `node scripts/racing_poller.js` (plus `race_cache_writer` + `status_writer` every 5m; see `HEARTBEAT.md`) |
-| Frontend server | `node scripts/frontend_server.js` (listens on 0.0.0.0 by default) |
-| Data | `frontend/data/*.json`, `memory/racing-poll-state.json` |
-| Tests | `npm test` (includes `status_writer`, `mvp1.1` audit, AI chat scenarios) |
-
-### Current status
-- Heartbeat automation is refreshing every ~5 minutes and logging to `memory/heartbeat-state.json`.
-- Queue + exotic plans are surfacing cleanly (see heartbeat summaries).
-- Latest regression run: `npm test` (all passing, Mar 8 @ 12:23 NZDT).
-
-## 2. Sportr (Multi-sport stack)
+## Core runtime
 
 | Component | Command / Notes |
 | --- | --- |
-| Pipeline | `cd sporter && node scripts/run_market_pipeline.js` (fetches live UFC card + sample cross-sport fixtures, regenerates books/schedule/models) |
-| Poller loop | `cd sporter && nohup node scripts/live_poll_loop.js > memory/poll_loop.log 2>&1 &` (PID written to `memory/poll_loop.pid`) |
-| API server | `cd sporter && PORT=9080 HOST=0.0.0.0 node scripts/sporter_server.js` |
-| Data | `sporter/data/books/*.json`, `sporter/data/market_snapshot.json`, `sporter/data/sample-schedule.json`, `sporter/data/cache/` |
+| Frontend/API server | `node scripts/frontend_server.js` |
+| Poller runner | `bash scripts/jobs_runner.sh` or project-specific poller scripts under `scripts/` |
+| Status builder | `node scripts/status_writer.js` |
+| Public smoke | `node scripts/api_smoke_public.js` |
+| Full test suite | `npm test` |
 
-### Current status
-- UFC markets are live via the ESPN scoreboard integration; other sports (NBA/NFL/EPL/NRL/AFL) remain template feeds for now but keep the filters populated.
-- Bet window logic now auto-expands per sport so every filter shows markets immediately.
-- Poller + API server are running (PID 34201 for the poll loop; server bound to 0.0.0.0).
+## Health surfaces
+- Public health: `GET /api/health`
+- Admin runtime health: `GET /api/runtime-health`
+- Commercial API health: `GET /api/v1/health`
 
-## QA Checklist
-- [x] `npm test`
-- [x] Racing poller heartbeat healthy (every 5 min)
-- [x] Sportr pipeline + poll loop restarted after latest code changes
-- [x] Frontend bet-window fallback fixed (forces markets to show for all filters)
+`/api/health` is now tied to the recorded public smoke state in `memory/api-smoke-public.json`.
+If smoke evidence is missing, stale, or failing, the endpoint should not be treated as healthy.
 
-Everything above is what I’m signing off for external testers today. Ping me if you need deeper release notes or if we should bundle this into an internal changelog.
+## Start / stop
+- Manual start: `./start_betman.sh`
+- Manual stop: `./stop_betman.sh`
+- Supervised macOS install: `./scripts/install_launchd_services.sh install`
+- Supervision status: `./scripts/install_launchd_services.sh status`
+
+## Runtime supervision status
+Manual wrappers still exist and still use PID files only.
+For actual crash/login restart on macOS, BETMAN now ships a repo-contained `launchd` install path.
+See `docs/BETMAN_RUNTIME_SUPERVISION.md`.
+
+Truthful current state:
+- manual wrapper path: **not supervised**
+- macOS `launchd` path: **supervised with KeepAlive + RunAtLoad**
+- still no health-check-driven self-healing for stuck-but-not-dead processes
+
+## Release governance
+Before any tester/customer-facing release:
+- use `docs/RELEASE_CHECKLIST.md`
+- write a dated signoff record under `docs/release-signoffs/`
+- keep README/docs claims tied to current evidence, not historic point-in-time runs

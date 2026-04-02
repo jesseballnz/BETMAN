@@ -15,7 +15,7 @@
 const crypto = require('crypto');
 const path   = require('path');
 const fs     = require('fs');
-const { buildRaceResultIndex, resolveTrackedBet } = require('./tracked_bet_matching');
+const { buildRaceResultIndex, resolveTrackedBet, buildTrackedHistoryRows } = require('./tracked_bet_matching');
 
 /* ── Configuration ─────────────────────────────────────────────────── */
 const API_VERSION = '1.0.0';
@@ -54,6 +54,65 @@ const DEFAULT_PULSE_CONFIG = Object.freeze({
   updatedAt: null,
   updatedBy: null,
 });
+const FINISHED_RACE_STATUSES = new Set(['final', 'closed', 'finalized', 'abandoned', 'resulted', 'settled', 'complete', 'completed']);
+
+function normalizeMeetingName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeRaceValue(value) {
+  return String(value || '').trim().replace(/^R/i, '');
+}
+
+function buildRaceMapFromPayload(payload) {
+  const rows = Array.isArray(payload?.races) ? payload.races : (Array.isArray(payload) ? payload : []);
+  const raceMap = new Map();
+  rows.forEach((race) => {
+    const key = `${normalizeMeetingName(race?.meeting)}|${normalizeRaceValue(race?.race_number || race?.race)}`;
+    if (key !== '|') raceMap.set(key, race);
+  });
+  return raceMap;
+}
+
+function resolveTrackedRaceJumpMeta(row, race) {
+  const rawStart = race?.start_time_nz || race?.start_time || race?.advertised_start || race?.jump_time || null;
+  const parsedStartMs = rawStart ? Date.parse(String(rawStart)) : NaN;
+  const raceMins = Number(race?.minsToJump ?? race?.mins_to_jump ?? race?.minutes_to_jump);
+  const fallbackMins = Number(row?.minsToJump ?? row?.mins_to_jump);
+  const minsToJump = Number.isFinite(raceMins)
+    ? raceMins
+    : (Number.isFinite(parsedStartMs)
+      ? Math.round((parsedStartMs - Date.now()) / 60000)
+      : (Number.isFinite(fallbackMins) ? fallbackMins : null));
+
+  let jumpsIn = row?.jumpsIn ?? null;
+  if (Number.isFinite(minsToJump)) {
+    if (minsToJump <= 0) {
+      jumpsIn = 'Jumped';
+    } else if (minsToJump >= 120) {
+      const hrs = Math.floor(minsToJump / 60);
+      const mins = minsToJump % 60;
+      jumpsIn = `in ${hrs}h ${mins}m`;
+    } else {
+      jumpsIn = `in ${minsToJump}m`;
+    }
+  }
+
+  return {
+    raceStartTime: rawStart || row?.raceStartTime || null,
+    minsToJump: Number.isFinite(minsToJump) ? minsToJump : null,
+    jumpsIn,
+  };
+}
+
+function isLiveRaceEntry(entry, raceMap) {
+  if (!(raceMap instanceof Map) || raceMap.size === 0) return true;
+  const key = `${normalizeMeetingName(entry?.meeting)}|${normalizeRaceValue(entry?.race || entry?.race_number)}`;
+  if (key === '|') return true;
+  const race = raceMap.get(key);
+  if (!race) return true;
+  return !FINISHED_RACE_STATUSES.has(String(race?.race_status || '').trim().toLowerCase());
+}
 
 /* ── API-key helpers ───────────────────────────────────────────────── */
 
@@ -867,7 +926,9 @@ function createApiHandler(deps) {
     /* ── GET /api/v1/interesting-runners ──────────────────────────── */
     if (req.method === 'GET' && route === '/interesting-runners') {
       const status = readDataFile('status.json', {});
-      const runners = status.interestingRunners || [];
+      const races = readDataFile('races.json', { races: [] });
+      const raceMap = buildRaceMapFromPayload(races);
+      const runners = (status.interestingRunners || []).filter((row) => isLiveRaceEntry(row, raceMap));
       return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
@@ -915,15 +976,32 @@ function createApiHandler(deps) {
       const tenantId = principal.effectiveTenantId || principal.tenantId || 'default';
       const trackedPath = resolveTenantOwnedDataPath(tenantId, 'tracked_bets.json');
       const settledPath = resolveTenantOwnedDataPath(tenantId, 'settled_bets.json');
+      const racesPath = resolveTenantOwnedDataPath(tenantId, 'races.json');
       const trackedRows = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
       const settledRows = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
+      const raceMap = buildRaceMapFromPayload(loadJson(racesPath, { races: [] }));
       const raceResultIndex = buildRaceResultIndex(settledRows);
       const normalize = (s) => normalizeTrackedRunnerName(s);
       const privateTenantScope = isPrivateTenantPrincipal(principal);
       const visibleTracked = privateTenantScope
         ? trackedRows
         : trackedRows.filter((row) => normalize(row.username) === normalize(principal.username));
-      const resolved = visibleTracked.map((row) => resolveTrackedBet(row, settledRows, raceResultIndex));
+      const resolved = visibleTracked.map((row) => {
+        const settled = resolveTrackedBet(row, settledRows, raceResultIndex);
+        const raceKey = `${normalizeMeetingName(settled?.meeting)}|${normalizeRaceValue(settled?.race)}`;
+        const race = raceMap.get(raceKey) || null;
+        const jumpMeta = resolveTrackedRaceJumpMeta(settled, race);
+        return {
+          ...settled,
+          ...(race?.race_status ? { raceStatus: race.race_status } : {}),
+          jumpsIn: jumpMeta.jumpsIn,
+          minsToJump: jumpMeta.minsToJump,
+          raceStartTime: jumpMeta.raceStartTime,
+        };
+      });
+      const recoveredHistory = buildTrackedHistoryRows(principal, resolved, settledRows, raceResultIndex);
+      const responseTracked = [...resolved, ...recoveredHistory]
+        .sort((a, b) => String(b.settledAt || b.trackedAt || '').localeCompare(String(a.settledAt || a.trackedAt || '')));
 
       if (req.method === 'GET') {
         if (JSON.stringify(visibleTracked) !== JSON.stringify(resolved)) {
@@ -936,7 +1014,7 @@ function createApiHandler(deps) {
             fs.writeFileSync(trackedPath, JSON.stringify([...others, ...resolved], null, 2));
           }
         }
-        return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBets: resolved }, 200, rateInfo), true;
+        return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBets: responseTracked }, 200, rateInfo), true;
       }
 
       if (req.method === 'POST') {

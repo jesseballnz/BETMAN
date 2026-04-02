@@ -29,6 +29,53 @@ const DEFAULT_PULSE_CONFIG = Object.freeze({
   updatedBy: null,
 });
 
+function normalizePulseCountry(value) {
+  const upper = String(value || '').trim().toUpperCase();
+  return ['NZ', 'AUS', 'HK'].includes(upper) ? upper : '';
+}
+
+function normalizePulseMeetingName(value) {
+  return String(value || '').trim();
+}
+
+function normalizePulseTargetList(values, normalizeFn) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => normalizeFn(value))
+    .filter(Boolean)
+    .filter((value, idx, arr) => arr.indexOf(value) === idx);
+}
+
+function normalizePulseRaceTarget(value) {
+  if (!value && value !== 0) return null;
+  if (typeof value === 'object') {
+    const meeting = normalizePulseMeetingName(value?.meeting);
+    const race = String(value?.race || value?.raceNumber || '').trim().replace(/^R/i, '');
+    if (!meeting || !race) return null;
+    return `${meeting}::${race}`;
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\s*\|\s*/g, '::').replace(/\s*[—-]\s*R?/gi, '::');
+  const parts = normalized.split('::').map(part => String(part || '').trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const race = String(parts.pop() || '').replace(/^R/i, '');
+  const meeting = parts.join('::').trim();
+  if (!meeting || !race) return null;
+  return `${meeting}::${race}`;
+}
+
+function normalizePulseTargeting(raw = {}) {
+  const mode = String(raw?.mode || 'all').trim().toLowerCase();
+  const allowedMode = ['all', 'countries', 'meetings', 'races', 'mixed'].includes(mode) ? mode : 'all';
+  return {
+    mode: allowedMode,
+    countries: normalizePulseTargetList(raw?.countries, normalizePulseCountry),
+    meetings: normalizePulseTargetList(raw?.meetings, normalizePulseMeetingName),
+    races: normalizePulseTargetList(raw?.races, normalizePulseRaceTarget),
+  };
+}
+
 function normalizePulseSeverity(value) {
   const upper = String(value || '').trim().toUpperCase();
   return PULSE_SEVERITY_LEVELS.includes(upper) ? upper : DEFAULT_PULSE_CONFIG.thresholds.minSeverity;
@@ -57,6 +104,7 @@ function normalizePulseConfig(raw = {}) {
       jumpPulse: alertTypes.jumpPulse !== false,
     },
     thresholds: normalizePulseThresholds(raw?.thresholds || {}),
+    targeting: normalizePulseTargeting(raw?.targeting || {}),
     updatedAt: raw?.updatedAt || null,
     updatedBy: raw?.updatedBy || null,
   };
@@ -68,6 +116,7 @@ function pulseConfigKeyForAlertType(type) {
   if (t === 'hot_drift') return 'drifts';
   if (t === 'market_conflict') return 'conflicts';
   if (t === 'selection_flip_recommended' || t === 'selection_flip_odds_runner' || t === 'selection_flip_ew') return 'selectionFlips';
+  if (t === 'tracked_upgrade' || t === 'tracked_downgrade') return 'selectionFlips';
   if (t === 'prejump_heat') return 'preJumpHeat';
   if (t === 'jump_pulse') return 'jumpPulse';
   return null;
@@ -96,11 +145,28 @@ function pulseAlertPassesThresholds(row, config) {
 
 function filterPulseAlerts(rows, config) {
   const enabled = config?.alertTypes || DEFAULT_PULSE_CONFIG.alertTypes;
+  const targeting = normalizePulseTargeting(config?.targeting || {});
   return (Array.isArray(rows) ? rows : []).filter((row) => {
     const key = pulseConfigKeyForAlertType(row?.type);
     if (key && enabled[key] === false) return false;
+    if (!pulseAlertMatchesTargeting(row, targeting)) return false;
     return pulseAlertPassesThresholds(row, config);
   });
+}
+
+function pulseAlertMatchesTargeting(row, targeting) {
+  if (targeting.mode === 'all') return true;
+  const meeting = normalizePulseMeetingName(row?.meeting);
+  const race = String(row?.race || '').trim().replace(/^R/i, '');
+  const country = normalizePulseCountry(row?.country);
+  const raceKey = meeting && race ? `${meeting}::${race}` : null;
+  const matchers = {
+    countries: !!country && targeting.countries.includes(country),
+    meetings: !!meeting && targeting.meetings.includes(meeting),
+    races: !!raceKey && targeting.races.includes(raceKey),
+  };
+  if (targeting.mode === 'mixed') return Object.values(matchers).some(Boolean);
+  return !!matchers[targeting.mode];
 }
 
 function appendJsonl(p, row){
@@ -222,17 +288,25 @@ status.pnlHistory = nextHist.slice(-7);
 
 const apiSmoke = loadJson(apiSmokePath, null);
 const smokePresent = !!(apiSmoke && Array.isArray(apiSmoke.results));
+const smokeCheckedAtMs = apiSmoke?.checkedAt ? new Date(apiSmoke.checkedAt).getTime() : NaN;
+const smokeMaxAgeMs = Number(process.env.BETMAN_PUBLIC_SMOKE_MAX_AGE_MS || (6 * 60 * 60 * 1000));
+const smokeFresh = Number.isFinite(smokeCheckedAtMs)
+  ? ((Date.now() - smokeCheckedAtMs) <= smokeMaxAgeMs)
+  : false;
 const smokeOk = !!(smokePresent && apiSmoke.results.every(r => {
   if (String(r.url || '').includes('/insights/sync') && Number(r.status) === 415) return true;
   return !!r.ok;
 }));
-const smokeStatus = !smokePresent ? 'UNVERIFIED' : (smokeOk ? 'OK' : 'FAIL');
+const smokeStatus = !smokePresent ? 'UNVERIFIED' : (!smokeFresh ? 'STALE' : (smokeOk ? 'OK' : 'FAIL'));
 status.apiStatus = smokeStatus;
 status.apiStatusPublic = smokeStatus;
 status.apiStatusDetail = {
   smokeOk,
   smokePresent,
-  smokeCheckedAt: apiSmoke?.checkedAt || null
+  smokeFresh,
+  smokeMaxAgeMs,
+  smokeCheckedAt: apiSmoke?.checkedAt || null,
+  smokeAgeMs: Number.isFinite(smokeCheckedAtMs) ? Math.max(0, Date.now() - smokeCheckedAtMs) : null
 };
 
 function jumpedMoreThanMinutes(r, mins = 5){
@@ -1009,6 +1083,59 @@ const trackedRunnerMap = new Map(
 );
 const trackedRunnerKeys = new Set(trackedRunnerMap.keys());
 
+const TRACKED_MODE_ORDER = Object.freeze({
+  // Explicit conviction ladder for single-runner tracked modes.
+  // Watch = observe only, Odds Runner = tentative/speculative angle,
+  // EW = capital committed with place protection, Win = highest conviction.
+  watch: 0,
+  odds_runner: 1,
+  ew: 2,
+  win: 3,
+});
+
+function normalizeTrackedMode(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'win';
+  if (['watch', 'watchlist'].includes(raw)) return 'watch';
+  if (['odds runner', 'odds_runner', 'oddsrunner'].includes(raw)) return 'odds_runner';
+  if (['ew', 'each way', 'each_way', 'eachway'].includes(raw)) return 'ew';
+  if (['w', 'win', 'winner'].includes(raw)) return 'win';
+  return raw.replace(/\s+/g, '_');
+}
+
+function trackedModeLabel(value) {
+  const normalized = normalizeTrackedMode(value);
+  if (normalized === 'odds_runner') return 'Odds Runner';
+  if (normalized === 'ew') return 'EW';
+  if (normalized === 'win') return 'Win';
+  if (normalized === 'watch') return 'Watch';
+  return String(value || normalized || 'Tracked');
+}
+
+function trackedModeRank(value) {
+  const normalized = normalizeTrackedMode(value);
+  return Object.prototype.hasOwnProperty.call(TRACKED_MODE_ORDER, normalized)
+    ? TRACKED_MODE_ORDER[normalized]
+    : null;
+}
+
+function buildTrackedModeSnapshot(rows = []) {
+  return Object.fromEntries((Array.isArray(rows) ? rows : [])
+    .filter(row => String(row?.status || 'active').toLowerCase() !== 'settled')
+    .map((row) => {
+      const key = `${String(row?.meeting || '').trim().toLowerCase()}|${String(row?.race || '').replace(/^R/i,'').trim()}|${String(row?.selection || '').trim().toLowerCase()}`;
+      return [key, {
+        meeting: row?.meeting || '',
+        race: String(row?.race || '').replace(/^R/i,'').trim(),
+        selection: row?.selection || '',
+        betType: row?.betType || row?.type || 'Win',
+        normalizedBetType: normalizeTrackedMode(row?.betType || row?.type || 'Win'),
+        priorityRank: Number.isFinite(Number(row?.priorityRank)) ? Number(row.priorityRank) : null,
+      }];
+    })
+    .filter(([key]) => !!key));
+}
+
 function runnerRoleForAlert(meeting, race, runner) {
   const m = String(meeting || '').trim().toLowerCase();
   const r = String(race || '').replace(/^R/i,'').trim();
@@ -1199,7 +1326,62 @@ const jumpPulseAlerts = trackedBets
   })
   .filter(Boolean);
 
-const pulseAlertsAll = filterPulseAlerts([...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts, ...jumpPulseAlerts], pulseConfig).sort((a,b) => {
+const prevTrackedModeSnapshot = prevStatus?.trackedRunnerModes && typeof prevStatus.trackedRunnerModes === 'object'
+  ? prevStatus.trackedRunnerModes
+  : {};
+const nextTrackedModeSnapshot = buildTrackedModeSnapshot(trackedBets);
+status.trackedRunnerModes = nextTrackedModeSnapshot;
+
+const trackedTransitionAlerts = Object.entries(nextTrackedModeSnapshot).flatMap(([key, nextMode]) => {
+  const prevMode = prevTrackedModeSnapshot?.[key];
+  if (!prevMode) return [];
+  const prevNormalized = normalizeTrackedMode(prevMode?.normalizedBetType || prevMode?.betType);
+  const nextNormalized = normalizeTrackedMode(nextMode?.normalizedBetType || nextMode?.betType);
+  if (!prevNormalized || !nextNormalized || prevNormalized === nextNormalized) return [];
+
+  const prevRank = trackedModeRank(prevNormalized);
+  const nextRank = trackedModeRank(nextNormalized);
+  if (!Number.isFinite(prevRank) || !Number.isFinite(nextRank)) return [];
+
+  const direction = nextRank > prevRank ? 'upgrade' : 'downgrade';
+  const severity = direction === 'upgrade'
+    ? (nextRank >= TRACKED_MODE_ORDER.win ? 'CRITICAL' : 'HOT')
+    : (nextRank <= TRACKED_MODE_ORDER.watch ? 'CRITICAL' : 'HOT');
+  const currentTrackedEntry = trackedRunnerMap.get(key) || {};
+  return [{
+    id: `${key}|tracked_${direction}|${prevNormalized}|${nextNormalized}`,
+    ts: new Date().toISOString(),
+    tenantId,
+    scope: tenantId === 'default' ? 'SYSTEM' : 'TENANT',
+    type: `tracked_${direction}`,
+    severity,
+    title: `${severity} Tracked ${direction === 'upgrade' ? 'Upgrade' : 'Downgrade'} — ${nextMode.meeting} R${nextMode.race}`,
+    message: `${nextMode.selection} ${trackedModeLabel(prevMode?.betType || prevNormalized)} → ${trackedModeLabel(nextMode?.betType || nextNormalized)}`,
+    status: 'live',
+    meeting: nextMode.meeting,
+    race: String(nextMode.race),
+    selection: nextMode.selection,
+    trackedRunner: true,
+    trackedPriority: Number.isFinite(Number(currentTrackedEntry?.priorityRank)) ? Math.max(1, 100 - Number(currentTrackedEntry.priorityRank)) : 1,
+    trackedPriorityRank: Number.isFinite(Number(currentTrackedEntry?.priorityRank)) ? Number(currentTrackedEntry.priorityRank) : null,
+    betmanRole: nextNormalized,
+    previousBetType: prevMode?.betType || prevNormalized,
+    nextBetType: nextMode?.betType || nextNormalized,
+    interpretation: direction === 'upgrade'
+      ? 'Tracked runner moved up the conviction ladder'
+      : 'Tracked runner was stepped down on the conviction ladder',
+    action: direction === 'upgrade' ? 'REVIEW_TRACKED' : 'RECHECK_TRACKED',
+    modeTransition: {
+      from: prevNormalized,
+      to: nextNormalized,
+      fromRank: prevRank,
+      toRank: nextRank,
+      ordering: 'watch < odds_runner < ew < win',
+    },
+  }];
+});
+
+const pulseAlertsAll = filterPulseAlerts([...basePulseAlerts, ...conflictAlerts, ...selectionFlipAlerts, ...jumpPulseAlerts, ...trackedTransitionAlerts], pulseConfig).sort((a,b) => {
   const sev = { ACTION: 4, CRITICAL: 3, HOT: 2, WATCH: 1, INFO: 0 };
   if (sev[b.severity] !== sev[a.severity]) return sev[b.severity] - sev[a.severity];
   const trackedDelta = Number(b?.trackedPriority || (b?.trackedRunner ? 1 : 0)) - Number(a?.trackedPriority || (a?.trackedRunner ? 1 : 0));

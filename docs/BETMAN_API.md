@@ -22,14 +22,25 @@ Authentication:
 ### 1) Health
 `GET /api/health`
 
-Response:
+Public runtime health. This endpoint is tied to the latest public smoke artifact (`memory/api-smoke-public.json`). If smoke evidence is missing, stale, or failing, the endpoint returns unhealthy.
+
+Typical healthy response:
 ```json
 {
   "ok": true,
   "service": "betman-api",
-  "ts": "2026-03-04T00:00:00.000Z"
+  "apiStatus": "OK",
+  "smokePresent": true,
+  "smokeFresh": true,
+  "smokeCheckedAt": "2026-04-03T09:55:00.000Z",
+  "updatedAt": "2026-04-03T09:56:00.000Z",
+  "note": "public smoke healthy",
+  "ts": "2026-04-03T09:56:05.000Z"
 }
 ```
+
+Failure mode:
+- Returns HTTP `503` with `ok: false` when public smoke is missing, stale, or failing.
 
 ### 2) Status Snapshot
 `GET /api/status`

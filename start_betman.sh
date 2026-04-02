@@ -58,3 +58,6 @@ fi
 if [[ "$STARTED_ANY" -eq 0 ]]; then
   echo "BETMAN and poller already running"
 fi
+
+echo "Note: start_betman.sh uses nohup + PID files only; it is not a crash-restart supervisor."
+echo "For real crash/login restart on macOS, use: ./scripts/install_launchd_services.sh install"

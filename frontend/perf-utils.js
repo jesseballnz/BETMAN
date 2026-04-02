@@ -1,4 +1,53 @@
 (function (global) {
+  function normalizeLedgerResult(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return 'pending';
+    if (raw === 'won') return 'win';
+    if (raw === 'lost') return 'loss';
+    if (raw === 'placed' || raw === 'place') return 'ew_place';
+    return raw;
+  }
+
+  function summarizeSettledBets(rows = []) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    return safeRows.reduce((acc, row) => {
+      const stake = Number(row?.stake_units);
+      const returned = Number(row?.return_units);
+      const profit = Number(row?.profit_units);
+      acc.bets += 1;
+      if (Number.isFinite(stake)) acc.stake += stake;
+      if (Number.isFinite(returned)) acc.returnUnits += returned;
+      if (Number.isFinite(profit)) acc.profitUnits += profit;
+      const result = normalizeLedgerResult(row?.result);
+      if (result === 'win' || result === 'ew_win' || result === 'ew_place') acc.hits += 1;
+      return acc;
+    }, { bets: 0, stake: 0, returnUnits: 0, profitUnits: 0, hits: 0 });
+  }
+
+  function groupSettledBetsByDate(rows = []) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const groups = new Map();
+    safeRows.forEach((row) => {
+      const date = String(row?.date || '').trim() || 'Unknown';
+      if (!groups.has(date)) groups.set(date, []);
+      groups.get(date).push(row);
+    });
+    return Array.from(groups.entries())
+      .sort((a, b) => String(b[0]).localeCompare(String(a[0])))
+      .map(([date, items]) => {
+        const rowsForDay = [...items].sort((a, b) => {
+          const keyA = `${String(a?.meeting || '')}|${String(a?.race || '').padStart(3, '0')}|${String(a?.selection || '')}`;
+          const keyB = `${String(b?.meeting || '')}|${String(b?.race || '').padStart(3, '0')}|${String(b?.selection || '')}`;
+          return keyA.localeCompare(keyB);
+        });
+        return {
+          date,
+          rows: rowsForDay,
+          summary: summarizeSettledBets(rowsForDay)
+        };
+      });
+  }
+
   function aggregateLastNDays(daily, days = 30) {
     if (!daily || typeof daily !== 'object') return null;
     const keys = Object.keys(daily).sort();
@@ -98,7 +147,10 @@
   }
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { aggregateLastNDays };
+    module.exports = { aggregateLastNDays, normalizeLedgerResult, summarizeSettledBets, groupSettledBetsByDate };
   }
   global.aggregateLastNDays = aggregateLastNDays;
+  global.normalizeLedgerResult = normalizeLedgerResult;
+  global.summarizeSettledBets = summarizeSettledBets;
+  global.groupSettledBetsByDate = groupSettledBetsByDate;
 })(typeof window !== 'undefined' ? window : globalThis);

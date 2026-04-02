@@ -542,6 +542,84 @@ asyncTests.push((async () => {
     { meeting: 'Newcastle', race: '2', selection: 'Other Runner', type: 'win', result: 'win', position: 1, winner: 'Other Runner', settled_at: '2026-03-31T05:05:06.000Z' },
     { meeting: 'Newcastle', race: '2', selection: 'Sarapo', type: 'win', result: 'loss', position: 3, winner: 'Other Runner' },
   ];
+  const racesPayload = {
+    races: [
+      { meeting: 'Newcastle', race_number: '1', race_status: 'Final' },
+      { meeting: 'Newcastle', race_number: '2', race_status: 'Closed' },
+      { meeting: 'Newcastle', race_number: '3', race_status: 'Open' },
+    ],
+  };
+  const handler = makeHandler({
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [{ key: testKey, label: 'Test', active: true }] }], adminApiKeys: [] }),
+    loadJson: (p, f) => {
+      if (p.includes('tracked_bets.json')) return trackedRows;
+      if (p.includes('settled_bets.json')) return settledRows;
+      if (p.includes('races.json')) return racesPayload;
+      return f;
+    }
+  });
+  const req = fakeReq('GET', '/api/v1/tracked-bets', { 'x-api-key': testKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/tracked-bets');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.trackedBets.length, 3);
+  assert.deepStrictEqual(
+    parsed.trackedBets.map((row) => ({ id: row.id, status: row.status, result: row.result, position: row.position ?? null, winner: row.winner ?? null, raceStatus: row.raceStatus ?? null })),
+    [
+      { id: 't1', status: 'settled', result: 'won', position: 1, winner: 'Cavalry', raceStatus: 'Final' },
+      { id: 't2', status: 'settled', result: 'won', position: 3, winner: 'Other Runner', raceStatus: 'Closed' },
+      { id: 't3', status: 'active', result: 'pending', position: null, winner: null, raceStatus: 'Open' },
+    ]
+  );
+  console.log('  ✓ tracked-bets endpoint resolves race-result-first fallbacks');
+})());
+
+// 21c. interesting-runners excludes rows for finished races using races.json status
+asyncTests.push((async () => {
+  const testKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [{ key: testKey, label: 'Test', active: true }] }], adminApiKeys: [] }),
+    loadJson: (p, f) => {
+      if (p.includes('status.json')) {
+        return {
+          interestingRunners: [
+            { meeting: 'Ellerslie', race: '1', runner: 'Gone Runner', reason: 'watchlist long-odds', odds: 15 },
+            { meeting: 'Ellerslie', race: '2', runner: 'Live Runner', reason: 'watchlist long-odds', odds: 9 },
+          ],
+        };
+      }
+      if (p.includes('races.json')) {
+        return {
+          races: [
+            { meeting: 'Ellerslie', race_number: '1', race_status: 'Closed' },
+            { meeting: 'Ellerslie', race_number: '2', race_status: 'Open' },
+          ],
+        };
+      }
+      return f;
+    }
+  });
+  const req = fakeReq('GET', '/api/v1/interesting-runners', { 'x-api-key': testKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/interesting-runners');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.deepStrictEqual(parsed.interestingRunners.map((row) => row.runner), ['Live Runner']);
+  console.log('  ✓ interesting-runners endpoint excludes finished races');
+})());
+
+// 21b. tracked-bets endpoint settles losing tracked win bets from winner-only race results
+asyncTests.push((async () => {
+  const testKey = generateApiKey();
+  const trackedRows = [
+    { id: 't1', username: 'alice', meeting: 'Ashburton', race: '1', selection: 'Golden Lining', betType: 'Win', stake: 5, entryOdds: 6, status: 'active', result: 'pending' },
+  ];
+  const settledRows = [
+    { meeting: 'Ashburton', race: '1', selection: 'Quinto', type: 'odds_runner', result: 'win', position: 1, winner: 'Quinto', settled_at: '2026-04-02T02:00:00.000Z' },
+  ];
   const handler = makeHandler({
     getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [{ key: testKey, label: 'Test', active: true }] }], adminApiKeys: [] }),
     loadJson: (p, f) => {
@@ -556,16 +634,13 @@ asyncTests.push((async () => {
   await handler(req, res, url);
   assert.strictEqual(res.statusCode, 200);
   const parsed = JSON.parse(res.body);
-  assert.strictEqual(parsed.trackedBets.length, 3);
   assert.deepStrictEqual(
-    parsed.trackedBets.map((row) => ({ id: row.id, status: row.status, result: row.result, position: row.position ?? null, winner: row.winner ?? null })),
+    parsed.trackedBets.map((row) => ({ id: row.id, status: row.status, result: row.result, position: row.position ?? null, winner: row.winner ?? null, settledAt: row.settledAt ?? null })),
     [
-      { id: 't1', status: 'settled', result: 'won', position: 1, winner: 'Cavalry' },
-      { id: 't2', status: 'settled', result: 'won', position: 3, winner: 'Other Runner' },
-      { id: 't3', status: 'active', result: 'pending', position: null, winner: null },
+      { id: 't1', status: 'settled', result: 'lost', position: null, winner: 'Quinto', settledAt: '2026-04-02T02:00:00.000Z' },
     ]
   );
-  console.log('  ✓ tracked-bets endpoint resolves race-result-first fallbacks');
+  console.log('  ✓ tracked-bets endpoint settles winner-only losing runners');
 })());
 
 // 22. tracked-bets endpoint uses tenant-owned files for private tenants and ignores shared default fixtures

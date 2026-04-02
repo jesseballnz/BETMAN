@@ -134,6 +134,27 @@ function buildTrackedSettlementSource(trackedBet, settledRows, raceResultIndex =
   const trackedSelection = tracked.selection;
   const position = raceResult.positions.get(trackedSelection) ?? (winnerNorm === trackedSelection ? 1 : null);
 
+  if (trackedType === 'win') {
+    if (!winnerNorm) {
+      return familyMatch ? { kind: 'settled-row', row: familyMatch, raceResult } : null;
+    }
+    const result = winnerNorm === trackedSelection ? 'win' : 'loss';
+    return {
+      kind: 'race-result',
+      row: {
+        meeting: trackedBet.meeting,
+        race: trackedBet.race,
+        selection: trackedBet.selection,
+        type: trackedType,
+        result,
+        position,
+        winner: raceResult.winner || trackedBet.selection,
+        settled_at: raceResult.settledAt || null,
+      },
+      raceResult,
+    };
+  }
+
   if (winnerNorm !== trackedSelection && position == null) {
     return familyMatch ? { kind: 'settled-row', row: familyMatch, raceResult } : null;
   }
@@ -344,6 +365,40 @@ function buildVisibleSettledRows(principal = {}, trackedRows = [], settledRows =
     .sort((a, b) => String(b.settled_at || b.date || '').localeCompare(String(a.settled_at || a.date || '')));
 }
 
+function buildTrackedHistoryRows(principal = {}, trackedRows = [], settledRows = [], raceResultIndex = null) {
+  const visibleSettledRows = buildVisibleSettledRows(principal, trackedRows, settledRows, raceResultIndex);
+  const trackedKeys = new Set((Array.isArray(trackedRows) ? trackedRows : []).map((row) => buildSettledBetKey({
+    meeting: row.meeting,
+    race: row.race,
+    selection: row.selection,
+    type: row.betType || row.type,
+  })));
+
+  return visibleSettledRows
+    .filter((row) => !trackedKeys.has(buildSettledBetKey(row)))
+    .map((row) => ({
+      id: `history:${buildSettledBetKey(row)}`,
+      username: principal?.username || null,
+      meeting: row.meeting || null,
+      race: String(row.race || '').replace(/^R/i, ''),
+      selection: row.selection || null,
+      betType: normalizeBetType(row.type || row.betType),
+      odds: toFiniteNumber(row.odds),
+      entryOdds: toFiniteNumber(row.odds),
+      stake: toFiniteNumber(row.stake_units),
+      trackedAt: row.tracked_at || row.settled_at || row.date || null,
+      status: 'settled',
+      result: canonicalTrackedResult(row.result),
+      settledAt: row.settled_at || row.date || null,
+      payout: toFiniteNumber(row.return_units),
+      profit: toFiniteNumber(row.profit_units),
+      roi: toFiniteNumber(row.roi),
+      position: row.position ?? null,
+      winner: row.winner ?? null,
+      source: row.source || 'history',
+    }));
+}
+
 module.exports = {
   normalizeText,
   normalizeMeeting,
@@ -362,4 +417,5 @@ module.exports = {
   resolveTrackedBets,
   buildTrackedSettledBetRow,
   buildVisibleSettledRows,
+  buildTrackedHistoryRows,
 };
