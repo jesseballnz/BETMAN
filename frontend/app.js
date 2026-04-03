@@ -724,7 +724,7 @@ function refreshTabAccess(){
     if (p === 'pulse') {
       btn.style.display = pulseEligible ? '' : 'none';
       btn.disabled = !pulseEligible || !unlocked;
-      btn.title = !pulseEligible ? 'Pulse is restricted to the BETMAN allowlist' : (unlocked ? '' : 'Select a meeting in Meeting Workspace first');
+      btn.title = !pulseEligible ? 'Sign in to use BETMAN Pulse.' : (unlocked ? '' : 'Select a meeting in Meeting Workspace first');
       return;
     }
     if (pagesAllowedWithoutMeeting.has(p)) {
@@ -14097,7 +14097,7 @@ function updateApiKeyPanel(){
   panel.classList.toggle('hidden', !apiKeyEligible);
   if (!apiKeyEligible) {
     const status = $('apiKeyStatus');
-    if (status) status.textContent = pulseEligible ? 'API key generation is not enabled for this account.' : 'Pulse/API access is only available to the BETMAN allowlist.';
+    if (status) status.textContent = 'Sign in to generate an API key.';
     clearApiKeySecretDisplay();
     return;
   }
@@ -14236,7 +14236,7 @@ async function renderAuthPulseSettingsPanel(){
   const root = $('authPulseSettingsBody');
   if (!root) return;
   if (!pulseEligible) {
-    root.innerHTML = `<div class='row'><div style='grid-column:1/-1'><b>Pulse</b> is hidden for this account. Alerts remains available as the broad market monitor; premium Pulse stays restricted to the BETMAN allowlist.</div></div>`;
+    root.innerHTML = `<div class='row'><div style='grid-column:1/-1'><b>Pulse</b> is available after sign-in. Alerts remains available as the broad market monitor; sign in again if your session has expired.</div></div>`;
     return;
   }
   root.innerHTML = `<div class='row'><div style='grid-column:1/-1'>Loading Pulse settings…</div></div>`;
@@ -14289,18 +14289,16 @@ async function openAuthModal(){
   await renderAuthPulseSettingsPanel();
 
   const adminBlock = $('adminAuthBlock');
-  if (adminBlock) adminBlock.style.display = '';
+  if (adminBlock) adminBlock.style.display = isAdmin ? '' : 'none';
   const adminNotice = $('adminPermissionNotice');
-  if (adminNotice) adminNotice.style.display = isAdmin ? 'none' : '';
+  if (adminNotice) adminNotice.style.display = 'none';
 
   document.querySelectorAll('.admin-tab-btn').forEach(btn => {
-    const tab = btn.dataset.adminTab;
-    const allowed = isAdmin || tab === 'admin';
-    btn.disabled = !allowed;
-    btn.classList.toggle('disabled', !allowed);
+    btn.disabled = !isAdmin;
+    btn.classList.toggle('disabled', !isAdmin);
   });
 
-  setAdminTab(isAdmin ? 'create' : 'admin');
+  if (isAdmin) setAdminTab('create');
 
   if (isAdmin) {
     syncCreateUserPlanFields();
@@ -14329,7 +14327,7 @@ async function changeMyPassword(){
 
 async function generateApiKey(){
   if (!apiKeyEligible) {
-    return alert(pulseEligible ? 'API key generation is not enabled for this account.' : 'Pulse/API access is only available to the BETMAN allowlist.');
+    return alert('Sign in to generate an API key.');
   }
   if (!confirm('Generate a new API key? This will revoke any previous key.')) return;
   try {

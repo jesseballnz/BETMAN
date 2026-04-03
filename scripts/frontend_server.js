@@ -996,15 +996,13 @@ function hasPulseAccess(principal){
 }
 
 function hasApiKeyAccess(principal){
-  if (!principal) return false;
-  if (principal.isAdmin) return true;
-  return PULSE_ALLOWLIST.has(normalizeUsername(principal.username || ''));
+  return !!principal;
 }
 
 function requirePulseAccess(req, res){
   const principal = req.authPrincipal;
   if (hasPulseAccess(principal)) return true;
-  return okJson(res, { ok: false, error: 'pulse_not_allowed' }, 403, req), false;
+  return okJson(res, { ok: false, error: 'pulse_sign_in_required', message: 'Sign in to access Pulse.' }, 403, req), false;
 }
 
 function isValidEmail(v){

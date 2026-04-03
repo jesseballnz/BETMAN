@@ -1177,7 +1177,7 @@ function createApiHandler(deps) {
     /* ── GET /api/v1/alerts-feed ───────────────────────────────────── */
     if (req.method === 'GET' && route === '/alerts-feed') {
       if (!hasPulseAccess(principal)) {
-        return apiError(req, res, 403, 'pulse_not_allowed', 'Pulse access is restricted for this account.', rateInfo), true;
+        return apiError(req, res, 403, 'pulse_sign_in_required', 'Sign in to access Pulse.', rateInfo), true;
       }
       const tenantId = effectiveTenantId(principal);
       const dataPath = resolveTenantOwnedDataPath(tenantId, 'alerts_feed.json');
@@ -1194,7 +1194,7 @@ function createApiHandler(deps) {
     /* ── GET /api/v1/alerts-history ────────────────────────────────── */
     if (req.method === 'GET' && route === '/alerts-history') {
       if (!hasPulseAccess(principal)) {
-        return apiError(req, res, 403, 'pulse_not_allowed', 'Pulse access is restricted for this account.', rateInfo), true;
+        return apiError(req, res, 403, 'pulse_sign_in_required', 'Sign in to access Pulse.', rateInfo), true;
       }
       const tenantId = effectiveTenantId(principal);
       const dataPath = resolveTenantOwnedDataPath(tenantId, 'alerts_history.json');
@@ -1210,7 +1210,7 @@ function createApiHandler(deps) {
     /* ── GET/PUT/PATCH /api/v1/pulse-config ───────────────────────── */
     if (route === '/pulse-config') {
       if (!hasPulseAccess(principal)) {
-        return apiError(req, res, 403, 'pulse_not_allowed', 'Pulse access is restricted for this account.', rateInfo), true;
+        return apiError(req, res, 403, 'pulse_sign_in_required', 'Sign in to access Pulse.', rateInfo), true;
       }
       const tenantId = effectiveTenantId(principal);
 
