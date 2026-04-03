@@ -44,6 +44,8 @@ vm.createContext(sandbox);
 vm.runInContext(
   [
     extractConst('FINISHED_RACE_STATUSES'),
+    extractConst('STARTED_RACE_STATUSES'),
+    extractConst('TRACKED_RACE_STALE_GRACE_MS'),
     extractFunction('normalizeMeetingName'),
     extractFunction('normalizeRaceValue'),
     extractFunction('normalizeRunnerName'),
@@ -52,6 +54,7 @@ vm.runInContext(
     extractFunction('resolveTrackedCurrentOdds'),
     extractFunction('resolveTrackedRaceJumpMeta'),
     extractFunction('resolveTrackedRaceStatus'),
+    extractFunction('trackedRaceHasStarted'),
     extractFunction('enrichTrackedBetWithCurrentOdds'),
   ].join('\n\n'),
   sandbox
@@ -226,5 +229,33 @@ assert.deepStrictEqual(
     raceStatus: 'FINAL',
   }
 );
+
+const staleStarted = JSON.parse(JSON.stringify(sandbox.enrichTrackedBetWithCurrentOdds(
+  {
+    meeting: 'Newcastle',
+    race: 'R1',
+    selection: 'Cavalry',
+    status: 'active',
+    currentOdds: 5.5,
+    currentOddsSource: 'cached-live',
+    entryOdds: 4.4,
+    raceStartTime: '2000-01-01T00:00:00.000Z',
+  },
+  {
+    raceMap: new Map(),
+    runnerMap: new Map(),
+    moverMap: new Map(),
+    suggestedMap: new Map(),
+  },
+)));
+assert.strictEqual(staleStarted.status, 'settled');
+assert.strictEqual(staleStarted.currentOdds, 5.5);
+assert.strictEqual(staleStarted.currentOddsSource, 'cached-live');
+assert.strictEqual(staleStarted.entryOdds, 4.4);
+assert.strictEqual(staleStarted.odds, 4.4);
+assert.strictEqual(staleStarted.raceStartTime, '2000-01-01T00:00:00.000Z');
+assert.strictEqual(staleStarted.jumpsIn, 'Jumped');
+assert(staleStarted.minsToJump < 0);
+assert.strictEqual(staleStarted.raceStatus, null);
 
 console.log('frontend_tracked_bets.test.js: ok');

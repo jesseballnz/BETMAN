@@ -15,6 +15,7 @@ const {
   resolveTrackedBets,
   buildTrackedSettledBetRow,
   buildVisibleSettledRows,
+  buildTrackedHistoryRows,
 } = require('../scripts/tracked_bet_matching');
 
 assert.strictEqual(normalizeSelection('7. Cavalry'), 'cavalry');
@@ -455,6 +456,85 @@ assert.deepStrictEqual(
     ]
   ).map((row) => row.selection),
   ['Global Row']
+);
+
+assert.deepStrictEqual(
+  buildVisibleSettledRows(
+    { username: 'user@example.com', isAdmin: false },
+    [
+      {
+        id: 'tracked-dup-1',
+        username: 'user@example.com',
+        meeting: 'Auckland',
+        race: '2',
+        selection: 'Duplicate Settlement',
+        betType: 'Win',
+        entryOdds: 2.4,
+        stake: 5,
+        trackedAt: '2026-03-31T03:00:00.000Z',
+      },
+    ],
+    [
+      {
+        meeting: 'Auckland',
+        race: '2',
+        selection: 'Duplicate Settlement',
+        type: 'win',
+        result: 'win',
+        settled_at: '2026-03-31T05:00:00.000Z',
+        odds: 2.4,
+        stake_units: 1,
+        return_units: 2.4,
+        profit_units: 1.4,
+        roi: 1.4,
+        tracked_at: '2026-03-31T03:00:00.000Z',
+        source: 'tracked',
+        username: 'user@example.com',
+      },
+    ]
+  ).map((row) => ({ selection: row.selection, return_units: row.return_units, stake_units: row.stake_units })),
+  [{ selection: 'Duplicate Settlement', return_units: 12, stake_units: 5 }],
+  'tracked-derived settled rows should dedupe against equivalent direct settled ledger rows'
+);
+
+assert.deepStrictEqual(
+  buildTrackedHistoryRows(
+    { username: 'user@example.com', isAdmin: false },
+    [],
+    [
+      {
+        meeting: 'Auckland',
+        race: '2',
+        selection: 'Generic Ledger Row',
+        type: 'win',
+        result: 'loss',
+        settled_at: '2026-03-31T05:00:00.000Z',
+        odds: 2,
+        stake_units: 1,
+        return_units: 0,
+        profit_units: -1,
+        roi: -1,
+        username: 'user@example.com',
+      },
+      {
+        meeting: 'Auckland',
+        race: '3',
+        selection: 'Recovered Tracked Row',
+        type: 'win',
+        result: 'win',
+        settled_at: '2026-03-31T06:00:00.000Z',
+        tracked_at: '2026-03-31T04:00:00.000Z',
+        source: 'tracked',
+        odds: 3,
+        stake_units: 1,
+        return_units: 3,
+        profit_units: 2,
+        roi: 2,
+        username: 'user@example.com',
+      },
+    ]
+  ).map((row) => row.selection),
+  ['Recovered Tracked Row']
 );
 
 console.log('tracked_bet_matching.test.js: ok');

@@ -473,6 +473,14 @@ function buildTrackedIdentityKey(row = {}) {
   ].join('|');
 }
 
+function filterTrackedRowsForPrincipal(rows = [], principal = null) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const tenantId = String(principal?.effectiveTenantId || principal?.tenantId || 'default').trim() || 'default';
+  if (principal?.isAdmin || tenantId !== 'default') return safeRows;
+  const username = normalizeTrackedRunnerName(principal?.username || '');
+  return safeRows.filter((row) => normalizeTrackedRunnerName(row?.username || '') === username);
+}
+
 function findTrackedDuplicate(rows = [], candidate = {}) {
   const targetKey = buildTrackedIdentityKey(candidate);
   if (!targetKey || targetKey.endsWith('|')) return null;
@@ -990,9 +998,7 @@ function createApiHandler(deps) {
       const raceResultIndex = buildRaceResultIndex(settledRows);
       const normalize = (s) => normalizeTrackedRunnerName(s);
       const privateTenantScope = isPrivateTenantPrincipal(principal);
-      const visibleTracked = privateTenantScope
-        ? trackedRows
-        : trackedRows.filter((row) => normalize(row.username) === normalize(principal.username));
+      const visibleTracked = filterTrackedRowsForPrincipal(trackedRows, principal);
       const resolved = visibleTracked.map((row) => {
         const settled = resolveTrackedBet(row, settledRows, raceResultIndex);
         const raceKey = `${normalizeMeetingName(settled?.meeting)}|${normalizeRaceValue(settled?.race)}`;
@@ -1053,7 +1059,7 @@ function createApiHandler(deps) {
             ...normalizeTrackedMultiPayload(payload),
           };
           if (!next.meeting || !next.race || !next.selection) return apiError(req, res, 400, 'invalid_payload', 'meeting, race, and selection are required.', rateInfo);
-          const duplicate = findTrackedDuplicate(trackedRows, next);
+          const duplicate = findTrackedDuplicate(filterTrackedRowsForPrincipal(trackedRows, principal), next);
           if (duplicate) {
             return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: resolveTrackedBet(duplicate, settledRows, raceResultIndex), duplicate: true }, 200, rateInfo);
           }

@@ -15,6 +15,8 @@ const rows = buildTrackedHistoryRows(principal, [], [
   {
     date: '2026-03-26',
     settled_at: '2026-03-26T02:00:00.000Z',
+    tracked_at: '2026-03-26T01:00:00.000Z',
+    source: 'tracked',
     meeting: 'Cairns',
     race: '1',
     selection: 'Kammerzell House',
@@ -64,6 +66,8 @@ const deduped = buildTrackedHistoryRows(principal, [
   {
     date: '2026-03-26',
     settled_at: '2026-03-26T02:00:00.000Z',
+    tracked_at: '2026-03-26T01:00:00.000Z',
+    source: 'tracked',
     meeting: 'Cairns',
     race: '1',
     selection: 'Kammerzell House',

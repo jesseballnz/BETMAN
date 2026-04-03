@@ -6,6 +6,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const status = JSON.parse(fs.readFileSync(path.join(ROOT, 'frontend', 'data', 'status.json'), 'utf8'));
 const races = JSON.parse(fs.readFileSync(path.join(ROOT, 'frontend', 'data', 'races.json'), 'utf8'));
+const appJs = fs.readFileSync(path.join(ROOT, 'frontend', 'app.js'), 'utf8');
 
 const raceRows = Array.isArray(races.races) ? races.races : [];
 
@@ -73,5 +74,10 @@ if (nzMeetings.length) {
   const c = inferRowCountry(r);
   assert(c, `interesting row missing country and could not infer: ${r.meeting} R${r.race} ${r.runner}`);
 });
+
+// 4) Frontend meeting scoping should be row-aware so country inference survives duplicate meeting names.
+assert(appJs.includes('function inferRowCountry(row){'), 'frontend missing inferRowCountry helper');
+assert(appJs.includes('const rowCountry = normalizeCountryKey(row?.country) || inferRowCountry(row);'), 'meeting matcher should infer row country before filtering');
+assert(appJs.includes('filter(r => meetingMatches(r))'), 'frontend filters should pass full rows into meetingMatches for country-aware scoping');
 
 console.log('select_filters tests passed');

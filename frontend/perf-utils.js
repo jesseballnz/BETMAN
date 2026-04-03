@@ -8,9 +8,15 @@
     return raw;
   }
 
+  function countsAsSettledBet(row) {
+    const type = String(row?.type || row?.betType || '').trim().toLowerCase();
+    return type !== 'watch';
+  }
+
   function summarizeSettledBets(rows = []) {
     const safeRows = Array.isArray(rows) ? rows : [];
     return safeRows.reduce((acc, row) => {
+      if (!countsAsSettledBet(row)) return acc;
       const stake = Number(row?.stake_units);
       const returned = Number(row?.return_units);
       const profit = Number(row?.profit_units);
@@ -28,6 +34,7 @@
     const safeRows = Array.isArray(rows) ? rows : [];
     const groups = new Map();
     safeRows.forEach((row) => {
+      if (!countsAsSettledBet(row)) return;
       const date = String(row?.date || '').trim() || 'Unknown';
       if (!groups.has(date)) groups.set(date, []);
       groups.get(date).push(row);
@@ -147,10 +154,11 @@
   }
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { aggregateLastNDays, normalizeLedgerResult, summarizeSettledBets, groupSettledBetsByDate };
+    module.exports = { aggregateLastNDays, normalizeLedgerResult, countsAsSettledBet, summarizeSettledBets, groupSettledBetsByDate };
   }
   global.aggregateLastNDays = aggregateLastNDays;
   global.normalizeLedgerResult = normalizeLedgerResult;
+  global.countsAsSettledBet = countsAsSettledBet;
   global.summarizeSettledBets = summarizeSettledBets;
   global.groupSettledBetsByDate = groupSettledBetsByDate;
 })(typeof window !== 'undefined' ? window : globalThis);

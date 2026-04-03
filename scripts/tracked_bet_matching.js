@@ -347,22 +347,31 @@ function buildVisibleSettledRows(principal = {}, trackedRows = [], settledRows =
     return privateTenantScope;
   });
 
-  const seen = new Set();
+  const seenIds = new Set();
+  const seenComparable = new Set();
   return [...trackedSettledRows, ...directSettledRows]
     .filter((row) => {
-      const key = row.id
-        ? `id:${row.id}`
-        : buildSettledBetKey({
-            meeting: row.meeting,
-            race: row.race,
-            selection: row.selection,
-            type: row.type || row.betType,
-          });
-      if (seen.has(key)) return false;
-      seen.add(key);
+      const idKey = row.id ? `id:${row.id}` : null;
+      const comparableKey = buildSettledBetKey({
+        meeting: row.meeting,
+        race: row.race,
+        selection: row.selection,
+        type: row.type || row.betType,
+      });
+      if (idKey && seenIds.has(idKey)) return false;
+      if (comparableKey && seenComparable.has(comparableKey)) return false;
+      if (idKey) seenIds.add(idKey);
+      if (comparableKey) seenComparable.add(comparableKey);
       return true;
     })
     .sort((a, b) => String(b.settled_at || b.date || '').localeCompare(String(a.settled_at || a.date || '')));
+}
+
+function hasTrackedHistoryLineage(row = {}) {
+  if (!row || typeof row !== 'object') return false;
+  if (String(row.source || '').trim().toLowerCase() === 'tracked') return true;
+  if (row.tracked_at || row.trackedAt) return true;
+  return false;
 }
 
 function buildTrackedHistoryRows(principal = {}, trackedRows = [], settledRows = [], raceResultIndex = null) {
@@ -375,6 +384,7 @@ function buildTrackedHistoryRows(principal = {}, trackedRows = [], settledRows =
   })));
 
   return visibleSettledRows
+    .filter((row) => hasTrackedHistoryLineage(row))
     .filter((row) => !trackedKeys.has(buildSettledBetKey(row)))
     .map((row) => ({
       id: `history:${buildSettledBetKey(row)}`,
@@ -386,7 +396,7 @@ function buildTrackedHistoryRows(principal = {}, trackedRows = [], settledRows =
       odds: toFiniteNumber(row.odds),
       entryOdds: toFiniteNumber(row.odds),
       stake: toFiniteNumber(row.stake_units),
-      trackedAt: row.tracked_at || row.settled_at || row.date || null,
+      trackedAt: row.tracked_at || row.trackedAt || row.settled_at || row.date || null,
       status: 'settled',
       result: canonicalTrackedResult(row.result),
       settledAt: row.settled_at || row.date || null,
@@ -417,5 +427,6 @@ module.exports = {
   resolveTrackedBets,
   buildTrackedSettledBetRow,
   buildVisibleSettledRows,
+  hasTrackedHistoryLineage,
   buildTrackedHistoryRows,
 };

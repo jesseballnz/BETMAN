@@ -1732,12 +1732,26 @@ function trackedSummaryMetrics(rows = []){
   filtered.forEach((row) => {
     const meeting = String(row?.meeting || '').trim();
     const race = String(row?.race || '').trim();
-    const status = String(row?.status || '').toLowerCase();
     if (meeting) meetings.add(meeting.toLowerCase());
     if (meeting || race) races.add(`${meeting.toLowerCase()}|${race.toLowerCase()}`);
-    if (status !== 'settled') activeCount += 1;
+    if (isTrackedRowActive(row)) activeCount += 1;
   });
   return { total: filtered.length, meetings: meetings.size, races: races.size, active: activeCount };
+}
+
+function isTrackedRaceFinishedForDisplay(row){
+  const status = String(row?.status || '').toLowerCase();
+  const raceStatus = String(row?.raceStatus || '').trim().toLowerCase();
+  if (status === 'settled') return true;
+  if (['final','closed','finalized','abandoned','resulted','settled','complete','completed','jumped','running','inrunning','in-running','live'].includes(raceStatus)) return true;
+  const minsToJump = Number(row?.minsToJump);
+  if (Number.isFinite(minsToJump) && minsToJump < 0) return true;
+  const raceStartMs = Date.parse(String(row?.raceStartTime || ''));
+  return Number.isFinite(raceStartMs) && raceStartMs < (Date.now() - (5 * 60 * 1000));
+}
+
+function isTrackedRowActive(row){
+  return !isTrackedRaceFinishedForDisplay(row);
 }
 
 function renderTrackedSummary(rows = []){
@@ -2191,10 +2205,10 @@ async function renderTrackedShell(){
   const rows = await loadTrackedBetsCache(true);
   const filtered = rows
     .filter(r => {
-      const status = String(r.status || '').toLowerCase();
-      if (trackedTab === 'active') return status !== 'settled';
-      if (trackedTab === 'settled') return status === 'settled' && trackedSettledBucket(r) === 'settled';
-      if (trackedTab === 'history') return status === 'settled' && trackedSettledBucket(r) === 'history';
+      const displaySettled = !isTrackedRowActive(r);
+      if (trackedTab === 'active') return !displaySettled;
+      if (trackedTab === 'settled') return displaySettled && trackedSettledBucket(r) === 'settled';
+      if (trackedTab === 'history') return displaySettled && trackedSettledBucket(r) === 'history';
       return false;
     })
     .sort((a, b) => {
@@ -3455,17 +3469,15 @@ async function loadAllRacesUnfiltered(){
   }
 }
 
-async function findRaceForButton(meeting, raceNum){
-  const normMeeting = String(meeting || '').trim().toLowerCase();
-  const normRace = String(raceNum || '').replace(/^R/i,'').trim();
-
+async function findRaceForButton(meeting, raceNum, country = ''){
+  const target = { meeting, raceNumber: raceNum, country };
   if (!racesCache.length) await loadRaces();
-  let race = racesCache.find(r => String(r.meeting || '').trim().toLowerCase() === normMeeting && String(r.race_number) === normRace);
+  let race = racesCache.find(r => raceIdentityMatches(r, target));
   if (race) return race;
 
   // fallback: the card may be from another country than current filter
   const all = await loadAllRacesUnfiltered();
-  race = all.find(r => String(r.meeting || '').trim().toLowerCase() === normMeeting && String(r.race_number) === normRace);
+  race = all.find(r => raceIdentityMatches(r, target));
   return race || null;
 }
 
@@ -3566,7 +3578,7 @@ function renderRaces(rows){
 
   const cutoff = Date.now() - 5 * 60 * 1000;
   const scoped = (rows || [])
-    .filter(r => meetingMatches(r.meeting))
+    .filter(r => meetingMatches(r))
     .filter(r => raceIsUpcoming(r, cutoff))
     .slice()
     .sort((a,b) => parseTimeValue(a.advertised_start || a.start_time_nz) - parseTimeValue(b.advertised_start || b.start_time_nz));
@@ -3695,17 +3707,17 @@ function renderMarketMovers(rows){
 
   let baseRows = rows || [];
   let filteredByWhy = filterMoversByWhy(baseRows);
-  let meetingRawRows = baseRows.filter(r => meetingMatches(r.meeting));
+  let meetingRawRows = baseRows.filter(r => meetingMatches(r));
   if (!meetingRawRows.length && selectedMeeting && selectedMeeting !== 'ALL') {
     const snapshotMovers = buildSnapshotMovers(selectedMeeting);
     const fallback = snapshotMovers.length ? snapshotMovers : buildFallbackMovers(selectedMeeting);
     if (fallback.length) {
       baseRows = fallback;
       filteredByWhy = filterMoversByWhy(baseRows);
-      meetingRawRows = baseRows.filter(r => meetingMatches(r.meeting));
+      meetingRawRows = baseRows.filter(r => meetingMatches(r));
     }
   }
-  const filteredMeetingRows = filteredByWhy.filter(r => meetingMatches(r.meeting));
+  const filteredMeetingRows = filteredByWhy.filter(r => meetingMatches(r));
   const upcomingRaw = meetingRawRows.filter(r => {
     const mtj = Number(r.minsToJump);
     return !Number.isFinite(mtj) || mtj >= -5;
@@ -4025,7 +4037,7 @@ function renderWorkspaceSignalPanels(){
   const interestingTable = $('workspaceInterestingTable');
   if (!moversTable && !interestingTable) return;
   if (moversTable) {
-    const scopedMovers = (latestMarketMovers || []).filter(r => meetingMatches(r.meeting)).filter(selectionIsUpcoming).slice(0, 6);
+    const scopedMovers = (latestMarketMovers || []).filter(r => meetingMatches(r)).filter(selectionIsUpcoming).slice(0, 6);
     moversTable.innerHTML = '';
     const header = document.createElement('div');
     header.className = 'row header';
@@ -4064,7 +4076,7 @@ function renderWorkspaceSignalPanels(){
     }
   }
   if (interestingTable) {
-    const scopedInteresting = filterInterestingByWhy(latestInterestingRows || []).filter(r => meetingMatches(r.meeting)).filter(selectionIsUpcoming).slice(0, 6);
+    const scopedInteresting = filterInterestingByWhy(latestInterestingRows || []).filter(r => meetingMatches(r)).filter(selectionIsUpcoming).slice(0, 6);
     interestingTable.innerHTML = '';
     const header = document.createElement('div');
     header.className = 'row header';
@@ -4156,7 +4168,7 @@ function renderInteresting(rows){
 
   const filtered = filterInterestingByWhy(rows || []);
   let scoped = filtered
-    .filter(r => meetingMatches(r.meeting))
+    .filter(r => meetingMatches(r))
     .filter(selectionIsUpcoming);
 
   if (!scoped.length && selectedMeeting && selectedMeeting !== 'ALL') {
@@ -4598,14 +4610,43 @@ function signalHint(reason, type, selection='', overrideScore=null){
   return `<span style='display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid ${color};color:${color};font-size:11px;font-weight:700'>Signal: ${score}</span>`;
 }
 
-function meetingMatches(meeting){
-  if (selectedMeeting === 'ALL') return true;
-  return String(meeting || '').trim().toLowerCase() === String(selectedMeeting || '').trim().toLowerCase();
+function inferRowCountry(row){
+  const direct = normalizeCountryKey(row?.country);
+  if (direct) return direct;
+  const meetingNorm = normalizeMeetingKey(row?.meeting);
+  if (!meetingNorm) return '';
+  const raceNorm = normalizeRaceNumberValue(row?.race || row?.race_number);
+  const sources = [racesCache, lastRacesSnapshot];
+  if (raceNorm) {
+    for (const source of sources) {
+      const hit = (source || []).find(r => normalizeMeetingKey(r?.meeting) === meetingNorm && normalizeRaceNumberValue(r?.race_number || r?.race) === raceNorm);
+      const country = normalizeCountryKey(hit?.country);
+      if (country) return country;
+    }
+  }
+  for (const source of sources) {
+    const countries = Array.from(new Set((source || [])
+      .filter(r => normalizeMeetingKey(r?.meeting) === meetingNorm)
+      .map(r => normalizeCountryKey(r?.country))
+      .filter(Boolean)));
+    if (countries.length === 1) return countries[0];
+  }
+  return '';
+}
+
+function meetingMatches(input, raceNumber = '', country = ''){
+  const row = (input && typeof input === 'object')
+    ? input
+    : { meeting: input, race: raceNumber, country };
+  if (selectedMeeting !== 'ALL' && normalizeMeetingKey(row?.meeting) !== normalizeMeetingKey(selectedMeeting)) return false;
+  if (selectedCountry === 'ALL') return true;
+  const rowCountry = normalizeCountryKey(row?.country) || inferRowCountry(row);
+  return !rowCountry || rowCountry === normalizeCountryKey(selectedCountry);
 }
 
 function baseSuggestedRows(rows){
   const all = (rows || [])
-    .filter(r => meetingMatches(r.meeting))
+    .filter(r => meetingMatches(r))
     .filter(selectionIsUpcoming)
     .slice();
   const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
@@ -4659,7 +4700,7 @@ function renderSuggested(rows){
   if (!mainRows.length && selectedMeeting && selectedMeeting !== 'ALL') {
     const allowedTypes = new Set(['win','ew','top2','top3','top4','trifecta','multi']);
     mainRows = orderRowsAroundSelectedRace((latestSuggestedBets || suggestedSource)
-      .filter(r => meetingMatches(r.meeting))
+      .filter(r => meetingMatches(r))
       .filter(r => allowedTypes.has(String(r.type || 'win').toLowerCase())));
   }
   if (!mainRows.length && (!selectedMeeting || selectedMeeting === 'ALL')) {
@@ -4811,13 +4852,13 @@ function renderMultis(rows){
   const multiSource = (rows && rows.length) ? rows : (latestSuggestedBets || []);
   let multiRows = (multiSource || [])
     .filter(r => isMultiType(r.type))
-    .filter(r => meetingMatches(r.meeting))
+    .filter(r => meetingMatches(r))
     .slice()
     .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
 
   if (!multiRows.length) {
     const winRows = (latestSuggestedBets || [])
-      .filter(r => String(r.type || '').toLowerCase() === 'win' && meetingMatches(r.meeting))
+      .filter(r => String(r.type || '').toLowerCase() === 'win' && meetingMatches(r))
       .slice()
       .sort((a,b) => scoreStrategyCandidate(b) - scoreStrategyCandidate(a))
       .slice(0, 3);
@@ -5060,10 +5101,10 @@ function buildStrategyPlanCandidates(type){
   const meeting = selectedMeeting || 'ALL';
   const suggested = (latestSuggestedBets || [])
     .filter(selectionIsUpcoming)
-    .filter(r => meeting === 'ALL' || meetingMatches(r.meeting));
+    .filter(r => meeting === 'ALL' || meetingMatches(r));
   const interesting = (latestInterestingRows || [])
     .filter(selectionIsUpcoming)
-    .filter(r => meeting === 'ALL' || meetingMatches(r.meeting));
+    .filter(r => meeting === 'ALL' || meetingMatches(r));
 
   if (type === 'ew') {
     const ewRows = suggested.filter(r => String(r.type || '').toLowerCase() === 'ew');
@@ -5131,7 +5172,7 @@ function buildStrategyPlanCandidates(type){
     if (exoticRows.length) return exoticRows;
     const interestingExotics = (latestInterestingRows || [])
       .filter(selectionIsUpcoming)
-      .filter(r => meeting === 'ALL' || meetingMatches(r.meeting))
+      .filter(r => meeting === 'ALL' || meetingMatches(r))
       .filter(r => {
         const text = String(r.reason || r.ai_commentary || '').toLowerCase();
         return /top\s*2|top\s*3|trifecta|exotic|multi/.test(text);
@@ -5853,13 +5894,9 @@ function formatRaceCountdown(target){
 }
 
 
-function lookupRace(meeting, raceNumber){
-  const meetingNorm = String(meeting || '').trim().toLowerCase();
-  const raceNorm = String(raceNumber || '').replace(/^R/i,'').trim();
-  const finder = collection => (collection || []).find(r =>
-    String(r.meeting || '').trim().toLowerCase() === meetingNorm &&
-    String(r.race_number || '').trim() === raceNorm
-  ) || null;
+function lookupRace(meeting, raceNumber, country = ''){
+  const target = { meeting, raceNumber, country };
+  const finder = collection => (collection || []).find(r => raceIdentityMatches(r, target)) || null;
   return finder(racesCache) || finder(lastRacesSnapshot) || null;
 }
 
@@ -6098,7 +6135,7 @@ function renderNextPlanned(rows){
 
   let scoped = (latestUpcomingBets || [])
     .filter(selectionIsUpcoming)
-    .filter(r => !selectedMeeting || selectedMeeting === 'ALL' || meetingMatches(r.meeting))
+    .filter(r => !selectedMeeting || selectedMeeting === 'ALL' || meetingMatches(r))
     .slice()
     .sort((a,b) => jumpsInToMinutes(a.eta || a.jumpsIn || a.sortTime) - jumpsInToMinutes(b.eta || b.jumpsIn || b.sortTime));
 
@@ -6108,7 +6145,7 @@ function renderNextPlanned(rows){
       .filter(r => actionableTypes.has(String(r.type || 'win').toLowerCase()))
       .filter(r => actionableTiers.has(String(r.capitalTier || '').toLowerCase()))
       .filter(r => jumpsInToMinutes(r.jumpsIn) <= plannedWindow)
-      .filter(r => !selectedMeeting || selectedMeeting === 'ALL' || meetingMatches(r.meeting))
+      .filter(r => !selectedMeeting || selectedMeeting === 'ALL' || meetingMatches(r))
       .slice()
       .sort((a,b) => {
         const at = String(a.capitalTier || '').toLowerCase() === 'bet_now' ? 0 : 1;
@@ -6123,7 +6160,7 @@ function renderNextPlanned(rows){
       .filter(selectionIsUpcoming)
       .filter(r => actionableTypes.has(String(r.type || 'win').toLowerCase()))
       .filter(r => jumpsInToMinutes(r.jumpsIn) <= plannedWindow)
-      .filter(r => !selectedMeeting || selectedMeeting === 'ALL' || meetingMatches(r.meeting))
+      .filter(r => !selectedMeeting || selectedMeeting === 'ALL' || meetingMatches(r))
       .slice()
       .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
   }
@@ -9139,6 +9176,10 @@ async function selectRace(key, fallbackMeeting = null, fallbackRace = null){
   if (!race && fallbackMeeting) {
     race = getRaceFromCache(fallbackMeeting, fallbackRace);
   }
+  if (!race && (key || fallbackMeeting)) {
+    const all = await loadAllRacesUnfiltered();
+    race = (all || []).find(r => raceIdentityMatches(r, { key, meeting: fallbackMeeting, raceNumber: fallbackRace }));
+  }
   if (!race) return;
   const cutoff = Date.now() - 5 * 60 * 1000;
   if (!raceIsUpcoming(race, cutoff)) {
@@ -9147,13 +9188,30 @@ async function selectRace(key, fallbackMeeting = null, fallbackRace = null){
     renderRaces(racesCache);
     return;
   }
+
+  await alignSelectionUniverse({
+    key: race.key || key,
+    meeting: race.meeting || fallbackMeeting,
+    raceNumber: race.race_number || race.race || fallbackRace,
+    country: race.country || ''
+  });
+
+  const resolvedRace = (racesCache || []).find(r => raceIdentityMatches(r, race))
+    || (fallbackMeeting ? getRaceFromCache(fallbackMeeting, fallbackRace, race.country || '') : null)
+    || race;
+
   hideAnalysisProcessingHint();
-  selectedRace = race;
-  selectedRaceKey = race.key || key || buildRaceCacheKey(fallbackMeeting, fallbackRace);
+  selectedRace = resolvedRace;
+  selectedRaceKey = resolvedRace.key || key || buildRaceCacheKey(fallbackMeeting, fallbackRace);
   await hydrateRaceWithLoveracing(selectedRace);
 
   // Selecting a race should lock meeting context and unlock dependent tabs.
   selectedMeeting = String(selectedRace.meeting || 'ALL');
+  if (selectedRace.country && normalizeUiCountry(selectedRace.country, '') && normalizeUiCountry(selectedRace.country, '') !== 'ALL') {
+    selectedCountry = normalizeUiCountry(selectedRace.country, selectedCountry);
+    const cs = $('countrySelect');
+    if (cs) cs.value = selectedCountry;
+  }
   persistMeetingLock();
   persistLastRaceSelection(selectedRace);
   const meetingSel = $('meetingSelect');
@@ -9430,6 +9488,22 @@ function buildRaceCacheKey(meeting, raceNumber){
   return `${mtg}|${race}`;
 }
 
+function normalizeCountryKey(value){
+  return String(value || '').trim().toUpperCase();
+}
+
+function raceIdentityMatches(row, target = {}){
+  if (!row || !target) return false;
+  const targetKey = String(target.key || '').trim();
+  if (targetKey && row.key && String(row.key).trim() === targetKey) return true;
+  const meetingOk = normalizeMeetingKey(row.meeting) === normalizeMeetingKey(target.meeting);
+  const raceOk = normalizeRaceNumberValue(row.race_number || row.race) === normalizeRaceNumberValue(target.race_number || target.race || target.raceNumber);
+  if (!meetingOk || !raceOk) return false;
+  const targetCountry = normalizeCountryKey(target.country);
+  const rowCountry = normalizeCountryKey(row.country);
+  return !targetCountry || !rowCountry || targetCountry === rowCountry;
+}
+
 function normalizeMeetingNameText(v){
   return String(v || '').trim().toLowerCase();
 }
@@ -9495,28 +9569,48 @@ async function resolveMeetingMeta(name){
   return findMeetingInCollection(fallback, norm);
 }
 
+async function alignSelectionUniverse(target = {}){
+  const targetMeeting = String(target.meeting || '').trim();
+  const targetCountry = normalizeUiCountry(target.country, '');
+  const countryChanged = !!(targetCountry && targetCountry !== 'ALL' && targetCountry !== selectedCountry);
+  const meetingChanged = !!(targetMeeting && normalizeMeetingKey(targetMeeting) !== normalizeMeetingKey(selectedMeeting));
+
+  if (countryChanged) {
+    selectedCountry = targetCountry;
+    const cs = $('countrySelect');
+    if (cs) cs.value = targetCountry;
+  }
+  if (meetingChanged) {
+    selectedMeeting = targetMeeting;
+  }
+  if (countryChanged || meetingChanged) persistMeetingLock();
+
+  const hasRaceInCache = (racesCache || []).some(r => raceIdentityMatches(r, target));
+  if (!racesCache.length || countryChanged || meetingChanged || !hasRaceInCache) {
+    await loadRaces();
+  }
+
+  if (targetMeeting) {
+    const canonicalMeeting = (racesCache || []).find(r => normalizeMeetingKey(r.meeting) === normalizeMeetingKey(targetMeeting))?.meeting;
+    const resolvedMeeting = canonicalMeeting || selectedMeeting || targetMeeting;
+    selectedMeeting = resolvedMeeting;
+    const meetingSel = $('meetingSelect');
+    if (meetingSel) meetingSel.value = resolvedMeeting;
+    persistMeetingLock();
+  }
+}
+
 async function focusMeetingSelection(meetingMeta, raceNumber, options = {}){
   if (!meetingMeta || !meetingMeta.meeting) return false;
   const token = options?.token ?? null;
   const tokenActive = () => token == null || token === meetingSearchRunId;
   if (!tokenActive()) return false;
 
-  const targetCountry = String(meetingMeta.country || '').toUpperCase();
-  if (targetCountry && targetCountry !== String(selectedCountry || '').toUpperCase()) {
-    selectedCountry = targetCountry;
-    const cs = $('countrySelect');
-    if (cs) cs.value = targetCountry;
-  }
-  if (!tokenActive()) return false;
-
-  selectedMeeting = meetingMeta.meeting;
-  persistMeetingLock();
-  const meetingSel = $('meetingSelect');
-  if (meetingSel) meetingSel.value = meetingMeta.meeting;
-
-  if (!tokenActive()) return false;
-
-  await loadRaces();
+  await alignSelectionUniverse({
+    meeting: meetingMeta.meeting,
+    country: meetingMeta.country,
+    raceNumber
+  });
   if (!tokenActive()) return false;
 
   renderRaces(racesCache);
@@ -9589,10 +9683,10 @@ function buildAiRaceKey(race){
   return [base, dateStamp, startStamp].filter(Boolean).join('|') || base;
 }
 
-function getRaceFromCache(meeting, raceNumber){
+function getRaceFromCache(meeting, raceNumber, country = ''){
   const key = buildRaceCacheKey(meeting, raceNumber);
   if (!key) return null;
-  return (racesCache || []).find(r => buildRaceCacheKey(r.meeting, r.race_number) === key) || null;
+  return (racesCache || []).find(r => buildRaceCacheKey(r.meeting, r.race_number) === key && (!country || !r.country || normalizeCountryKey(r.country) === normalizeCountryKey(country))) || null;
 }
 
 function findRunnerFromCache(meeting, raceNumber, runnerName){

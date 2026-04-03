@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { aggregateLastNDays, normalizeLedgerResult, summarizeSettledBets, groupSettledBetsByDate } = require('../frontend/perf-utils');
+const { aggregateLastNDays, normalizeLedgerResult, countsAsSettledBet, summarizeSettledBets, groupSettledBetsByDate } = require('../frontend/perf-utils');
 
 const sampleDaily = {
   '2026-03-16': {
@@ -46,10 +46,14 @@ assert.strictEqual(agg.long.wins, 1);
 assert.strictEqual(normalizeLedgerResult('won'), 'win');
 assert.strictEqual(normalizeLedgerResult('placed'), 'ew_place');
 
+assert.strictEqual(countsAsSettledBet({ type: 'watch' }), false);
+assert.strictEqual(countsAsSettledBet({ type: 'win' }), true);
+
 const settledRows = [
-  { date: '2026-03-17', meeting: 'Ellerslie', race: '2', selection: 'Alpha', result: 'win', stake_units: 1, return_units: 2.8, profit_units: 1.8 },
-  { date: '2026-03-17', meeting: 'Ellerslie', race: '5', selection: 'Bravo', result: 'loss', stake_units: 1, return_units: 0, profit_units: -1 },
-  { date: '2026-03-16', meeting: 'Pukekohe', race: '1', selection: 'Charlie', result: 'ew_place', stake_units: 2, return_units: 3.2, profit_units: 1.2 }
+  { date: '2026-03-17', meeting: 'Ellerslie', race: '2', selection: 'Alpha', type: 'win', result: 'win', stake_units: 1, return_units: 2.8, profit_units: 1.8 },
+  { date: '2026-03-17', meeting: 'Ellerslie', race: '5', selection: 'Bravo', type: 'watch', result: 'win', stake_units: 999, return_units: 999, profit_units: 999 },
+  { date: '2026-03-17', meeting: 'Ellerslie', race: '5', selection: 'Bravo Bet', type: 'win', result: 'loss', stake_units: 1, return_units: 0, profit_units: -1 },
+  { date: '2026-03-16', meeting: 'Pukekohe', race: '1', selection: 'Charlie', type: 'ew', result: 'ew_place', stake_units: 2, return_units: 3.2, profit_units: 1.2 }
 ];
 
 const settledSummary = summarizeSettledBets(settledRows);
