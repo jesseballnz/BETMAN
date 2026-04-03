@@ -14271,7 +14271,7 @@ async function openAuthModal(){
   toggleAuthModal(true);
   let isAdmin = false;
   try {
-    const current = await fetchLocal('./api/auth-config').then(r=>r.json());
+    const current = await fetchLocal('./api/auth-config', { cache: 'no-store' }).then(r=>r.json());
     if (current?.username) $('authUsername').value = current.username;
     isAdmin = !!current?.isAdmin;
     pulseEligible = !!current?.pulseEligible;

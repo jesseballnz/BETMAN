@@ -347,7 +347,7 @@ asyncTests.push((async () => {
   assert.strictEqual(pulseRes.statusCode, 200);
   const pulseParsed = JSON.parse(pulseRes.body);
   assert.strictEqual(pulseParsed.ok, true);
-  console.log('  ✓ Pulse endpoints stay visible for authenticated users outside the old allowlist');
+  console.log('  ✓ Pulse endpoints stay visible for authenticated users');
 })());
 
 // 13. Race detail endpoint

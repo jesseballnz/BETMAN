@@ -101,12 +101,6 @@ let bakeoffRunState = { running: false, startedAt: 0, endedAt: 0, exitCode: null
 let aiModelsCache = { ts: 0, payload: null };
 
 const PULSE_SEVERITY_LEVELS = Object.freeze(['WATCH', 'HOT', 'CRITICAL', 'ACTION']);
-const PULSE_ALLOWLIST = new Set(
-  String(process.env.BETMAN_PULSE_ALLOWLIST || 'betman,test@betman.co.nz')
-    .split(',')
-    .map((value) => normalizeUsername(value))
-    .filter(Boolean)
-);
 
 const DEFAULT_PULSE_CONFIG = Object.freeze({
   enabled: true,

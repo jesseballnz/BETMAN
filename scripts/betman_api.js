@@ -24,12 +24,6 @@ const DEFAULT_RATE_LIMIT   = Number(process.env.BETMAN_API_RATE_LIMIT   || 60); 
 const DEFAULT_RATE_WINDOW  = Number(process.env.BETMAN_API_RATE_WINDOW  || 60);   // window in seconds
 const TAB_BASE = 'https://api.tab.co.nz/affiliates/v1';
 const PULSE_CONFIG_FILE = 'pulse_config.json';
-const PULSE_ALLOWLIST = new Set(
-  String(process.env.BETMAN_PULSE_ALLOWLIST || 'betman,test@betman.co.nz')
-    .split(',')
-    .map((value) => String(value || '').trim().toLowerCase())
-    .filter(Boolean)
-);
 const DEFAULT_PULSE_CONFIG = Object.freeze({
   enabled: true,
   alertTypes: {
