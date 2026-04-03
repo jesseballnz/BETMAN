@@ -935,26 +935,13 @@ function pulseTargetingModeLabel(mode){
 
 function pulseTargetingSummary(targeting = {}){
   const normalized = normalizePulseTargeting({ targeting });
+  const meetingSet = new Set(normalized.meetings.map(value => normalizePulseMeetingName(value).toLowerCase()).filter(Boolean));
+  const extraRaces = normalized.races.filter(value => !meetingSet.has(normalizePulseMeetingName(String(value).split('::')[0] || '').toLowerCase()));
   const segments = [];
   if (normalized.countries.length) segments.push(`Countries: ${normalized.countries.join(', ')}`);
-  if (normalized.meetings.length) segments.push(`Meetings: ${normalized.meetings.join(', ')}`);
-  if (normalized.races.length) segments.push(`Races: ${normalized.races.map(value => value.replace('::', ' | R')).join(', ')}`);
+  if (normalized.meetings.length) segments.push(`Meetings: ${normalized.meetings.join(', ')} (all future races)`);
+  if (extraRaces.length) segments.push(`${normalized.meetings.length ? 'Extra races' : 'Races'}: ${extraRaces.map(value => value.replace('::', ' | R')).join(', ')}`);
   return segments.length ? segments.join(' · ') : 'No specific follow list. Pulse runs across the full premium feed.';
-}
-
-function prunePulseRacesForMeetings(races = [], meetings = []){
-  const blockedMeetings = new Set(
-    (Array.isArray(meetings) ? meetings : [])
-      .map(value => normalizePulseMeetingName(value).toLowerCase())
-      .filter(Boolean)
-  );
-  if (!blockedMeetings.size) return Array.isArray(races) ? races.slice() : [];
-  return (Array.isArray(races) ? races : []).filter(value => {
-    const raceTarget = normalizePulseRaceTarget(value);
-    if (!raceTarget) return false;
-    const meeting = normalizePulseMeetingName(String(raceTarget).split('::')[0] || '').toLowerCase();
-    return !meeting || !blockedMeetings.has(meeting);
-  });
 }
 
 function isPulseRaceFinished(race){
@@ -974,6 +961,39 @@ function isPulseRaceFinished(race){
   if (Array.isArray(race?.results) && race.results.length) return true;
   if (race?.result && typeof race.result === 'object' && Object.keys(race.result || {}).length) return true;
   return false;
+}
+
+function pulseRaceAdvertisedStartMs(race){
+  const advertised = race?.advertised_start;
+  if (typeof advertised === 'number' && Number.isFinite(advertised)) return advertised > 1e12 ? advertised : advertised * 1000;
+  if (typeof advertised === 'string' && advertised.trim()) {
+    const asNumber = Number(advertised);
+    if (Number.isFinite(asNumber)) return asNumber > 1e12 ? asNumber : asNumber * 1000;
+    const parsed = Date.parse(advertised);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return NaN;
+}
+
+function isPulseRaceTargetable(race, nowMs = Date.now()){
+  if (isPulseRaceFinished(race)) return false;
+  const startMs = pulseRaceAdvertisedStartMs(race);
+  return Number.isFinite(startMs) ? startMs >= nowMs : true;
+}
+
+function prunePulseTargetingPastRaces(targeting = {}, rows = [], nowMs = Date.now()){
+  const normalized = normalizePulseTargeting({ targeting });
+  const byRace = new Map((Array.isArray(rows) ? rows : []).map(r => {
+    const key = `${normalizePulseMeetingName(r?.meeting)}::${String(r?.race_number || r?.race || '').replace(/^R/i, '').trim()}`;
+    return [key, r];
+  }).filter(([key]) => !!key && !key.startsWith('::')));
+  return {
+    ...normalized,
+    races: normalized.races.filter(key => {
+      const row = byRace.get(key);
+      return row ? isPulseRaceTargetable(row, nowMs) : true;
+    }),
+  };
 }
 
 function pulseMeetingPriority(meeting = '', country = '', activeRaceCount = 0){
@@ -1049,7 +1069,7 @@ function buildPulseMeetingCards(rows = [], seedMeetings = []){
 async function getPulseTargetOptions(targeting = {}){
   const all = await loadAllRacesUnfiltered();
   const selected = normalizePulseTargeting({ targeting });
-  const liveRaces = (all || []).filter(r => !isPulseRaceFinished(r));
+  const liveRaces = (all || []).filter(r => isPulseRaceTargetable(r));
   const byCountry = selected.countries.length
     ? liveRaces.filter(r => selected.countries.includes(String(r.country || '').trim()))
     : liveRaces;
@@ -1453,14 +1473,15 @@ async function renderPulseConfigPanel(){
     const meetings = pulseChipValuesFromField('pulseTargetMeetings', normalizePulseMeetingName);
     const races = pulseChipValuesFromField('pulseTargetRaces', normalizePulseRaceTarget);
     const countries = pulseChipValuesFromField('pulseTargetCountries', normalizePulseCountry);
-    const nextTargeting = {
+    const raceRows = await loadAllRacesUnfiltered().catch(() => []);
+    const nextTargeting = prunePulseTargetingPastRaces({
       mode: kind === 'races'
         ? (races.length ? 'races' : inferPulseTargetMode({ countries, meetings, races }, 'all'))
         : (meetings.length ? 'meetings' : inferPulseTargetMode({ countries, meetings, races }, 'all')),
       countries,
       meetings,
       races,
-    };
+    }, raceRows);
     if (btn) btn.disabled = true;
     if (status) status.textContent = kind === 'races' ? 'Applying races…' : 'Applying meetings…';
     try {
@@ -1481,27 +1502,23 @@ async function renderPulseConfigPanel(){
     const btn = $('pulseClearMeetingsBtn');
     const currentTargeting = normalizePulseTargeting(pulseConfigState?.targeting || {});
     const countries = pulseChipValuesFromField('pulseTargetCountries', normalizePulseCountry);
-    const meetingsToClear = Array.from(new Set([
+    const stagedMeetings = Array.from(new Set([
       ...currentTargeting.meetings,
       ...pulseChipValuesFromField('pulseTargetMeetings', normalizePulseMeetingName),
     ]));
     const races = pulseChipValuesFromField('pulseTargetRaces', normalizePulseRaceTarget);
-    const nextRaces = prunePulseRacesForMeetings(races, meetingsToClear);
-    const removedRaceCount = Math.max(0, races.length - nextRaces.length);
     const nextTargeting = {
       countries,
       meetings: [],
-      races: nextRaces,
+      races,
       mode: ['meetings', 'mixed'].includes(currentTargeting.mode)
-        ? inferPulseTargetMode({ countries, meetings: [], races: nextRaces }, 'all')
+        ? inferPulseTargetMode({ countries, meetings: [], races }, 'all')
         : currentTargeting.mode,
     };
     if (btn) btn.disabled = true;
     if (status) status.textContent = 'Clearing meetings…';
     try {
       setPulseChipFieldValue('pulseTargetMeetings', []);
-      if ($('pulseTargetRaces') && removedRaceCount > 0) $('pulseTargetRaces').value = nextRaces.map(value => value.replace('::', ' | R')).join('\n');
-      if (removedRaceCount > 0) setPulseChipFieldValue('pulseTargetRaces', nextRaces.map(value => value.replace('::', ' | R')));
       syncTargetChips();
       await savePulseConfig({
         enabled: !!$('pulseEnabledToggle')?.checked,
@@ -1509,7 +1526,8 @@ async function renderPulseConfigPanel(){
       });
       const summary = pulseTargetingSummary(nextTargeting);
       if ($('pulseLiveRulesSummary')) $('pulseLiveRulesSummary').textContent = summary;
-      setPulseConfigFlash(removedRaceCount > 0 ? `Cleared meetings · removed ${removedRaceCount} linked race${removedRaceCount === 1 ? '' : 's'} · ${summary}` : `Cleared meetings · ${summary}`);
+      const overlapCount = races.filter(value => stagedMeetings.map(v => normalizePulseMeetingName(v).toLowerCase()).includes(normalizePulseMeetingName(String(value).split('::')[0] || '').toLowerCase())).length;
+      setPulseConfigFlash(overlapCount > 0 ? `Cleared meetings · kept ${overlapCount} explicitly selected overlapping race${overlapCount === 1 ? '' : 's'} · ${summary}` : `Cleared meetings · ${summary}`);
       await renderAlertsShell();
     } catch (err) {
       if (status) status.textContent = `Clear failed: ${err?.message || 'unknown error'}`;

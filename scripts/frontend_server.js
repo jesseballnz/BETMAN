@@ -7,6 +7,7 @@ const dns = require('dns');
 const { mergePublicStatusLists } = require('./status_snapshot_merge');
 const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
 const { buildRaceResultIndex, resolveTrackedBet, buildVisibleSettledRows, buildTrackedHistoryRows } = require('./tracked_bet_matching');
+const { prunePulseTargetingAgainstRaces } = require('./pulse_targeting_semantics');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -308,13 +309,21 @@ function pulseConfigKeyForAlertType(type){
 function loadPulseConfig(tenantId = 'default'){
   const filePath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', PULSE_CONFIG_FILE), PULSE_CONFIG_FILE);
   const raw = loadJson(filePath, DEFAULT_PULSE_CONFIG);
-  return normalizePulseConfig(raw);
+  const normalized = normalizePulseConfig(raw);
+  const racesPayload = loadJson(resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), { races: [] });
+  const raceRows = Array.isArray(racesPayload?.races) ? racesPayload.races : (Array.isArray(racesPayload) ? racesPayload : []);
+  const targeting = prunePulseTargetingAgainstRaces(normalized.targeting || {}, raceRows);
+  return normalizePulseConfig({ ...normalized, targeting });
 }
 
 function savePulseConfig(tenantId = 'default', payload = {}, principal = null){
   const filePath = tenantDataPath(tenantId, PULSE_CONFIG_FILE);
+  const racesPayload = loadJson(resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), { races: [] });
+  const raceRows = Array.isArray(racesPayload?.races) ? racesPayload.races : (Array.isArray(racesPayload) ? racesPayload : []);
+  const targeting = prunePulseTargetingAgainstRaces(payload?.targeting || {}, raceRows);
   const next = normalizePulseConfig({
     ...payload,
+    targeting,
     updatedAt: new Date().toISOString(),
     updatedBy: principal?.username || payload?.updatedBy || null,
   }, principal);
@@ -1755,17 +1764,33 @@ function findTrackedDuplicate(rows = [], candidate = {}) {
   }) || null;
 }
 
+function resolveTrackedRaceStatus(row, race, runnerHit, moverHit) {
+  const candidates = [
+    moverHit?.raceStatus,
+    runnerHit?.raceStatus,
+    race?.race_status,
+    row?.raceStatus,
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+
+  if (!candidates.length) return null;
+  const finished = candidates.find((value) => FINISHED_RACE_STATUSES.has(value.toLowerCase()));
+  return finished || candidates[0] || null;
+}
+
 function enrichTrackedBetWithCurrentOdds(row, liveContext) {
   const entryOdds = toPositiveOddsValue(row?.entryOdds, row?.odds);
   const raceKey = `${normalizeMeetingName(row?.meeting)}|${normalizeRaceValue(row?.race)}`;
   const trackedKey = normalizeTrackedKey(row?.meeting, row?.race, row?.selection);
   const race = liveContext?.raceMap?.get(raceKey) || null;
-  const raceStatus = race?.race_status || null;
-  const raceFinished = FINISHED_RACE_STATUSES.has(String(raceStatus || '').toLowerCase());
   const jumpMeta = resolveTrackedRaceJumpMeta(row, race);
   const runnerHit = liveContext?.runnerMap?.get(trackedKey);
   const moverHit = liveContext?.moverMap?.get(trackedKey);
   const suggestedHit = liveContext?.suggestedMap?.get(trackedKey);
+  const raceStatus = resolveTrackedRaceStatus(row, race, runnerHit, moverHit);
+  const raceFinished = FINISHED_RACE_STATUSES.has(String(raceStatus || '').toLowerCase());
+  const derivedStatus = row?.status
+    ? (String(row.status).toLowerCase() === 'settled' || raceFinished ? 'settled' : row.status)
+    : (raceFinished ? 'settled' : row?.status);
   const { currentOdds, currentOddsSource } = resolveTrackedCurrentOdds(row, {
     runnerOdds: toPositiveOddsValue(runnerHit?.currentOdds),
     runnerSource: runnerHit?.source || 'races',
@@ -1778,6 +1803,7 @@ function enrichTrackedBetWithCurrentOdds(row, liveContext) {
 
   return {
     ...row,
+    status: derivedStatus,
     odds: entryOdds,
     entryOdds,
     currentOdds,

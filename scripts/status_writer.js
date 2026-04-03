@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { buildSettledBetKey } = require('./tracked_bet_matching');
+const { prunePulseTargetingAgainstRaces } = require('./pulse_targeting_semantics');
 
 function loadJson(p, fallback){
   try { return JSON.parse(fs.readFileSync(p,'utf8')); } catch { return fallback; }
@@ -92,7 +93,7 @@ function normalizePulseThresholds(raw = {}) {
   };
 }
 
-function normalizePulseConfig(raw = {}) {
+function normalizePulseConfig(raw = {}, raceRows = []) {
   const alertTypes = raw && typeof raw.alertTypes === 'object' ? raw.alertTypes : {};
   return {
     alertTypes: {
@@ -104,7 +105,7 @@ function normalizePulseConfig(raw = {}) {
       jumpPulse: alertTypes.jumpPulse !== false,
     },
     thresholds: normalizePulseThresholds(raw?.thresholds || {}),
-    targeting: normalizePulseTargeting(raw?.targeting || {}),
+    targeting: prunePulseTargetingAgainstRaces(raw?.targeting || {}, raceRows),
     updatedAt: raw?.updatedAt || null,
     updatedBy: raw?.updatedBy || null,
   };
@@ -242,7 +243,10 @@ const feelData = loadJson(feelPath, { score: 50, wins: 0, losses: 0, updatedAt: 
 const placedBets = loadJson(placedPath, []);
 const queuedBets = loadJson(queuePath, []);
 const pulseConfigPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'pulse_config.json') : path.join(tenantDataDir, 'pulse_config.json');
-const pulseConfig = normalizePulseConfig(loadJson(pulseConfigPath, DEFAULT_PULSE_CONFIG));
+const racesPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'races.json') : path.join(tenantDataDir, 'races.json');
+const racesPayloadForPulse = loadJson(racesPath, { races: [] });
+const raceRowsForPulse = Array.isArray(racesPayloadForPulse?.races) ? racesPayloadForPulse.races : (Array.isArray(racesPayloadForPulse) ? racesPayloadForPulse : []);
+const pulseConfig = normalizePulseConfig(loadJson(pulseConfigPath, DEFAULT_PULSE_CONFIG), raceRowsForPulse);
 
 // preserve last known open bets if latest pull failed
 if ((balanceData.betcha?.openBets == null || balanceData.tab?.openBets == null) && prevStatus?.openBets != null) {
@@ -366,6 +370,7 @@ function etaFromRace(r){
 
 const racesEntries = Object.entries(state.races || {});
 const racesList = racesEntries.map(([, v]) => v || {});
+const raceLookupByMeetingRace = new Map();
 const raceCountryByMeetingRace = new Map();
 const raceCountryByMeeting = new Map();
 racesEntries.forEach(([key, r]) => {
@@ -374,9 +379,45 @@ racesEntries.forEach(([key, r]) => {
   const fromRow = String(r?.country || '').trim().toUpperCase();
   const fromKey = String(key || '').split(':')[0].trim().toUpperCase();
   const c = fromRow || (['NZ','AUS','HK'].includes(fromKey) ? fromKey : '');
+  if (mk && rk) raceLookupByMeetingRace.set(`${mk}|${rk}`, r || {});
   if (mk && rk && c) raceCountryByMeetingRace.set(`${mk}|${rk}`, c);
   if (mk && c && !raceCountryByMeeting.has(mk)) raceCountryByMeeting.set(mk, c);
 });
+function findRaceForAlert(meeting, race){
+  const mk = String(meeting || '').trim().toLowerCase();
+  const rk = String(race || '').replace(/^R/i, '').trim();
+  return raceLookupByMeetingRace.get(`${mk}|${rk}`) || null;
+}
+
+function raceStatusForAlert(meeting, race){
+  const raceObj = findRaceForAlert(meeting, race);
+  const statuses = [
+    raceObj?.race_status,
+    raceObj?.status,
+    raceObj?.resultStatus,
+    raceObj?.state,
+    raceObj?.raceState,
+  ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean);
+  return statuses[0] || '';
+}
+
+function minsToJumpForAlert(meeting, race, fallback = null){
+  const raceObj = findRaceForAlert(meeting, race);
+  if (!raceObj) return Number.isFinite(Number(fallback)) ? Number(fallback) : null;
+  const raceTs = toMs(raceObj?.advertised_start || raceObj?.start_time || raceObj?.startTime || null);
+  if (!Number.isFinite(raceTs)) return Number.isFinite(Number(fallback)) ? Number(fallback) : null;
+  return Math.round((raceTs - Date.now()) / 60000);
+}
+
+function alertShouldLeaveLive(meeting, race, minsToJump){
+  const status = raceStatusForAlert(meeting, race);
+  if (['jumped', 'running', 'inrunning', 'in-running', 'live'].includes(status)) return true;
+  if (['closed', 'final', 'finalized', 'resulted', 'settled', 'complete', 'completed', 'abandoned'].includes(status)) return true;
+  const resolvedMins = minsToJumpForAlert(meeting, race, minsToJump);
+  if (Number.isFinite(resolvedMins) && resolvedMins < 0) return true;
+  return false;
+}
+
 function inferCountry(meeting, race){
   const mk = String(meeting || '').trim().toLowerCase();
   const rk = String(race || '').replace(/^R/i, '').trim();
@@ -829,7 +870,7 @@ const settledRaceKeys = new Set([
 function isRaceSettledForAlerts(meeting, race, minsToJump){
   const key = `${String(meeting || '').trim().toLowerCase()}|${String(race || '').replace(/^R/i,'').trim()}`;
   if (settledRaceKeys.has(key)) return true;
-  if (Number.isFinite(minsToJump) && minsToJump <= -20) return true;
+  if (alertShouldLeaveLive(meeting, race, minsToJump)) return true;
   return false;
 }
 
@@ -1301,8 +1342,9 @@ const jumpPulseAlerts = trackedBets
   .map((row) => {
     const key = `${String(row?.meeting || '').trim().toLowerCase()}|${String(row?.race || '').replace(/^R/i,'').trim()}|${String(row?.selection || '').trim().toLowerCase()}`;
     const mover = (status.marketMovers || []).find(x => `${String(x?.meeting || '').trim().toLowerCase()}|${String(x?.race || '').replace(/^R/i,'').trim()}|${String(x?.runner || '').trim().toLowerCase()}` === key);
-    const minsToJump = Number(mover?.minsToJump ?? row?.minsToJump);
-    if (!Number.isFinite(minsToJump) || minsToJump < 0 || minsToJump > 3) return null;
+    const minsToJump = minsToJumpForAlert(row?.meeting, row?.race, mover?.minsToJump ?? row?.minsToJump);
+    const raceSettled = isRaceSettledForAlerts(row?.meeting, row?.race, minsToJump);
+    if (!Number.isFinite(minsToJump) || minsToJump < 0 || minsToJump > 3 || raceSettled) return null;
     return {
       id: `${key}|jump_pulse|${Math.round(minsToJump)}`,
       ts: new Date().toISOString(),
@@ -1320,6 +1362,7 @@ const jumpPulseAlerts = trackedBets
       trackedPriority: 2,
       betmanRole: String(row?.betType || 'tracked').toLowerCase(),
       minsToJump: Math.round(minsToJump),
+      raceSettled,
       interpretation: 'Tracked runner is approaching jump time',
       action: 'REVIEW_TRACKED'
     };

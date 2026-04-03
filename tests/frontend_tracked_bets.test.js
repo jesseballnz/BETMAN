@@ -51,6 +51,7 @@ vm.runInContext(
     extractFunction('toPositiveOddsValue'),
     extractFunction('resolveTrackedCurrentOdds'),
     extractFunction('resolveTrackedRaceJumpMeta'),
+    extractFunction('resolveTrackedRaceStatus'),
     extractFunction('enrichTrackedBetWithCurrentOdds'),
   ].join('\n\n'),
   sandbox
@@ -68,13 +69,14 @@ const finishedRaceContext = {
 
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(sandbox.enrichTrackedBetWithCurrentOdds(
-    { meeting: 'Newcastle', race: 'R1', selection: 'Cavalry', entryOdds: 4.4 },
+    { meeting: 'Newcastle', race: 'R1', selection: 'Cavalry', entryOdds: 4.4, status: 'active' },
     finishedRaceContext,
   ))),
   {
     meeting: 'Newcastle',
     race: 'R1',
     selection: 'Cavalry',
+    status: 'settled',
     odds: 4.4,
     entryOdds: 4.4,
     currentOdds: 4.4,
@@ -95,13 +97,14 @@ const liveRaceContext = {
 
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(sandbox.enrichTrackedBetWithCurrentOdds(
-    { meeting: 'Newcastle', race: 'R1', selection: 'Cavalry', entryOdds: 4.4 },
+    { meeting: 'Newcastle', race: 'R1', selection: 'Cavalry', entryOdds: 4.4, status: 'active' },
     liveRaceContext,
   ))),
   {
     meeting: 'Newcastle',
     race: 'R1',
     selection: 'Cavalry',
+    status: 'active',
     odds: 4.4,
     entryOdds: 4.4,
     currentOdds: 6.8,
@@ -119,6 +122,7 @@ assert.deepStrictEqual(
       meeting: 'Newcastle',
       race: 'R1',
       selection: 'Cavalry',
+      status: 'active',
       currentOdds: 5.5,
       currentOddsSource: 'cached-live',
       entryOdds: null,
@@ -130,6 +134,7 @@ assert.deepStrictEqual(
     meeting: 'Newcastle',
     race: 'R1',
     selection: 'Cavalry',
+    status: 'active',
     currentOdds: 5.5,
     currentOddsSource: 'cached-live',
     entryOdds: 4.4,
@@ -143,13 +148,14 @@ assert.deepStrictEqual(
 
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(sandbox.enrichTrackedBetWithCurrentOdds(
-    { meeting: 'Newcastle', race: 'R1', selection: 'Cavalry', odds: 4.4 },
+    { meeting: 'Newcastle', race: 'R1', selection: 'Cavalry', odds: 4.4, status: 'active' },
     { raceMap: new Map([[raceKey, { meeting: 'Newcastle', race_number: '1', race_status: 'OPEN', mins_to_jump: 8, start_time: '2099-01-01T00:08:00.000Z' }]]), runnerMap: new Map(), moverMap: new Map(), suggestedMap: new Map() },
   ))),
   {
     meeting: 'Newcastle',
     race: 'R1',
     selection: 'Cavalry',
+    status: 'active',
     odds: 4.4,
     entryOdds: 4.4,
     currentOdds: 4.4,
@@ -167,6 +173,7 @@ assert.deepStrictEqual(
       meeting: 'Newcastle',
       race: 'R1',
       selection: 'Cavalry',
+      status: 'active',
       currentOdds: 5.5,
       currentOddsSource: 'cached-live',
       entryOdds: 4.4,
@@ -182,6 +189,7 @@ assert.deepStrictEqual(
     meeting: 'Newcastle',
     race: 'R1',
     selection: 'Cavalry',
+    status: 'active',
     currentOdds: 6.8,
     currentOddsSource: 'market-movers',
     entryOdds: 4.4,
@@ -190,6 +198,32 @@ assert.deepStrictEqual(
     minsToJump: 8,
     raceStartTime: '2099-01-01T00:08:00.000Z',
     raceStatus: 'OPEN',
+  }
+);
+
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(sandbox.enrichTrackedBetWithCurrentOdds(
+    { meeting: 'Newcastle', race: 'R1', selection: 'Cavalry', entryOdds: 4.4, status: 'active' },
+    {
+      raceMap: new Map([[raceKey, { meeting: 'Newcastle', race_number: '1', race_status: 'OPEN', mins_to_jump: -2, start_time: '2099-01-01T00:08:00.000Z' }]]),
+      runnerMap: new Map(),
+      moverMap: new Map([[trackedKey, { currentOdds: 6.8, raceStatus: 'FINAL', source: 'market-movers' }]]),
+      suggestedMap: new Map(),
+    },
+  ))),
+  {
+    meeting: 'Newcastle',
+    race: 'R1',
+    selection: 'Cavalry',
+    status: 'settled',
+    odds: 4.4,
+    entryOdds: 4.4,
+    currentOdds: 4.4,
+    currentOddsSource: 'last known (entry)',
+    jumpsIn: 'Jumped',
+    minsToJump: -2,
+    raceStartTime: '2099-01-01T00:08:00.000Z',
+    raceStatus: 'FINAL',
   }
 );
 

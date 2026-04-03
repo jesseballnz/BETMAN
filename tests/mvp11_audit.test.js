@@ -131,7 +131,7 @@ function whyClass(row, stakePerRace = 7) {
   assert(e.EXOTIC === true && e.STRONG === false, 'WHY EXOTIC classification failed');
 
   // 7) Code-level invariants for MVP1.1 behavior.
-  assert(appJs.includes("if (page !== 'workspace' && selectedMeeting === 'ALL')"), 'workspace tab gating missing');
+  assert(appJs.includes("if (!pagesAllowedWithoutMeeting.has(page) && selectedMeeting === 'ALL')"), 'workspace tab gating missing');
   assert(appJs.includes('NZ') && appJs.includes('AUS') && appJs.includes('HK'), 'country fallback chain not present');
   assert(appJs.includes('@\\s*\\$?\\s*([0-9]+(?:\\.[0-9]+)?)'), 'frontend odds parser should accept $ format');
 

@@ -575,8 +575,8 @@ asyncTests.push((async () => {
   assert.deepStrictEqual(
     parsed.trackedBets.map((row) => ({ id: row.id, status: row.status, result: row.result, position: row.position ?? null, winner: row.winner ?? null, raceStatus: row.raceStatus ?? null })),
     [
-      { id: 't1', status: 'settled', result: 'won', position: 1, winner: 'Cavalry', raceStatus: 'Final' },
       { id: 't2', status: 'settled', result: 'won', position: 3, winner: 'Other Runner', raceStatus: 'Closed' },
+      { id: 't1', status: 'settled', result: 'won', position: 1, winner: 'Cavalry', raceStatus: 'Final' },
       { id: 't3', status: 'active', result: 'pending', position: null, winner: null, raceStatus: 'Open' },
     ]
   );

@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const path   = require('path');
 const fs     = require('fs');
 const { buildRaceResultIndex, resolveTrackedBet, buildTrackedHistoryRows } = require('./tracked_bet_matching');
+const { prunePulseTargetingAgainstRaces } = require('./pulse_targeting_semantics');
 
 /* ── Configuration ─────────────────────────────────────────────────── */
 const API_VERSION = '1.0.0';
@@ -655,13 +656,21 @@ function createApiHandler(deps) {
   function loadPulseConfigForTenant(tenantId = 'default') {
     const filePath = resolveTenantOwnedDataPath(tenantId, PULSE_CONFIG_FILE);
     const raw = loadJson(filePath, DEFAULT_PULSE_CONFIG);
-    return normalizePulseConfig(raw);
+    const normalized = normalizePulseConfig(raw);
+    const racesPayload = loadJson(resolveTenantOwnedDataPath(tenantId, 'races.json'), { races: [] });
+    const raceRows = Array.isArray(racesPayload?.races) ? racesPayload.races : (Array.isArray(racesPayload) ? racesPayload : []);
+    const targeting = prunePulseTargetingAgainstRaces(normalized.targeting || {}, raceRows);
+    return normalizePulseConfig({ ...normalized, targeting });
   }
 
   function savePulseConfigForTenant(tenantId = 'default', payload = {}, principal = null) {
     const filePath = resolveTenantOwnedDataPath(tenantId, PULSE_CONFIG_FILE);
+    const racesPayload = loadJson(resolveTenantOwnedDataPath(tenantId, 'races.json'), { races: [] });
+    const raceRows = Array.isArray(racesPayload?.races) ? racesPayload.races : (Array.isArray(racesPayload) ? racesPayload : []);
+    const targeting = prunePulseTargetingAgainstRaces(payload?.targeting || {}, raceRows);
     const next = normalizePulseConfig({
       ...payload,
+      targeting,
       updatedAt: new Date().toISOString(),
       updatedBy: principal?.username || payload?.updatedBy || null,
     }, principal);
