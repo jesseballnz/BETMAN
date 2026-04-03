@@ -69,14 +69,18 @@ function pulseRaceAdvertisedStartMs(row) {
   return NaN;
 }
 
-function isPulseRaceFinished(row) {
-  const statusBits = [
+function pulseRaceStatusBits(row) {
+  return [
     row?.race_status,
     row?.status,
     row?.resultStatus,
     row?.state,
     row?.raceState,
   ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+}
+
+function isPulseRaceFinished(row) {
+  const statusBits = pulseRaceStatusBits(row);
   if (statusBits.some((value) => ['closed', 'final', 'finalized', 'resulted', 'settled', 'complete', 'completed', 'abandoned'].includes(value))) {
     return true;
   }
@@ -88,8 +92,12 @@ function isPulseRaceFinished(row) {
   return false;
 }
 
+function isPulseRaceStarted(row) {
+  return pulseRaceStatusBits(row).some((value) => ['jumped', 'running', 'inrunning', 'in-running', 'live'].includes(value));
+}
+
 function isPulseRacePast(row, nowMs = Date.now()) {
-  if (isPulseRaceFinished(row)) return true;
+  if (isPulseRaceFinished(row) || isPulseRaceStarted(row)) return true;
   const startMs = pulseRaceAdvertisedStartMs(row);
   return Number.isFinite(startMs) ? startMs < nowMs : false;
 }
