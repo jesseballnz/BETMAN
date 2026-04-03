@@ -324,23 +324,30 @@ asyncTests.push((async () => {
   console.log('  ✓ Pulse config route persists and filters tenant alerts + thresholds');
 })());
 
-// 12b. Pulse endpoints are allowlisted even for authenticated non-admin users
+// 12b. Pulse endpoints remain visible to authenticated non-admin users
 asyncTests.push((async () => {
   const handler = makeHandler({
     getSessionPrincipal: () => ({ username: 'badgeking1@gmail.com', tenantId: 'acct_badgeking1-gmail-com', effectiveTenantId: 'acct_badgeking1-gmail-com' }),
     loadJson: (p, f) => {
-      if (p.includes('alerts_feed.json')) return { updatedAt: '2026-04-02T00:00:00Z', alerts: [{ selection: 'Blocked' }] };
+      if (p.includes('alerts_feed.json')) return { updatedAt: '2026-04-02T00:00:00Z', alerts: [{ selection: 'Visible' }] };
       return f;
     }
   });
 
-  const req = fakeReq('GET', '/api/v1/alerts-feed');
-  const res = fakeRes();
-  await handler(req, res, new URL('http://localhost/api/v1/alerts-feed'));
-  assert.strictEqual(res.statusCode, 403);
-  const parsed = JSON.parse(res.body);
-  assert.strictEqual(parsed.error, 'pulse_not_allowed');
-  console.log('  ✓ Pulse endpoints reject authenticated users outside the allowlist');
+  const alertsReq = fakeReq('GET', '/api/v1/alerts-feed');
+  const alertsRes = fakeRes();
+  await handler(alertsReq, alertsRes, new URL('http://localhost/api/v1/alerts-feed'));
+  assert.strictEqual(alertsRes.statusCode, 200);
+  const alertsParsed = JSON.parse(alertsRes.body);
+  assert.strictEqual(alertsParsed.alerts[0].selection, 'Visible');
+
+  const pulseReq = fakeReq('GET', '/api/v1/pulse-config');
+  const pulseRes = fakeRes();
+  await handler(pulseReq, pulseRes, new URL('http://localhost/api/v1/pulse-config'));
+  assert.strictEqual(pulseRes.statusCode, 200);
+  const pulseParsed = JSON.parse(pulseRes.body);
+  assert.strictEqual(pulseParsed.ok, true);
+  console.log('  ✓ Pulse endpoints stay visible for authenticated users outside the old allowlist');
 })());
 
 // 13. Race detail endpoint

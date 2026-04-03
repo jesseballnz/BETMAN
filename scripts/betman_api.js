@@ -649,9 +649,7 @@ function createApiHandler(deps) {
   }
 
   function hasPulseAccess(principal = null) {
-    if (!principal) return false;
-    if (principal.isAdmin) return true;
-    return PULSE_ALLOWLIST.has(normalizePrincipalUsername(principal.username || ''));
+    return !!principal;
   }
 
   function loadPulseConfigForTenant(tenantId = 'default') {

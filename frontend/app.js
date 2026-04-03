@@ -1792,16 +1792,83 @@ function computeTrackRunnerPayload(race, runner, extras = {}){
   };
 }
 
+function buildTrackTypeChooserHtml(options = {}){
+  const {
+    heading = 'Choose tracking mode',
+    subheading = '',
+    choices = [],
+    cancelLabel = 'Cancel'
+  } = options || {};
+  const choiceButtons = (choices || [])
+    .map(choice => `<button class='btn btn-ghost' type='button' data-track-choice='${escapeAttr(String(choice?.value || ''))}'>${escapeHtml(String(choice?.label || choice?.value || 'Option'))}</button>`)
+    .join('');
+  return `
+    <div class='stack' data-track-chooser='1' style='gap:10px'>
+      <div>
+        <div style='font-weight:700'>${escapeHtml(String(heading || 'Choose tracking mode'))}</div>
+        ${subheading ? `<div class='sub' style='margin-top:4px'>${escapeHtml(String(subheading))}</div>` : ''}
+      </div>
+      <div style='display:flex;flex-wrap:wrap;gap:8px'>${choiceButtons}</div>
+      <div style='display:flex;justify-content:flex-end'>
+        <button class='btn btn-ghost' type='button' data-track-choice-cancel='1'>${escapeHtml(String(cancelLabel || 'Cancel'))}</button>
+      </div>
+    </div>`;
+}
+
+function bindTrackTypeChooser(onSelect){
+  const root = document.querySelector('[data-track-chooser="1"]');
+  if (!root || typeof onSelect !== 'function') return;
+  root.querySelectorAll('[data-track-choice]').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.preventDefault();
+      const choice = String(btn.getAttribute('data-track-choice') || '').trim();
+      if (!choice) return;
+      await onSelect(choice, btn);
+    };
+  });
+  root.querySelector('[data-track-choice-cancel="1"]')?.addEventListener('click', () => closeSummaryPopup());
+}
+
+async function openTrackRaceChooser(race, options = {}){
+  if (!race) return null;
+  const {
+    title = `${race.meeting || 'Race'} R${race.race_number || race.race || '—'} — Track`,
+    sourcePrefix = 'web-race-track',
+    notes = {}
+  } = options || {};
+  openSummaryPopup(title, buildTrackTypeChooserHtml({
+    heading: 'Track this race',
+    subheading: 'Choose whether to add every runner as tracked WIN entries or WATCH entries.',
+    choices: [
+      { value: 'Win', label: 'Track all runners' },
+      { value: 'Watch', label: 'Watch race' }
+    ]
+  }));
+  bindTrackTypeChooser(async (betType, btn) => {
+    btn.disabled = true;
+    const watchMode = String(betType || '').toLowerCase() === 'watch';
+    const result = await trackAllRunnersInRace(race, {
+      betType,
+      source: watchMode ? `${sourcePrefix}-watch` : `${sourcePrefix}-all`,
+      note: watchMode ? (notes.watch || 'Watch race') : (notes.win || 'Track all runners in race')
+    }).catch(() => null);
+    closeSummaryPopup();
+    if (!result) return alert(watchMode ? 'Failed to watch race.' : 'Failed to track all runners.');
+    alert(watchMode
+      ? `Watch race: ${result.created} added, ${result.duplicates} already tracked.`
+      : `Track all runners: ${result.created} added, ${result.duplicates} already tracked.`);
+  });
+  return true;
+}
+
 function buildTrackRunnerButtonsHtml(race, runner, trackedBet){
   const trackedMeta = trackedGroupMeta(trackedBet || {});
-  const trackedButtonLabel = trackedBet ? 'TRACKED' : 'Track Runner';
+  const trackedButtonLabel = trackedBet ? 'TRACKED' : 'Track';
   const trackedButtonClass = trackedBet ? 'btn btn-ghost compact-btn track-runner-btn is-tracked' : 'btn btn-ghost compact-btn track-runner-btn';
   const baseAttrs = `data-meeting='${escapeAttr(String(race?.meeting || ''))}' data-race='${escapeAttr(String(race?.race_number || race?.race || ''))}' data-runner='${escapeAttr(String(runner?.name || runner?.runner_name || ''))}'`;
   const trackedMetaTag = trackedBet ? `<span class='tag tracked'>${trackedMeta.isMulti ? `${escapeHtml(trackedMeta.groupLabel)} · ` : ''}${escapeHtml(String(trackedBet.betType || 'Win').toUpperCase())} · Entry ${trackedBet.odds != null ? escapeHtml(Number(trackedBet.odds).toFixed(2)) : '—'}${trackedBet.jumpsIn ? ` · ${escapeHtml(String(trackedBet.jumpsIn))}` : ''}</span>` : '';
-  const watchButton = trackedBet ? '' : `<button class='btn btn-ghost compact-btn track-runner-btn track-runner-watch-btn' type='button' data-track-runner='1' data-track-bet-type='Watch' ${baseAttrs}>Watch</button>`;
   return `
-    <button class='${trackedButtonClass}' type='button' data-track-runner='1' data-track-bet-type='${trackedBet ? escapeAttr(String(trackedBet.betType || 'Win')) : 'Win'}' ${baseAttrs}>${trackedButtonLabel}</button>
-    ${watchButton}
+    <button class='${trackedButtonClass}' type='button' data-track-runner='1' data-track-bet-type='${trackedBet ? escapeAttr(String(trackedBet.betType || 'Win')) : ''}' ${baseAttrs}>${trackedButtonLabel}</button>
     ${trackedMetaTag}`;
 }
 
@@ -3969,7 +4036,7 @@ function renderWorkspaceSignalPanels(){
             <div class='sub'>${escapeHtml(String(r.fromOdds ?? '—'))} → ${escapeHtml(String(r.toOdds ?? '—'))}</div>
             <div class='workspace-signal-actions'>
               <button class='btn btn-ghost compact-btn workspace-action-btn workspace-track-runner-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-runner='${escapeAttr(String(r.runner || ''))}'>Track runner</button>
-              <button class='btn btn-ghost compact-btn workspace-action-btn workspace-watch-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'>Watch race</button>
+              <button class='btn btn-ghost compact-btn workspace-action-btn workspace-track-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'>Track race</button>
             </div>
           </div>
           <div class='right'>${buildJumpCell(r.meeting, r.race, r.eta || '—')}</div>
@@ -4002,7 +4069,7 @@ function renderWorkspaceSignalPanels(){
             <div class='sub'>${escapeHtml(r.reason || 'Interesting profile')}</div>
             <div class='workspace-signal-actions'>
               <button class='btn btn-ghost compact-btn workspace-action-btn workspace-track-runner-btn' data-meeting='${r.meeting}' data-race='${r.race}' data-runner='${escapeAttr(cleanRunnerText(r.runner))}'>Track runner</button>
-              <button class='btn btn-ghost compact-btn workspace-action-btn workspace-watch-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'>Watch race</button>
+              <button class='btn btn-ghost compact-btn workspace-action-btn workspace-track-race-btn' data-meeting='${r.meeting}' data-race='${r.race}'>Track race</button>
             </div>
           </div>
           <div class='right'>${buildJumpCell(r.meeting, r.race, r.eta || '—')}</div>
@@ -4032,12 +4099,18 @@ function renderWorkspaceSignalPanels(){
     await selectRace(race.key);
     $('analysisBody').innerHTML += `<div style='margin-top:6px;color:#7aa3c7'>Focused from Workspace Market Movers: ${escapeHtml(String(btn.dataset.runner || ''))}</div>`;
   });
-  bindWorkspaceRaceAction('.workspace-watch-race-btn', async (e) => {
+  bindWorkspaceRaceAction('.workspace-track-race-btn', async (e) => {
     const btn = e.currentTarget;
     const race = await findRaceForButton(btn.dataset.meeting, btn.dataset.race);
     if (!race) return alert('Race not found in cache yet. Try Refresh.');
-    const result = await trackAllRunnersInRace(race, { betType: 'Watch', source: 'web-watch-race', note: 'Watch race from workspace' }).catch(() => null);
-    if (result) alert(`Watch race: ${result.created} added, ${result.duplicates} already tracked.`);
+    await openTrackRaceChooser(race, {
+      title: `${race.meeting} R${race.race_number} — Track Race`,
+      sourcePrefix: 'web-workspace-race-track',
+      notes: {
+        win: 'Track all runners in race from workspace',
+        watch: 'Watch race from workspace'
+      }
+    });
   });
   bindWorkspaceRaceAction('.workspace-track-runner-btn', async (e) => {
     const btn = e.currentTarget;
@@ -10479,22 +10552,23 @@ function attachAnalysisSelectionHandlers(race){
 
   const watchRaceBtn = $('analysisWatchRaceBtn');
   if (watchRaceBtn) {
+    watchRaceBtn.textContent = 'Track Race';
     watchRaceBtn.onclick = async () => {
       if (!selectedRace) return alert('Select a race first.');
-      const result = await trackAllRunnersInRace(selectedRace, { betType: 'Watch', source: 'web-watch-race', note: 'Watch race from analysis' }).catch(() => null);
-      if (!result) return alert('Failed to watch race.');
-      alert(`Watch race: ${result.created} added, ${result.duplicates} already tracked.`);
+      await openTrackRaceChooser(selectedRace, {
+        title: `${selectedRace.meeting} R${selectedRace.race_number} — Track Race`,
+        sourcePrefix: 'web-analysis-race-track',
+        notes: {
+          win: 'Track all runners in race from analysis',
+          watch: 'Watch race from analysis'
+        }
+      });
     };
   }
 
   const trackAllBtn = $('analysisTrackAllRunnersBtn');
   if (trackAllBtn) {
-    trackAllBtn.onclick = async () => {
-      if (!selectedRace) return alert('Select a race first.');
-      const result = await trackAllRunnersInRace(selectedRace, { betType: 'Win', source: 'web-track-all-runners', note: 'Track all runners in race from analysis' }).catch(() => null);
-      if (!result) return alert('Failed to track all runners.');
-      alert(`Track all runners: ${result.created} added, ${result.duplicates} already tracked.`);
-    };
+    trackAllBtn.style.display = 'none';
   }
 
   const speedToggle = $('analysisSpeedToggle');
@@ -10537,15 +10611,38 @@ function bindTrackRunnerButtons(race){
         return nm === selNorm || nm.includes(selNorm) || selNorm.includes(nm);
       });
       if (!runner) return;
+      const reopenRunnerModal = () => {
+        openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
+        bindTrackRunnerButtons(race);
+      };
+      if (!btn.classList.contains('is-tracked')) {
+        openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, buildTrackTypeChooserHtml({
+          heading: 'Track this runner',
+          subheading: `${cleanRunnerText(runner.name || runner.runner_name || selRaw)} · choose the tracked mode.`,
+          choices: [
+            { value: 'Win', label: 'Win' },
+            { value: 'Place', label: 'Place' },
+            { value: 'Each Way', label: 'Each Way' },
+            { value: 'Watch', label: 'Watch' }
+          ]
+        }));
+        bindTrackTypeChooser(async (choice, choiceBtn) => {
+          choiceBtn.disabled = true;
+          const outcome = await toggleTrackedRunner(race, runner, {
+            betType: choice,
+            source: String(choice || '').toLowerCase() === 'watch' ? 'web-watch-runner' : 'web-runner',
+            note: String(choice || '').toLowerCase() === 'watch' ? 'Watch runner from analysis' : null
+          }).catch(() => null);
+          if (!outcome) return;
+          reopenRunnerModal();
+        });
+        return;
+      }
       const betType = String(btn.dataset.trackBetType || 'Win').trim() || 'Win';
       const outcome = await toggleTrackedRunner(race, runner, { betType, source: betType.toLowerCase() === 'watch' ? 'web-watch-runner' : 'web-runner', note: betType.toLowerCase() === 'watch' ? 'Watch runner from analysis' : null }).catch(() => null);
       if (!outcome) return;
-      if (outcome.action === 'tracked') {
-        openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
-        bindTrackRunnerButtons(race);
-      } else if (outcome.action === 'untracked' && !document.querySelector('[data-tracked-edit-root="1"]')) {
-        openSummaryPopup(`${race.meeting} R${race.race_number} — ${runner.name || runner.runner_name}`, renderHorseAnalysis(race, runner));
-        bindTrackRunnerButtons(race);
+      if ((outcome.action === 'tracked' || outcome.action === 'untracked') && !document.querySelector('[data-tracked-edit-root="1"]')) {
+        reopenRunnerModal();
       }
     };
   });

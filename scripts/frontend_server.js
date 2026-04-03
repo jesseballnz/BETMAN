@@ -983,6 +983,10 @@ function isProtectedBetmanAccount(value){
 }
 
 function hasPulseAccess(principal){
+  return !!principal;
+}
+
+function hasApiKeyAccess(principal){
   if (!principal) return false;
   if (principal.isAdmin) return true;
   return PULSE_ALLOWLIST.has(normalizeUsername(principal.username || ''));
@@ -5677,7 +5681,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         try { payload = body ? JSON.parse(body) : {}; } catch {}
         const principal = req.authPrincipal;
         const userRecord = getUserRecordByPrincipal(principal);
-        const eligible = hasPulseAccess(principal);
+        const eligible = hasApiKeyAccess(principal);
         if (!eligible) {
           return okJson(res, { ok: false, error: 'api_key_not_allowed' }, 403);
         }
@@ -5978,7 +5982,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const openAiComplimentary = OPENAI_COMPLIMENTARY_GLOBAL && userComplimentary;
     const planType = userRecord?.planType || (principal?.isAdmin ? 'admin' : null);
     const pulseEligible = hasPulseAccess(principal);
-    const apiKeyEligible = pulseEligible;
+    const apiKeyEligible = hasApiKeyAccess(principal);
     const adminMeta = authState.adminMeta || {};
     const apiKeyCreatedAt = principal?.isAdmin ? (adminMeta.apiKeyCreatedAt || null) : (userRecord?.apiKeyCreatedAt || null);
     const apiKeyPreview = principal?.isAdmin ? (adminMeta.apiKeyPreview || null) : (userRecord?.apiKeyPreview || null);

@@ -42,9 +42,21 @@ const race = {
 };
 
 const watchButtonsHtml = sandbox.buildTrackRunnerButtonsHtml(race, { name: '1. Alpha' }, null);
-assert(watchButtonsHtml.includes("data-track-bet-type='Win'"));
-assert(watchButtonsHtml.includes("data-track-bet-type='Watch'"));
-assert(watchButtonsHtml.includes('>Watch<'));
+assert(watchButtonsHtml.includes("data-track-runner='1'"));
+assert(!watchButtonsHtml.includes("data-track-bet-type='Watch'"));
+assert(!watchButtonsHtml.includes('>Watch<'));
+assert(watchButtonsHtml.includes('>Track<'));
+
+const chooserHtml = sandbox.buildTrackTypeChooserHtml({
+  heading: 'Track this runner',
+  choices: [
+    { value: 'Win', label: 'Win' },
+    { value: 'Watch', label: 'Watch' },
+  ],
+});
+assert(chooserHtml.includes("data-track-choice='Win'"));
+assert(chooserHtml.includes("data-track-choice='Watch'"));
+assert(chooserHtml.includes('Track this runner'));
 
 const payloads = JSON.parse(JSON.stringify(sandbox.buildRaceTrackingPayloads(race, {
   betType: 'Watch',
