@@ -119,6 +119,20 @@ body.landing-page .brand span {
   color: var(--accent);
 }
 
+.brand-tag {
+  display: inline-block;
+  color: var(--text-soft);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-style: normal;
+}
+
+.brand-tag.betman-green {
+  color: var(--text-soft);
+}
+
 .login-hero {
   margin: 30px 0;
   border-radius: 20px;

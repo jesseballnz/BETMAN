@@ -2,62 +2,81 @@
 
 BETMAN is the racing execution platform for The Ball Capital Office.
 
-It is not just a tip sheet and not just an API. It is an operating system for race-day decision-making across:
+It is not a tip sheet, and it is not just an API.
+It is an operating system for race-day decision-making across:
 - live race universe monitoring
 - simulation-backed race analysis
 - market movers and interesting runners
-- bet planning and queue management
 - tracked runner workflows
-- Pulse premium signals
-- Heat Maps / thermal observation workflows
-- AI-assisted explanation and review
+- BETMAN Pulse premium live signals
+- AI-assisted race analysis, explanation, and review
+- cross-surface continuity between web and mobile
 
 ## Product surfaces
 
-### 1. Web workspace
-Primary command surface for:
+### 1. BETMAN Web Workspace
+Primary command surface for race-day operators.
+
+Core capabilities:
 - Meeting Workspace
 - Suggested Bets
-- Multis
 - Market Movers
 - Interesting Runners
-- Bet Plans
-- Autobet queue
-- Strategy Builder
-- Model Bakeoff
-- Performance
 - Tracked runners
-- Heatmap
-- Pulse
-- Alerts
+- Performance
+- Strategy Builder
+- AI race analysis
+- BETMAN Pulse control
+
+What has improved:
+- stronger meeting / race coherence
+- safer tracked trust and settlement handling
+- better Pulse scope control
+- tighter AI context and evidence guardrails
 
 ### 2. BETMAN Mobile
-Mobile operating surface for:
-- races and meeting context
-- tracked runners
-- Pulse alerts
-- settings and Pulse profile control
-- fast race reopen from tracked workflows
+BETMAN Mobile is the fast-response companion to the web workspace.
+
+Core capabilities:
+- race reopen from Pulse or tracked workflows
+- Pulse live feed and history
+- tracked runner monitoring
+- Active / Settled / History lifecycle views
+- market movers and interesting runners on the move
+- shared settings and Pulse targeting control
+
+Mobile is built for continuity away from the desktop workspace, not a cut-down companion to the core product.
 
 ### 3. BETMAN Pulse
-Premium live signal layer built on top of the core race workspace.
+BETMAN Pulse is the premium live signal layer built on top of the core race workspace.
 
 Pulse is designed to:
-- filter the noise out of generic alerts
+- filter noise out of generic alerts
 - prioritise tracked runners
-- focus on meeting/race targeting
+- focus on country / meeting / race targeting
 - surface jump-window opportunities
-- make the premium feed more actionable than raw market telemetry
+- give operators a more actionable live feed than raw market telemetry
+
+Rule families include:
+- plunges
+- drifts
+- conflicts
+- selection flips
+- pre-jump heat
+- jump pulse
 
 ### 4. Heat Maps
-Dedicated surface for thermal intake and horse heat observations.
+Heat Maps provide a dedicated location for thermal intake and horse heat observations, pairing physical-condition signal with market behavior and simulation signal.
 
-The intent is to pair:
-- market behavior
-- simulation/model view
-- visual/physical-condition observations
+## Positioning
+BETMAN is for operators who want:
+- faster race-day context recovery
+- stronger signal discipline
+- live premium alerting
+- cleaner tracked-runner workflows
+- practical AI-assisted race analysis without surrendering control
 
-## Screenshots
+## Screenshots / marketing assets
 - `frontend/assets/1-click-race-analysis.png`
 - `frontend/assets/bet-plans.png`
 - `frontend/assets/ai-chat.png`
