@@ -752,8 +752,8 @@ asyncTests.push((async () => {
 
 // 34. loadAuthState filter preserves passwordless users (Stripe-provisioned)
 {
-  // Simulate the loadAuthState filter — BEFORE fix it was: u?.username && u?.password
-  // AFTER fix it should be: u?.username (password not required)
+  // Validate that the loadAuthState filter preserves users with usernames
+  // regardless of password presence (passwordless Stripe-provisioned users are valid)
   const users = [
     { username: 'withpass@test.com', password: 'hash123', role: 'user', apiKeys: [{ key: 'bm_a', active: true }] },
     { username: 'nopass@test.com', password: '', role: 'user', apiKeys: [{ key: 'bm_b', active: true }] },
@@ -837,7 +837,7 @@ asyncTests.push((async () => {
   const req = fakePostReq('/api/v1/keys', { username: 'stripe@test.com', label: 'Stripe User Key' }, { 'x-api-key': adminKey });
   const res = fakeRes();
   await handler(req, res, new URL('http://localhost/api/v1/keys'));
-  await new Promise(r => setTimeout(r, 50));
+  await new Promise(r => setTimeout(r, 50)); // wait for collectApiBody req.on('end') callback
   assert.strictEqual(res.statusCode, 201, 'key creation should succeed for passwordless user');
   const createResult = JSON.parse(res.body);
   assert.ok(createResult.ok);
