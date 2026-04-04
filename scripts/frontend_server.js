@@ -665,7 +665,9 @@ async function ensurePgSchema(pool){
   // Migration: add admin_api_keys column for existing installations
   await pool.query(`
     ALTER TABLE betman_auth_state ADD COLUMN IF NOT EXISTS admin_api_keys JSONB NOT NULL DEFAULT '[]'::jsonb
-  `).catch(() => {});
+  `).catch((e) => {
+    console.warn('admin_api_keys migration (may already exist):', e.message);
+  });
   await pool.query(`
     CREATE TABLE IF NOT EXISTS betman_data (
       tenant_id TEXT NOT NULL,
