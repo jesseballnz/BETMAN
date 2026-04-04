@@ -752,6 +752,28 @@ asyncTests.push((async () => {
   console.log('  ✓ tracked-bets POST duplicate scope respects principal visibility');
 })());
 
+// 22d. api-key auth accepts plus-addressed email users
+asyncTests.push((async () => {
+  const plusKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin',
+      password: 'pass',
+      users: [{ username: 'devdassk+betman@icloud.com', password: 'pw', tenantId: 'default', apiKeys: [{ key: plusKey, label: 'Plus key', active: true }] }],
+      adminApiKeys: []
+    })
+  });
+  const req = fakeReq('GET', '/api/v1/me', { 'x-api-key': plusKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/me');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.ok, true);
+  assert.strictEqual(parsed.user.username, 'devdassk+betman@icloud.com');
+  console.log('  ✓ api-key auth accepts plus-addressed email users');
+})());
+
 // 23. Models endpoint
 asyncTests.push((async () => {
   const testKey = generateApiKey();

@@ -479,11 +479,33 @@ function setCachedRaceList(key, payload){
   }
 }
 
+function normalizeStoredApiKeyRecord(raw){
+  if (!raw || typeof raw !== 'object') return null;
+  const key = String(raw.key || '').trim();
+  if (!key) return null;
+  return {
+    ...raw,
+    key,
+    label: raw.label || null,
+    rateLimit: Number(raw.rateLimit) || 60,
+    rateWindow: Number(raw.rateWindow) || 60,
+    active: raw.active !== false,
+    createdAt: raw.createdAt || null,
+    revokedAt: raw.revokedAt || null
+  };
+}
+
+function normalizeStoredApiKeys(list){
+  return (Array.isArray(list) ? list : [])
+    .map(normalizeStoredApiKeyRecord)
+    .filter(Boolean);
+}
+
 function loadAuthState(){
   const fromFile = loadJson(AUTH_FILE, null);
   const users = Array.isArray(fromFile?.users)
     ? fromFile.users
-        .filter(u => u?.username && u?.password)
+        .filter(u => u?.username)
         .map(u => {
           const copy = { ...u };
           copy.role = copy.role || 'user';
@@ -492,6 +514,7 @@ function loadAuthState(){
           copy.apiKeyHash = copy.apiKeyHash || null;
           copy.apiKeyCreatedAt = copy.apiKeyCreatedAt || null;
           copy.apiKeyPreview = copy.apiKeyPreview || null;
+          copy.apiKeys = normalizeStoredApiKeys(copy.apiKeys);
           if (!('createdAt' in copy)) copy.createdAt = null;
           if (!('updatedAt' in copy)) copy.updatedAt = null;
           return copy;
@@ -502,11 +525,13 @@ function loadAuthState(){
     apiKeyCreatedAt: fromFile?.adminMeta?.apiKeyCreatedAt || fromFile?.adminApiKeyCreatedAt || null,
     apiKeyPreview: fromFile?.adminMeta?.apiKeyPreview || fromFile?.adminApiKeyPreview || null
   };
+  const adminApiKeys = normalizeStoredApiKeys(fromFile?.adminApiKeys || fromFile?.adminMeta?.adminApiKeys);
   return {
     username: fromFile?.username || AUTH_USER,
     password: fromFile?.password || AUTH_PASS,
     users,
-    adminMeta
+    adminMeta,
+    adminApiKeys
   };
 }
 let authState = loadAuthState();
@@ -530,7 +555,8 @@ async function initAuthPersistence(){
         username: fromDb.username || authState.username,
         password: fromDb.password || authState.password,
         users: Array.isArray(fromDb.users) ? fromDb.users : authState.users,
-        adminMeta: fromDb.adminMeta || authState.adminMeta || {}
+        adminMeta: fromDb.adminMeta || authState.adminMeta || {},
+        adminApiKeys: normalizeStoredApiKeys(fromDb.adminApiKeys || authState.adminApiKeys || [])
       };
       console.log('Auth state loaded from Postgres.');
     } else {
@@ -567,8 +593,8 @@ function getCorsHeaders(req){
   };
 }
 
-function send(res, code, body, type='text/plain', req=null){
-  res.writeHead(code, { 'Content-Type': type, ...getCorsHeaders(req) });
+function send(res, code, body, type='text/plain', req=null, extraHeaders = null){
+  res.writeHead(code, { 'Content-Type': type, ...getCorsHeaders(req), ...(extraHeaders || {}) });
   res.end(body);
 }
 
@@ -918,15 +944,21 @@ async function loadAuthStateFromPg(pool){
   const r = await pool.query('SELECT username, password, users, admin_meta FROM betman_auth_state WHERE id=1');
   if (!r.rows?.length) return null;
   const row = r.rows[0];
+  const adminMeta = row.admin_meta || {};
   return {
     username: row.username,
     password: row.password,
     users: Array.isArray(row.users) ? row.users : [],
-    adminMeta: row.admin_meta || {}
+    adminMeta,
+    adminApiKeys: normalizeStoredApiKeys(adminMeta.adminApiKeys || [])
   };
 }
 
 async function saveAuthStateToPg(pool, state){
+  const adminMeta = {
+    ...(state.adminMeta || {}),
+    adminApiKeys: normalizeStoredApiKeys(state.adminApiKeys || [])
+  };
   await pool.query(
     `INSERT INTO betman_auth_state (id, username, password, users, admin_meta, updated_at)
      VALUES (1, $1, $2, $3::jsonb, $4::jsonb, NOW())
@@ -936,7 +968,7 @@ async function saveAuthStateToPg(pool, state){
          users=EXCLUDED.users,
          admin_meta=EXCLUDED.admin_meta,
          updated_at=NOW()`,
-    [state.username, state.password, JSON.stringify(state.users || []), JSON.stringify(state.adminMeta || {})]
+    [state.username, state.password, JSON.stringify(state.users || []), JSON.stringify(adminMeta)]
   );
 }
 
@@ -946,8 +978,16 @@ function toInt(v, fallback){
   return Math.max(0, Math.floor(n));
 }
 
-function okJson(res, payload, code = 200, req = null){
-  send(res, code, JSON.stringify(payload, null, 2), 'application/json', req);
+function okJson(res, payload, code = 200, req = null, extraHeaders = null){
+  send(res, code, JSON.stringify(payload, null, 2), 'application/json', req, extraHeaders);
+}
+
+function noStoreHeaders(){
+  return {
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  };
 }
 
 function normalizeUsername(u){
@@ -1061,6 +1101,16 @@ function getSessionPrincipal(req){
   return getSessionPrincipalById(sid);
 }
 
+function getTrustedApiSessionPrincipal(req){
+  const sessionPrincipal = getSessionPrincipal(req);
+  if (sessionPrincipal) return sessionPrincipal;
+
+  const auth = String(req?.headers?.authorization || '');
+  const bearer = auth.match(/^Bearer\s+(.+)$/i);
+  if (!bearer?.[1]) return null;
+  return getSessionPrincipalById(String(bearer[1]).trim()) || null;
+}
+
 function validateCredentials(username, password){
   const user = normalizeUsername(username);
   const pass = String(password || '');
@@ -1085,6 +1135,39 @@ function validateCredentials(username, password){
   return principal;
 }
 
+function findPrincipalByApiKey(apiKey){
+  const rawKey = String(apiKey || '').trim();
+  if (!rawKey) return null;
+
+  const adminMatch = normalizeStoredApiKeys(authState.adminApiKeys).find((key) => key.key === rawKey && key.active !== false);
+  if (adminMatch) {
+    const principal = { username: authState.username, role: 'admin', isAdmin: true, source: 'api_key', tenantId: 'default' };
+    principal.effectiveTenantId = effectiveTenantId(principal);
+    return principal;
+  }
+
+  const foundUser = (authState.users || []).find((user) =>
+    normalizeStoredApiKeys(user.apiKeys).some((key) => key.key === rawKey && key.active !== false)
+  );
+  if (foundUser) {
+    const role = foundUser.role || 'user';
+    const principal = {
+      username: foundUser.username,
+      role,
+      isAdmin: role === 'admin',
+      source: 'api_key',
+      tenantId: normalizeTenantId(foundUser.tenantId || 'default'),
+      planType: foundUser.planType || 'single'
+    };
+    principal.effectiveTenantId = effectiveTenantId(principal);
+    return principal;
+  }
+
+  const legacyPrincipal = validateCredentials(authState.username, rawKey);
+  if (legacyPrincipal) return legacyPrincipal;
+  return null;
+}
+
 function getAuthPrincipal(req){
   refreshAuthStateFromDisk();
   const sessionPrincipal = getSessionPrincipal(req);
@@ -1093,13 +1176,14 @@ function getAuthPrincipal(req){
   const auth = String(req?.headers?.authorization || '');
   const bearer = auth.match(/^Bearer\s+(.+)$/i);
   if (bearer?.[1]) {
-    const principal = getSessionPrincipalById(String(bearer[1]).trim());
+    const bearerValue = String(bearer[1]).trim();
+    const principal = getSessionPrincipalById(bearerValue) || findPrincipalByApiKey(bearerValue);
     if (principal) return principal;
   }
 
   const xApiKey = String(req?.headers?.['x-api-key'] || '').trim();
   if (xApiKey) {
-    const principal = validateCredentials(authState.username, xApiKey);
+    const principal = findPrincipalByApiKey(xApiKey);
     if (principal) return principal;
   }
 
@@ -1159,6 +1243,7 @@ function saveAuthState(next){
       apiKeyCreatedAt: (requestedMeta.apiKeyCreatedAt !== undefined) ? requestedMeta.apiKeyCreatedAt : (previousMeta.apiKeyCreatedAt || null),
       apiKeyPreview: (requestedMeta.apiKeyPreview !== undefined) ? requestedMeta.apiKeyPreview : (previousMeta.apiKeyPreview || null)
     },
+    adminApiKeys: normalizeStoredApiKeys(next.adminApiKeys !== undefined ? next.adminApiKeys : (authState.adminApiKeys || [])),
     users: (Array.isArray(next.users) ? next.users : (authState.users || [])).map(u => ({
       ...u,
       tenantId: normalizeTenantId(u.tenantId || 'default'),
@@ -1166,6 +1251,7 @@ function saveAuthState(next){
       apiKeyHash: u.apiKeyHash || null,
       apiKeyCreatedAt: u.apiKeyCreatedAt || null,
       apiKeyPreview: u.apiKeyPreview || null,
+      apiKeys: normalizeStoredApiKeys(u.apiKeys),
       openaiEnabled: u.openaiEnabled === true,
       openaiComplimentary: u.openaiComplimentary === true
     }))
@@ -1605,6 +1691,51 @@ function inferTemporalRaceAtVenue(question, races, venueMeeting) {
   }
 
   return null;
+}
+
+function inferExplicitRaceContext(question, races = [], fallbackMeeting = '', fallbackRace = '') {
+  const q = String(question || '').trim();
+  const raceMatch = q.match(/\b(?:r(?:ace)?\s*)(\d{1,2})\b/i);
+  const normalizedFallbackMeeting = String(fallbackMeeting || '').trim().toLowerCase();
+  const normalizedFallbackRace = String(fallbackRace || '').replace(/^R/i, '').trim();
+
+  const findRace = (meetingName, raceNo) => {
+    const meetingLower = String(meetingName || '').trim().toLowerCase();
+    const raceLower = String(raceNo || '').replace(/^R/i, '').trim();
+    if (!meetingLower || !raceLower) return null;
+    return (races || []).find(r =>
+      String(r.meeting || '').trim().toLowerCase() === meetingLower &&
+      String(r.race_number || r.race || '').replace(/^R/i, '').trim() === raceLower
+    ) || null;
+  };
+
+  if (normalizedFallbackMeeting && normalizedFallbackRace) {
+    const direct = findRace(fallbackMeeting, fallbackRace);
+    if (direct) {
+      return {
+        meeting: direct.meeting,
+        raceNumber: String(direct.race_number || direct.race || normalizedFallbackRace),
+        raceName: direct.description || '',
+        anchorType: 'explicit-race'
+      };
+    }
+  }
+
+  if (!raceMatch) return null;
+
+  const inferredMeeting = inferMeetingFromQuestion(q, races);
+  const matchedMeeting = inferredMeeting?.matched?.[0] || fallbackMeeting;
+  if (!matchedMeeting) return null;
+
+  const race = findRace(matchedMeeting, raceMatch[1]);
+  if (!race) return null;
+
+  return {
+    meeting: race.meeting,
+    raceNumber: String(race.race_number || race.race || raceMatch[1]),
+    raceName: race.description || '',
+    anchorType: 'explicit-race'
+  };
 }
 
 /**
@@ -2741,7 +2872,7 @@ function buildSelectionFactAnswer(question, clientContext = {}, tenantId = 'defa
   let suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
   const isRaceAnalysis = String(clientContext?.source || '').toLowerCase() === 'race-analysis';
 
-  if (isRaceAnalysis && clientContext?.raceContext) {
+  if (clientContext?.raceContext) {
     const rcMeeting = String(clientContext.raceContext.meeting || '').trim().toLowerCase();
     const rcRace = String(clientContext.raceContext.raceNumber || '').replace(/^R/i, '').trim();
     const race = (Array.isArray(racesData.races) ? racesData.races : []).find(r =>
@@ -3967,10 +4098,28 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   // Temporal race detection: when venue is matched and user asks about "the next race"
   // or "the last race", find the matching race and inject raceContext so full field data is included.
   let effectiveClientContext = clientContext;
-  if (!hasDraggedSelections && !isRaceAnalysis && !clientContext?.raceContext && venueInference.matched.length > 0) {
+  if (!hasDraggedSelections && !clientContext?.raceContext) {
+    const explicitRaceContext = inferExplicitRaceContext(
+      question,
+      allRaces,
+      clientContext?.meeting || '',
+      clientContext?.race || ''
+    );
+    if (explicitRaceContext) {
+      effectiveClientContext = Object.assign({}, clientContext, {
+        raceContext: {
+          meeting: explicitRaceContext.meeting,
+          raceNumber: explicitRaceContext.raceNumber,
+          raceName: explicitRaceContext.raceName,
+          anchorType: explicitRaceContext.anchorType
+        }
+      });
+    }
+  }
+  if (!hasDraggedSelections && !isRaceAnalysis && !effectiveClientContext?.raceContext && venueInference.matched.length > 0) {
     const temporal = inferTemporalRaceAtVenue(question, allRaces, venueInference.matched[0]);
     if (temporal) {
-      effectiveClientContext = Object.assign({}, clientContext, {
+      effectiveClientContext = Object.assign({}, effectiveClientContext, {
         raceContext: {
           meeting: temporal.race.meeting,
           raceNumber: String(temporal.race.race_number),
@@ -4305,7 +4454,12 @@ const betmanApiHandler = createApiHandler({
   saveAuthState: (next) => saveAuthState(next),
   loadJson,
   resolveTenantPath,
-  getSessionPrincipal: (req) => getAuthPrincipal(req),
+  // API v1 accepts either an API key (handled inside betman_api.js)
+  // or a trusted session principal injected by the frontend server.
+  // Only pass real session auth here (cookie / bearer session id), not the
+  // broader getAuthPrincipal() result, or API keys / Basic auth will be
+  // misclassified as "session" auth and bypass API-key-specific handling.
+  getSessionPrincipal: getTrustedApiSessionPrincipal,
   resolveTenantPathById,
   dataDir: path.join(process.cwd(), 'frontend', 'data'),
   rootDir: process.cwd()
@@ -5440,14 +5594,33 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       aiProvider = 'ollama';
     }
 
+    const racesData = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), {});
+    const allRaces = Array.isArray(racesData?.races) ? racesData.races : [];
+    const inferredRaceContext = payload?.raceContext || inferExplicitRaceContext(
+      question,
+      allRaces,
+      payload?.meeting || '',
+      payload?.race || ''
+    );
+    const effectivePayload = inferredRaceContext
+      ? Object.assign({}, payload, {
+          raceContext: Object.assign({}, payload?.raceContext || {}, {
+            meeting: inferredRaceContext.meeting,
+            raceNumber: inferredRaceContext.raceNumber,
+            raceName: inferredRaceContext.raceName || payload?.raceContext?.raceName || '',
+            anchorType: inferredRaceContext.anchorType || payload?.raceContext?.anchorType || 'explicit-race'
+          })
+        })
+      : payload;
+
     let aiMeta = null;
     try {
-      const ai = await buildSelectionAiAnswer(question, payload, tenantId, aiProvider);
+      const ai = await buildSelectionAiAnswer(question, effectivePayload, tenantId, aiProvider);
       if (ai && ai.answer && String(ai.answer).trim().length < MIN_AI_ANSWER_LENGTH) {
         fallbackReason = 'answer_too_short';
       } else if (ai && ai.answer && isRaceAnalysis) {
-        const aiSelectionSafe = aiAnswerRespectsSelections(ai.answer, payload);
-        const aiRaceSafe = raceAnalysisMatchesContext(ai.answer, payload);
+        const aiSelectionSafe = aiAnswerRespectsSelections(ai.answer, effectivePayload);
+        const aiRaceSafe = raceAnalysisMatchesContext(ai.answer, effectivePayload);
         const aiJsonSafe = !isMalformedJsonLikeAnswer(ai.answer);
         if (aiSelectionSafe && aiRaceSafe && aiJsonSafe && !hasPromptArtifactLeakage(ai.answer) && !hasDisallowedSourceCitation(ai.answer) && !/[^\x00-\x7F]{40,}/.test(String(ai.answer || ''))) {
           answerText = String(ai.answer).trim();
@@ -5457,16 +5630,17 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
           fallbackReason = !aiJsonSafe ? 'invalid_json' : (!aiRaceSafe ? 'race_context_guard' : 'policy_guard');
         }
       } else if (ai && ai.answer) {
-        const aiSelectionSafe = aiAnswerRespectsSelections(ai.answer, payload);
+        const aiSelectionSafe = aiAnswerRespectsSelections(ai.answer, effectivePayload);
+        const aiRaceSafe = !effectivePayload?.raceContext || raceAnalysisMatchesContext(ai.answer, effectivePayload);
         const aiJsonSafe = !isMalformedJsonLikeAnswer(ai.answer);
-        if (aiSelectionSafe && aiJsonSafe && !hasPromptArtifactLeakage(ai.answer) && !hasDisallowedSourceCitation(ai.answer) && !/[^\x00-\x7F]{40,}/.test(String(ai.answer || ''))) {
-          const nonRaceSource = String(payload?.source || '').toLowerCase();
+        if (aiSelectionSafe && aiRaceSafe && aiJsonSafe && !hasPromptArtifactLeakage(ai.answer) && !hasDisallowedSourceCitation(ai.answer) && !/[^\x00-\x7F]{40,}/.test(String(ai.answer || ''))) {
+          const nonRaceSource = String(effectivePayload?.source || '').toLowerCase();
           const shouldFormatDecision = nonRaceSource === 'strategy' || Number(payload?.selectionCount || 0) > 0;
           answerText = shouldFormatDecision ? enforceDecisionAnswerFormat(ai.answer) : String(ai.answer).trim();
           aiMeta = ai;
           mode = 'ai';
         } else {
-          fallbackReason = !aiJsonSafe ? 'invalid_json' : 'policy_guard';
+          fallbackReason = !aiJsonSafe ? 'invalid_json' : (!aiRaceSafe ? 'race_context_guard' : 'policy_guard');
         }
       } else {
         fallbackReason = 'empty_ai_response';
@@ -5516,16 +5690,16 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       const cacheCompatible = modelMatches && providerMatches;
 
       if (isRaceAnalysis && cached?.answer && String(cached.mode || '').toLowerCase() === 'ai' && cacheCompatible) {
-        const cacheSelectionSafe = aiAnswerRespectsSelections(cached.answer, payload);
-        const cacheRaceSafe = raceAnalysisMatchesContext(cached.answer, payload);
+        const cacheSelectionSafe = aiAnswerRespectsSelections(cached.answer, effectivePayload);
+        const cacheRaceSafe = raceAnalysisMatchesContext(cached.answer, effectivePayload);
         if (cacheSelectionSafe && cacheRaceSafe) {
           answerText = String(cached.answer);
           mode = 'cache';
         }
       }
       if (!answerText) {
-        const fallback = buildSelectionFactAnswer(question, payload, tenantId);
-        const nonRaceSource = String(payload?.source || '').toLowerCase();
+        const fallback = buildSelectionFactAnswer(question, effectivePayload, tenantId);
+        const nonRaceSource = String(effectivePayload?.source || '').toLowerCase();
         const shouldFormatDecision = nonRaceSource === 'strategy' || Number(payload?.selectionCount || 0) > 0;
         answerText = shouldFormatDecision ? enforceDecisionAnswerFormat(fallback) : String(fallback).trim();
         mode = 'fallback';
@@ -5533,7 +5707,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     }
 
     if (isRaceAnalysis) {
-      answerText = enforceRaceAnalysisAnswerFormat(answerText, payload, tenantId);
+      answerText = enforceRaceAnalysisAnswerFormat(answerText, effectivePayload, tenantId);
     }
 
     if (AI_CACHE_ENABLED && raceCacheKey && isRaceAnalysis && answerText && mode === 'ai') {
@@ -5556,19 +5730,19 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       saveRaceAnalysisCacheState(raceCacheState.cachePath, raceCacheState.cacheData);
     }
 
-    rememberAiTurn(tenantId, question, answerText, String(payload?.source || ''));
+    rememberAiTurn(tenantId, question, answerText, String(effectivePayload?.source || ''));
     recordAiOutcome({
       question,
-      payload,
+      payload: effectivePayload,
       mode,
       provider: aiProvider,
       error: mode === 'fallback' ? fallbackReason : null,
-      modelRequested: String(payload?.model || '').trim() || null,
+      modelRequested: String(effectivePayload?.model || '').trim() || null,
       modelUsed: aiMeta?.modelUsed || null,
       modelAdjusted: !!aiMeta?.modelAdjusted
     });
 
-    const resolvedModelForMeta = String(aiMeta?.modelUsed || payload?.model || process.env.BETMAN_CHAT_MODEL || '').toLowerCase();
+    const resolvedModelForMeta = String(aiMeta?.modelUsed || effectivePayload?.model || process.env.BETMAN_CHAT_MODEL || '').toLowerCase();
     const smallModelForMeta = isSmallModel(resolvedModelForMeta);
     const fallbackContextMeta = isRaceAnalysis
       ? (smallModelForMeta
@@ -5850,6 +6024,14 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         const preview = apiKey.slice(-6);
         const hash = hashApiSecret(apiKey);
         const nowIso = new Date().toISOString();
+        const newKey = {
+          key: apiKey,
+          label: 'Self Service',
+          rateLimit: 60,
+          rateWindow: 60,
+          active: true,
+          createdAt: nowIso
+        };
 
         if (principal?.isAdmin && !userRecord) {
           const adminMeta = {
@@ -5858,16 +6040,27 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
             apiKeyCreatedAt: nowIso,
             apiKeyPreview: preview
           };
-          saveAuthState({ username: authState.username, password: authState.password, users: authState.users || [], adminMeta });
-          return okJson(res, { ok: true, apiKey, createdAt: nowIso });
+          const adminKeys = [...(authState.adminApiKeys || [])];
+          adminKeys.push(newKey);
+          saveAuthState({ username: authState.username, password: authState.password, users: authState.users || [], adminMeta, adminApiKeys: adminKeys });
+          return okJson(res, { ok: true, apiKey, createdAt: nowIso }, 200, req, noStoreHeaders());
         }
 
         const users = [...(authState.users || [])];
         const idx = users.findIndex(u => normalizeUsername(u.username) === normalizeUsername(principal?.username));
         if (idx < 0) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
-        users[idx] = { ...users[idx], apiKeyHash: hash, apiKeyCreatedAt: nowIso, apiKeyPreview: preview, updatedAt: nowIso };
-        saveAuthState({ username: authState.username, password: authState.password, users });
-        return okJson(res, { ok: true, apiKey, createdAt: nowIso });
+        const userKeys = [...(users[idx].apiKeys || [])];
+        userKeys.push(newKey);
+        users[idx] = {
+          ...users[idx],
+          apiKeyHash: hash,
+          apiKeyCreatedAt: nowIso,
+          apiKeyPreview: preview,
+          apiKeys: userKeys,
+          updatedAt: nowIso
+        };
+        saveAuthState({ username: authState.username, password: authState.password, users, adminApiKeys: authState.adminApiKeys || [] });
+        return okJson(res, { ok: true, apiKey, createdAt: nowIso }, 200, req, noStoreHeaders());
       });
       return;
     }
@@ -6163,7 +6356,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       openAiUiEnabled,
       openAiAllowed,
       openAiComplimentary
-    });
+    }, 200, req, noStoreHeaders());
   }
 
   if (req.method === 'GET' && url.pathname === '/api/auth-users') {
@@ -6595,7 +6788,9 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
 
   const ext = path.extname(filePath).toLowerCase();
   const types = { '.html':'text/html', '.css':'text/css', '.js':'text/javascript', '.json':'application/json' };
-  send(res, 200, fs.readFileSync(filePath), types[ext] || 'application/octet-stream');
+  const base = path.basename(filePath).toLowerCase();
+  const extraHeaders = (base === 'index.html' || base === 'app.js') ? noStoreHeaders() : null;
+  send(res, 200, fs.readFileSync(filePath), types[ext] || 'application/octet-stream', null, extraHeaders);
 });
 
 let shutdownInProgress = false;
@@ -6667,6 +6862,7 @@ module.exports = {
   buildAiContextSummary,
   isSmallModel,
   inferMeetingFromQuestion,
+  inferExplicitRaceContext,
   inferNextRaceAtVenue,
   inferTemporalRaceAtVenue,
   formatStatsCompact,
