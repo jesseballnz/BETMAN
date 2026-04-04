@@ -24,9 +24,10 @@ CREATE TABLE IF NOT EXISTS betman_audit (
 -- The CHECK constraint enforces this at the database level so all
 -- reads/writes target the single canonical row.
 CREATE TABLE IF NOT EXISTS betman_auth_state (
-  id         INTEGER PRIMARY KEY CHECK (id = 1),
-  username   TEXT    NOT NULL,
-  password   TEXT    NOT NULL,
-  users      JSONB   NOT NULL DEFAULT '[]'::jsonb,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  username       TEXT    NOT NULL,
+  password       TEXT    NOT NULL,
+  users          JSONB   NOT NULL DEFAULT '[]'::jsonb,
+  admin_api_keys JSONB   NOT NULL DEFAULT '[]'::jsonb,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

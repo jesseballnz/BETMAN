@@ -914,7 +914,7 @@ async function loadStatus(){
       el.style.color = ok ? '#c5ff00' : '#ff8a8a';
       el.style.borderColor = ok ? 'rgba(102,245,161,.35)' : 'rgba(255,107,107,.35)';
     };
-    setPill('apiStatusPublic', 'API Status', apiLiveOk ? 'OK' : (data.apiStatusPublic || data.apiStatus));
+    setPill('apiStatusPublic', 'API Status', apiLiveOk ? (data.apiStatusPublic || data.apiStatus || 'OK') : 'FAIL');
 
     latestSuggestedBets = (data.suggestedBets || []).map(sanitizeSuggestedRow);
     latestAiCompare = data.aiBetComparison || [];

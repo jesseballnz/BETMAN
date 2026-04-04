@@ -448,6 +448,308 @@ asyncTests.push((async () => {
   console.log('  ✓ Models endpoint');
 })());
 
+/* ── Non-admin API key persistence & auth tests ──────────────────── */
+
+// 22. Non-admin key is persisted to users[idx].apiKeys via saveAuthState
+asyncTests.push((async () => {
+  let savedState = null;
+  const adminKey = generateApiKey();
+  const userEmail = 'punter@example.com';
+
+  const state = {
+    username: 'admin', password: 'pass',
+    adminApiKeys: [{ key: adminKey, label: 'Admin', active: true }],
+    users: [{ username: userEmail, password: 'hash', role: 'user', tenantId: 'default', planType: 'single', apiKeys: [] }]
+  };
+
+  const handler = makeHandler({
+    getAuthState: () => state,
+    saveAuthState: (next) => { savedState = next; Object.assign(state, next); }
+  });
+
+  // Admin creates key for non-admin user
+  const req = fakePostReq('/api/v1/keys', { username: userEmail, label: 'Punter Key' }, { 'x-api-key': adminKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/keys');
+  await handler(req, res, url);
+  await new Promise(r => setTimeout(r, 50));
+  assert.strictEqual(res.statusCode, 201, `expected 201 but got ${res.statusCode}: ${res.body}`);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.ok, true);
+  assert.ok(parsed.key.startsWith('bm_'), 'returned key should start with bm_');
+  assert.strictEqual(parsed.username, userEmail);
+
+  // Verify the key was persisted via saveAuthState
+  assert.ok(savedState, 'saveAuthState should have been called');
+  const savedUser = savedState.users.find(u => u.username === userEmail);
+  assert.ok(savedUser, 'user should exist in saved state');
+  assert.ok(Array.isArray(savedUser.apiKeys), 'user should have apiKeys array');
+  assert.strictEqual(savedUser.apiKeys.length, 1, 'user should have exactly 1 API key');
+  assert.strictEqual(savedUser.apiKeys[0].key, parsed.key, 'saved key should match returned key');
+  assert.strictEqual(savedUser.apiKeys[0].active, true, 'key should be active');
+  console.log('  ✓ Non-admin key persisted to users[idx].apiKeys via saveAuthState');
+})());
+
+// 23. Persisted non-admin key authenticates /api/v1/me
+asyncTests.push((async () => {
+  const userKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin', password: 'pass',
+      adminApiKeys: [],
+      users: [{ username: 'stripe_user@test.com', password: 'hashed', role: 'user', tenantId: 'default', planType: 'commercial', apiKeys: [{ key: userKey, label: 'My Key', active: true, rateLimit: 60, rateWindow: 60 }] }]
+    })
+  });
+  const req = fakeReq('GET', '/api/v1/me', { 'x-api-key': userKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/me');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.ok, true);
+  assert.strictEqual(parsed.user.username, 'stripe_user@test.com');
+  assert.strictEqual(parsed.user.isAdmin, false);
+  assert.strictEqual(parsed.user.planType, 'commercial');
+  console.log('  ✓ Persisted non-admin key authenticates /api/v1/me');
+})());
+
+// 24. Persisted non-admin key authenticates /api/v1/races
+asyncTests.push((async () => {
+  const userKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin', password: 'pass',
+      adminApiKeys: [],
+      users: [{ username: 'user@test.com', password: 'hash', role: 'user', tenantId: 'default', planType: 'single', apiKeys: [{ key: userKey, label: 'Key', active: true }] }]
+    }),
+    loadJson: (p, f) => {
+      if (p.includes('races.json')) return { races: [{ meeting: 'Ellerslie', race_number: '1', country: 'NZ', runners: [] }] };
+      return f;
+    }
+  });
+  const req = fakeReq('GET', '/api/v1/races', { 'x-api-key': userKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/races');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.ok, true);
+  assert.strictEqual(parsed.count, 1);
+  console.log('  ✓ Persisted non-admin key authenticates /api/v1/races');
+})());
+
+// 25. Persisted non-admin key authenticates /api/v1/suggested-bets
+asyncTests.push((async () => {
+  const userKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin', password: 'pass',
+      adminApiKeys: [],
+      users: [{ username: 'user@test.com', password: 'hash', role: 'user', tenantId: 'default', planType: 'single', apiKeys: [{ key: userKey, label: 'Key', active: true }] }]
+    }),
+    loadJson: (p, f) => {
+      if (p.includes('status.json')) return { suggestedBets: [{ meeting: 'Pukekohe', race: '2', selection: 'Star', type: 'Win' }] };
+      return f;
+    }
+  });
+  const req = fakeReq('GET', '/api/v1/suggested-bets', { 'x-api-key': userKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/suggested-bets');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.ok, true);
+  assert.strictEqual(parsed.count, 1);
+  console.log('  ✓ Persisted non-admin key authenticates /api/v1/suggested-bets');
+})());
+
+// 26. Persisted non-admin key authenticates /api/v1/status
+asyncTests.push((async () => {
+  const userKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin', password: 'pass',
+      adminApiKeys: [],
+      users: [{ username: 'user@test.com', password: 'hash', role: 'user', tenantId: 'default', planType: 'single', apiKeys: [{ key: userKey, label: 'Key', active: true }] }]
+    }),
+    loadJson: (p, f) => {
+      if (p.includes('status.json')) return { balance: 100, openBets: 3 };
+      return f;
+    }
+  });
+  const req = fakeReq('GET', '/api/v1/status', { 'x-api-key': userKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/status');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.ok, true);
+  assert.strictEqual(parsed.balance, 100);
+  console.log('  ✓ Persisted non-admin key authenticates /api/v1/status');
+})());
+
+// 27. Invalid key fails all protected endpoints
+asyncTests.push((async () => {
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin', password: 'pass',
+      adminApiKeys: [],
+      users: [{ username: 'user@test.com', password: 'hash', role: 'user', tenantId: 'default', apiKeys: [{ key: generateApiKey(), label: 'Real', active: true }] }]
+    })
+  });
+  const endpoints = ['/api/v1/me', '/api/v1/races', '/api/v1/suggested-bets', '/api/v1/status', '/api/v1/keys'];
+  for (const ep of endpoints) {
+    const req = fakeReq('GET', ep, { 'x-api-key': 'bm_totally_bogus_key_that_does_not_exist' });
+    const res = fakeRes();
+    const url = new URL(`http://localhost${ep}`);
+    await handler(req, res, url);
+    assert.strictEqual(res.statusCode, 401, `${ep} should return 401 for invalid key`);
+    assert.strictEqual(JSON.parse(res.body).error, 'invalid_api_key', `${ep} should return invalid_api_key`);
+  }
+  console.log('  ✓ Invalid key returns 401 on all protected endpoints');
+})());
+
+// 28. Admin key still works after non-admin key creation (adminApiKeys persistence)
+asyncTests.push((async () => {
+  let savedState = null;
+  const adminKey = generateApiKey();
+  const state = {
+    username: 'admin', password: 'pass',
+    adminApiKeys: [{ key: adminKey, label: 'Admin', active: true }],
+    users: [{ username: 'user@test.com', password: 'hash', role: 'user', tenantId: 'default', apiKeys: [] }]
+  };
+  const handler = makeHandler({
+    getAuthState: () => state,
+    saveAuthState: (next) => {
+      savedState = next;
+      Object.assign(state, next);
+      // Simulate saveAuthState preserving adminApiKeys (the fix)
+      if (Array.isArray(next.adminApiKeys)) state.adminApiKeys = next.adminApiKeys;
+    }
+  });
+
+  // Admin creates key for user
+  const createReq = fakePostReq('/api/v1/keys', { username: 'user@test.com', label: 'User Key' }, { 'x-api-key': adminKey });
+  const createRes = fakeRes();
+  await handler(createReq, createRes, new URL('http://localhost/api/v1/keys'));
+  await new Promise(r => setTimeout(r, 50));
+  assert.strictEqual(createRes.statusCode, 201);
+
+  // Admin key should still work
+  const meReq = fakeReq('GET', '/api/v1/me', { 'x-api-key': adminKey });
+  const meRes = fakeRes();
+  await handler(meReq, meRes, new URL('http://localhost/api/v1/me'));
+  assert.strictEqual(meRes.statusCode, 200);
+  assert.strictEqual(JSON.parse(meRes.body).user.isAdmin, true);
+
+  // Verify adminApiKeys was preserved in saved state
+  assert.ok(savedState.adminApiKeys, 'adminApiKeys should be in saved state');
+  assert.strictEqual(savedState.adminApiKeys.length, 1, 'admin should still have 1 key');
+  console.log('  ✓ Admin key still works after non-admin key creation');
+})());
+
+// 29. Email normalisation — case-insensitive user lookup
+asyncTests.push((async () => {
+  const userKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin', password: 'pass',
+      adminApiKeys: [],
+      users: [{ username: 'User@Example.COM', password: 'hash', role: 'user', tenantId: 'default', planType: 'single', apiKeys: [{ key: userKey, label: 'Key', active: true }] }]
+    })
+  });
+  // Key should authenticate even though stored username has mixed case
+  const req = fakeReq('GET', '/api/v1/me', { 'x-api-key': userKey });
+  const res = fakeRes();
+  await handler(req, res, new URL('http://localhost/api/v1/me'));
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.user.username, 'User@Example.COM');
+  console.log('  ✓ Email normalisation — mixed-case username authenticates');
+})());
+
+// 30. Plus-addressed email key lookup
+asyncTests.push((async () => {
+  const userKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin', password: 'pass',
+      adminApiKeys: [],
+      users: [{ username: 'user+test@example.com', password: 'hash', role: 'user', tenantId: 'default', planType: 'single', apiKeys: [{ key: userKey, label: 'Key', active: true }] }]
+    })
+  });
+  const req = fakeReq('GET', '/api/v1/me', { 'x-api-key': userKey });
+  const res = fakeRes();
+  await handler(req, res, new URL('http://localhost/api/v1/me'));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(JSON.parse(res.body).user.username, 'user+test@example.com');
+  console.log('  ✓ Plus-addressed email key lookup works');
+})());
+
+// 31. Admin key creation via POST /api/v1/keys persists to adminApiKeys
+asyncTests.push((async () => {
+  let savedState = null;
+  const adminKey = generateApiKey();
+  const state = {
+    username: 'admin', password: 'pass',
+    adminApiKeys: [{ key: adminKey, label: 'Admin', active: true }],
+    users: []
+  };
+  const handler = makeHandler({
+    getAuthState: () => state,
+    saveAuthState: (next) => { savedState = next; Object.assign(state, next); }
+  });
+
+  const req = fakePostReq('/api/v1/keys', { label: 'New Admin Key' }, { 'x-api-key': adminKey });
+  const res = fakeRes();
+  await handler(req, res, new URL('http://localhost/api/v1/keys'));
+  await new Promise(r => setTimeout(r, 50));
+  assert.strictEqual(res.statusCode, 201);
+  const parsed = JSON.parse(res.body);
+  assert.ok(parsed.key.startsWith('bm_'));
+
+  // adminApiKeys should have the new key
+  assert.ok(savedState.adminApiKeys, 'adminApiKeys should be in saved state');
+  assert.strictEqual(savedState.adminApiKeys.length, 2, 'admin should have 2 keys now');
+  console.log('  ✓ Admin key creation persists to adminApiKeys');
+})());
+
+// 32. Non-admin key lists only own keys
+asyncTests.push((async () => {
+  const userKey = generateApiKey();
+  const otherKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin', password: 'pass',
+      adminApiKeys: [{ key: generateApiKey(), label: 'Admin', active: true }],
+      users: [
+        { username: 'alice@test.com', password: 'hash', role: 'user', tenantId: 'default', apiKeys: [{ key: userKey, label: 'Alice Key', active: true }] },
+        { username: 'bob@test.com', password: 'hash', role: 'user', tenantId: 'default', apiKeys: [{ key: otherKey, label: 'Bob Key', active: true }] }
+      ]
+    })
+  });
+  const req = fakeReq('GET', '/api/v1/keys', { 'x-api-key': userKey });
+  const res = fakeRes();
+  await handler(req, res, new URL('http://localhost/api/v1/keys'));
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.keys.length, 1, 'non-admin should see only their own keys');
+  assert.strictEqual(parsed.keys[0].label, 'Alice Key');
+  console.log('  ✓ Non-admin key list shows only own keys');
+})());
+
+// 33. normalizeUsername export works correctly
+{
+  const { normalizeUsername } = require('../scripts/betman_api');
+  assert.strictEqual(normalizeUsername('User@Example.COM'), 'user@example.com', 'email should be lowercased');
+  assert.strictEqual(normalizeUsername('admin'), 'admin', 'non-email should be unchanged');
+  assert.strictEqual(normalizeUsername('  user@test.com  '), 'user@test.com', 'should trim whitespace');
+  assert.strictEqual(normalizeUsername(null), '', 'null should return empty');
+  assert.strictEqual(normalizeUsername(undefined), '', 'undefined should return empty');
+  assert.strictEqual(normalizeUsername('user+tag@test.com'), 'user+tag@test.com', 'plus-addressed should be preserved');
+  console.log('  ✓ normalizeUsername handles all cases');
+}
+
 // Wait for all async tests to complete
 Promise.all(asyncTests).then(() => {
   console.log('betman_api tests passed');
