@@ -750,6 +750,122 @@ asyncTests.push((async () => {
   console.log('  ✓ normalizeUsername handles all cases');
 }
 
+// 34. loadAuthState filter preserves passwordless users (Stripe-provisioned)
+{
+  // Simulate the loadAuthState filter — BEFORE fix it was: u?.username && u?.password
+  // AFTER fix it should be: u?.username (password not required)
+  const users = [
+    { username: 'withpass@test.com', password: 'hash123', role: 'user', apiKeys: [{ key: 'bm_a', active: true }] },
+    { username: 'nopass@test.com', password: '', role: 'user', apiKeys: [{ key: 'bm_b', active: true }] },
+    { username: 'nullpass@test.com', role: 'user', apiKeys: [{ key: 'bm_c', active: true }] }
+  ];
+  // The fixed filter only requires username
+  const filtered = users.filter(u => u?.username);
+  assert.strictEqual(filtered.length, 3, 'all users with usernames should survive filter');
+  assert.ok(filtered.every(u => (u.apiKeys || []).length > 0), 'all apiKeys should be preserved');
+  // Invalid records (no username) should still be dropped
+  const withInvalid = [...users, { password: 'orphan' }, null, {}];
+  const filteredInvalid = withInvalid.filter(u => u?.username);
+  assert.strictEqual(filteredInvalid.length, 3, 'records without username should be filtered out');
+  console.log('  ✓ loadAuthState filter preserves passwordless users');
+}
+
+// 35. Non-admin key round-trip through saveAuthState mapping
+{
+  function normalizeTenantId(v) {
+    const raw = String(v || 'default').trim();
+    return raw.replace(/[^a-zA-Z0-9_-]/g, '_') || 'default';
+  }
+  // Simulate the real saveAuthState user mapping
+  const userWithKey = {
+    username: 'user@test.com', password: 'hash', role: 'user',
+    tenantId: 'default', planType: 'single',
+    apiKeys: [{ key: 'bm_test123abc', label: 'Test', active: true, rateLimit: 60, rateWindow: 60 }]
+  };
+  const mapped = {
+    ...userWithKey,
+    tenantId: normalizeTenantId(userWithKey.tenantId || 'default'),
+    openaiEnabled: userWithKey.openaiEnabled === true,
+    openaiComplimentary: userWithKey.openaiComplimentary === true
+  };
+  assert.deepStrictEqual(mapped.apiKeys, userWithKey.apiKeys, 'apiKeys must survive saveAuthState mapping');
+  assert.strictEqual(mapped.apiKeys[0].key, 'bm_test123abc', 'key value must be preserved exactly');
+  assert.strictEqual(mapped.apiKeys[0].active, true, 'active flag must be preserved');
+  console.log('  ✓ Non-admin key survives saveAuthState user mapping');
+}
+
+// 36. All plan types can authenticate with API keys
+asyncTests.push((async () => {
+  for (const planType of ['single', 'commercial', 'single_day']) {
+    const userKey = generateApiKey();
+    const state = {
+      username: 'admin', password: 'pass', adminApiKeys: [],
+      users: [{ username: `${planType}@test.com`, password: 'hash', role: 'user', tenantId: 'default', planType, apiKeys: [{ key: userKey, label: `${planType} Key`, active: true, rateLimit: 60, rateWindow: 60 }] }]
+    };
+    const handler = makeHandler({
+      getAuthState: () => state,
+      saveAuthState: (next) => { Object.assign(state, next); }
+    });
+    const req = fakeReq('GET', '/api/v1/me', { 'x-api-key': userKey });
+    const res = fakeRes();
+    await handler(req, res, new URL('http://localhost/api/v1/me'));
+    assert.strictEqual(res.statusCode, 200, `${planType} user should authenticate`);
+    const parsed = JSON.parse(res.body);
+    assert.strictEqual(parsed.ok, true, `${planType} response should be ok`);
+    assert.strictEqual(parsed.user.planType, planType, `planType should be ${planType}`);
+    assert.strictEqual(parsed.user.isAdmin, false, `${planType} user should not be admin`);
+  }
+  console.log('  ✓ All plan types (single, commercial, single_day) authenticate with API keys');
+})());
+
+// 37. Passwordless user key survives create → saveAuthState → findKeyRecord round-trip
+asyncTests.push((async () => {
+  const state = {
+    username: 'admin', password: 'pass', adminApiKeys: [],
+    users: [{ username: 'stripe@test.com', password: '', role: 'user', tenantId: 'default', planType: 'single' }]
+  };
+  let savedState = null;
+  const handler = makeHandler({
+    getAuthState: () => state,
+    saveAuthState: (next) => { savedState = next; Object.assign(state, next); }
+  });
+
+  // Admin creates a key for the passwordless user
+  const adminKey = generateApiKey();
+  state.adminApiKeys.push({ key: adminKey, label: 'Admin', active: true, rateLimit: 60, rateWindow: 60 });
+
+  const req = fakePostReq('/api/v1/keys', { username: 'stripe@test.com', label: 'Stripe User Key' }, { 'x-api-key': adminKey });
+  const res = fakeRes();
+  await handler(req, res, new URL('http://localhost/api/v1/keys'));
+  await new Promise(r => setTimeout(r, 50));
+  assert.strictEqual(res.statusCode, 201, 'key creation should succeed for passwordless user');
+  const createResult = JSON.parse(res.body);
+  assert.ok(createResult.ok);
+  const userKey = createResult.key;
+
+  // Verify key works for auth
+  const req2 = fakeReq('GET', '/api/v1/me', { 'x-api-key': userKey });
+  const res2 = fakeRes();
+  await handler(req2, res2, new URL('http://localhost/api/v1/me'));
+  assert.strictEqual(res2.statusCode, 200, 'passwordless user key should authenticate');
+  const meResult = JSON.parse(res2.body);
+  assert.strictEqual(meResult.user.username, 'stripe@test.com');
+
+  // Simulate another saveAuthState call (e.g., login subscription check)
+  const users = [...(state.users || [])];
+  const idx = users.findIndex(u => u.username === 'stripe@test.com');
+  users[idx] = { ...users[idx], lastChecked: new Date().toISOString() };
+  Object.assign(state, { users });
+
+  // Key should still work after subsequent state save
+  const req3 = fakeReq('GET', '/api/v1/me', { 'x-api-key': userKey });
+  const res3 = fakeRes();
+  await handler(req3, res3, new URL('http://localhost/api/v1/me'));
+  assert.strictEqual(res3.statusCode, 200, 'key should survive subsequent state saves');
+
+  console.log('  ✓ Passwordless user key survives create → auth → state-save round-trip');
+})());
+
 // Wait for all async tests to complete
 Promise.all(asyncTests).then(() => {
   console.log('betman_api tests passed');

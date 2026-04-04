@@ -246,7 +246,7 @@ function loadAuthState(){
   const fromFile = loadJson(AUTH_FILE, null);
   const users = Array.isArray(fromFile?.users)
     ? fromFile.users
-        .filter(u => u?.username && u?.password)
+        .filter(u => u?.username)
         .map(u => {
           const copy = { ...u };
           copy.role = copy.role || 'user';
