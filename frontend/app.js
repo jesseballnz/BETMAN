@@ -49,6 +49,7 @@ let returnRoiChart = null;
 let analysisEdgeChart = null;
 let analysisMonteChart = null;
 let currentUserDisplayName = 'User';
+let authStateRefreshPromise = null;
 let latestStrategyContext = { picks: [], stats: null, type: 'win', meeting: '—', aiSummaryHtml: '' };
 const STRATEGY_AI_CACHE_TTL_MS = 10 * 60 * 1000;
 const STRATEGY_AI_COOLDOWN_MS = 3 * 60 * 1000;
@@ -3749,12 +3750,9 @@ function renderMarketMovers(rows){
       return !Number.isFinite(mtj) || mtj >= -5;
     });
   }
-  const hasFirmers = meetingUpcomingMovers.some(r => Number(r.pctMove || 0) <= 0);
+  const hasFirmers = meetingUpcomingMovers.some(r => Number(r.pctMove || 0) < 0);
   const hasDrifters = meetingUpcomingMovers.some(r => Number(r.pctMove || 0) > 0);
-  if (moversMode === 'firmers' && !hasFirmers && hasDrifters) {
-    moversMode = 'drifters';
-    localStorage.setItem('moversMode', moversMode);
-  } else if (moversMode === 'drifters' && !hasDrifters && hasFirmers) {
+  if (moversMode === 'drifters' && !hasDrifters && hasFirmers) {
     moversMode = 'firmers';
     localStorage.setItem('moversMode', moversMode);
   }
@@ -3763,7 +3761,7 @@ function renderMarketMovers(rows){
   const normalizeRaceNumber = (val) => String(val || '').replace(/^R/i,'').trim();
   const selectedRaceNumPref = selectedRace ? String(selectedRace.race_number || selectedRace.race || '').replace(/^R/i,'').trim() : '';
   const selectedMeetingKeyPref = selectedRace ? normalizeMeetingKey(selectedRace.meeting || '') : '';
-  const totalFirmersRaw = upcomingRaw.filter(r => Number(r.pctMove || 0) <= 0).length;
+  const totalFirmersRaw = upcomingRaw.filter(r => Number(r.pctMove || 0) < 0).length;
   const totalDriftersRaw = upcomingRaw.filter(r => Number(r.pctMove || 0) > 0).length;
 
   controls.innerHTML = `<button data-mode="firmers" class="${moversMode === 'firmers' ? 'active' : ''}">Firmers (${totalFirmersRaw})</button><button data-mode="drifters" class="${moversMode === 'drifters' ? 'active' : ''}">Drifters (${totalDriftersRaw})</button>`;
@@ -3780,7 +3778,7 @@ function renderMarketMovers(rows){
   const scoped = meetingUpcomingMovers
     .filter(r => {
       const move = Number(r.pctMove || 0);
-      return moversMode === 'drifters' ? move > 0 : move <= 0;
+      return moversMode === 'drifters' ? move > 0 : move < 0;
     })
     .slice()
     .sort((a,b) => {
@@ -3987,7 +3985,8 @@ function buildMoverGraph(row){
       return `<div class="horizon-row empty"><span class='label'>${h.label}</span><div class='bar-track'><span class='bar-fill'></span></div><span class='val'>—</span></div>`;
     }
     const width = Math.min(100, Math.abs(h.value) / maxAbs * 100);
-    const dir = h.value < 0 ? 'firm' : 'drift';
+    if (!(h.value < 0)) return [];
+  const dir = 'firm';
     const val = `${h.value > 0 ? '+' : ''}${h.value.toFixed(1)}%`;
     return `<div class="horizon-row ${dir}"><span class='label'>${h.label}</span><div class='bar-track'><span class='bar-fill' style='width:${width}%'></span></div><span class='val'>${val}</span></div>`;
   }).join('');
@@ -3998,7 +3997,7 @@ function buildMoveTags(row){
   if (!Number.isFinite(move) || move === 0) return [];
   const magnitude = Math.abs(move).toFixed(1);
   if (move < 0) return [`<span class='tag firm'>Firming ${magnitude}%</span>`];
-  return [`<span class='tag drift'>Drifting ${magnitude}%</span>`];
+  return [];
 }
 
 function buildInterestingTags(row){
@@ -10693,11 +10692,6 @@ function attachAnalysisSelectionHandlers(race){
     };
   }
 
-  const trackAllBtn = $('analysisTrackAllRunnersBtn');
-  if (trackAllBtn) {
-    trackAllBtn.style.display = 'none';
-  }
-
   const speedToggle = $('analysisSpeedToggle');
   if (speedToggle) {
     speedToggle.onclick = async () => {
@@ -14267,6 +14261,23 @@ async function renderAuthPulseSettingsPanel(){
   }
 }
 
+async function refreshAuthStateUi(){
+  if (authStateRefreshPromise) return authStateRefreshPromise;
+  authStateRefreshPromise = (async () => {
+    try {
+      await loadAuthenticatedUser();
+      const modal = $('authModal');
+      if (modal && !modal.classList.contains('hidden')) {
+        await renderAuthPulseSettingsPanel();
+        updateApiKeyPanel();
+      }
+    } finally {
+      authStateRefreshPromise = null;
+    }
+  })();
+  return authStateRefreshPromise;
+}
+
 async function openAuthModal(){
   toggleAuthModal(true);
   let isAdmin = false;
@@ -14829,7 +14840,17 @@ setInterval(()=>{
   if (document.hidden) return;
   tickQueuedCountdowns();
 }, 1000);
-
+window.addEventListener('focus', () => {
+  if (document.hidden) return;
+  refreshAuthStateUi().catch(() => {});
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  refreshAuthStateUi().catch(() => {});
+});
+window.addEventListener('pageshow', () => {
+  refreshAuthStateUi().catch(() => {});
+});
 
 function bindPollOddsButton(){
   const btn = $('pollOddsBtn');
