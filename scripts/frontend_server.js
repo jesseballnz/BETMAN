@@ -242,6 +242,17 @@ function setCachedRaceList(key, payload){
   }
 }
 
+/** Ensure user.apiKeys is always an array and remove stale legacy single-key fields. */
+function normalizeUserApiKeys(u) {
+  if (!Array.isArray(u.apiKeys)) u.apiKeys = [];
+  if (u.apiKeyHash && u.apiKeys.length === 0) {
+    delete u.apiKeyHash;
+    delete u.apiKeyPreview;
+    delete u.apiKeyCreatedAt;
+  }
+  return u;
+}
+
 function loadAuthState(){
   const fromFile = loadJson(AUTH_FILE, null);
   const users = Array.isArray(fromFile?.users)
@@ -253,15 +264,7 @@ function loadAuthState(){
           copy.tenantId = normalizeTenantId(copy.tenantId || 'default');
           if (!('createdAt' in copy)) copy.createdAt = null;
           if (!('updatedAt' in copy)) copy.updatedAt = null;
-          // Ensure apiKeys is always an array; migrate legacy single-key fields
-          if (!Array.isArray(copy.apiKeys)) copy.apiKeys = [];
-          if (copy.apiKeyHash && copy.apiKeys.length === 0) {
-            // Legacy single-key record — cannot recover plaintext from hash,
-            // so drop the stale fields so a fresh key can be generated.
-            delete copy.apiKeyHash;
-            delete copy.apiKeyPreview;
-            delete copy.apiKeyCreatedAt;
-          }
+          normalizeUserApiKeys(copy);
           return copy;
         })
     : [];
@@ -704,12 +707,7 @@ async function loadAuthStateFromPg(pool){
   const row = r.rows[0];
   const users = (Array.isArray(row.users) ? row.users : []).map(u => {
     const copy = { ...u };
-    if (!Array.isArray(copy.apiKeys)) copy.apiKeys = [];
-    if (copy.apiKeyHash && copy.apiKeys.length === 0) {
-      delete copy.apiKeyHash;
-      delete copy.apiKeyPreview;
-      delete copy.apiKeyCreatedAt;
-    }
+    normalizeUserApiKeys(copy);
     return copy;
   });
   return {
