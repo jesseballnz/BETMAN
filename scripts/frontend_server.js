@@ -1709,6 +1709,22 @@ function inferExplicitRaceContext(question, races = [], fallbackMeeting = '', fa
     ) || null;
   };
 
+  if (raceMatch) {
+    const inferredMeeting = inferMeetingFromQuestion(q, races);
+    const matchedMeeting = inferredMeeting?.matched?.[0] || fallbackMeeting;
+    if (matchedMeeting) {
+      const explicitRace = findRace(matchedMeeting, raceMatch[1]);
+      if (explicitRace) {
+        return {
+          meeting: explicitRace.meeting,
+          raceNumber: String(explicitRace.race_number || explicitRace.race || raceMatch[1]),
+          raceName: explicitRace.description || '',
+          anchorType: 'explicit-race'
+        };
+      }
+    }
+  }
+
   if (normalizedFallbackMeeting && normalizedFallbackRace) {
     const direct = findRace(fallbackMeeting, fallbackRace);
     if (direct) {
@@ -1721,21 +1737,7 @@ function inferExplicitRaceContext(question, races = [], fallbackMeeting = '', fa
     }
   }
 
-  if (!raceMatch) return null;
-
-  const inferredMeeting = inferMeetingFromQuestion(q, races);
-  const matchedMeeting = inferredMeeting?.matched?.[0] || fallbackMeeting;
-  if (!matchedMeeting) return null;
-
-  const race = findRace(matchedMeeting, raceMatch[1]);
-  if (!race) return null;
-
-  return {
-    meeting: race.meeting,
-    raceNumber: String(race.race_number || race.race || raceMatch[1]),
-    raceName: race.description || '',
-    anchorType: 'explicit-race'
-  };
+  return null;
 }
 
 /**
@@ -4098,16 +4100,17 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   // Temporal race detection: when venue is matched and user asks about "the next race"
   // or "the last race", find the matching race and inject raceContext so full field data is included.
   let effectiveClientContext = clientContext;
-  if (!hasDraggedSelections && !clientContext?.raceContext) {
+  if (!hasDraggedSelections) {
     const explicitRaceContext = inferExplicitRaceContext(
       question,
       allRaces,
-      clientContext?.meeting || '',
-      clientContext?.race || ''
+      clientContext?.raceContext?.meeting || clientContext?.meeting || '',
+      clientContext?.raceContext?.raceNumber || clientContext?.race || ''
     );
     if (explicitRaceContext) {
       effectiveClientContext = Object.assign({}, clientContext, {
         raceContext: {
+          ...clientContext?.raceContext,
           meeting: explicitRaceContext.meeting,
           raceNumber: explicitRaceContext.raceNumber,
           raceName: explicitRaceContext.raceName,
@@ -5596,12 +5599,12 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
 
     const racesData = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), {});
     const allRaces = Array.isArray(racesData?.races) ? racesData.races : [];
-    const inferredRaceContext = payload?.raceContext || inferExplicitRaceContext(
+    const inferredRaceContext = inferExplicitRaceContext(
       question,
       allRaces,
-      payload?.meeting || '',
-      payload?.race || ''
-    );
+      payload?.raceContext?.meeting || payload?.meeting || '',
+      payload?.raceContext?.raceNumber || payload?.race || ''
+    ) || payload?.raceContext || null;
     const effectivePayload = inferredRaceContext
       ? Object.assign({}, payload, {
           raceContext: Object.assign({}, payload?.raceContext || {}, {

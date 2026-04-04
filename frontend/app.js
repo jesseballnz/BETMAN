@@ -1302,10 +1302,11 @@ async function renderPulseConfigPanel(){
         </div>
         <div class='pulse-target-block'>
           <div class='pulse-config-item-title'>Races</div>
-          <div class='sub'>Pin exact races when you want hard surgical focus.</div>
+          <div class='sub'>Pin exact races when you want hard surgical focus, or jump back to all races within the current meeting scope.</div>
           <div class='pulse-chip-input-row'>
             <input id='pulseTargetRacesInput' list='pulseTargetRacesList' placeholder='Add race' />
             <button type='button' class='btn btn-ghost compact-btn pulse-add-chip-btn' data-add-target='pulseTargetRaces'>Add</button>
+            <button type='button' id='pulseAllRacesBtn' class='btn btn-ghost compact-btn'>All races</button>
           </div>
           <datalist id='pulseTargetRacesList'>${targetOptions.races.map(value => `<option value='${escapeAttr(value.label)}'></option>`).join('')}</datalist>
           <div id='pulseTargetRacesChips' class='pulse-selection-chip-row'></div>
@@ -1552,6 +1553,42 @@ async function renderPulseConfigPanel(){
     }
   });
   $('pulseApplyRacesBtn')?.addEventListener('click', () => applyPulseScope('races'));
+  $('pulseAllRacesBtn')?.addEventListener('click', async () => {
+    const btn = $('pulseAllRacesBtn');
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'Opening to all races…';
+    try {
+      const meetings = pulseChipValuesFromField('pulseTargetMeetings', normalizePulseMeetingName);
+      const countries = pulseChipValuesFromField('pulseTargetCountries', normalizePulseCountry);
+      setPulseChipFieldValue('pulseTargetRaces', []);
+      let nextMode = 'all';
+      if (meetings.length && countries.length) nextMode = 'mixed';
+      else if (meetings.length) nextMode = 'meetings';
+      else if (countries.length) nextMode = 'countries';
+      const modeInput = cfg.querySelector(`input[name="pulseTargetMode"][value="${nextMode}"]`);
+      if (modeInput) modeInput.checked = true;
+      cfg.querySelectorAll('.pulse-mode-pill').forEach(pill => pill.classList.toggle('active', pill.querySelector('input')?.checked));
+      syncTargetChips();
+      const nextTargeting = {
+        mode: nextMode,
+        countries,
+        meetings,
+        races: [],
+      };
+      await savePulseConfig({
+        enabled: !!$('pulseEnabledToggle')?.checked,
+        targeting: nextTargeting,
+      });
+      const summary = pulseTargetingSummary(nextTargeting);
+      if ($('pulseLiveRulesSummary')) $('pulseLiveRulesSummary').textContent = summary;
+      setPulseConfigFlash(meetings.length ? `All races enabled for ${meetings.length === 1 ? meetings[0] : `${meetings.length} meetings`} · ${summary}` : `All races enabled · ${summary}`);
+      await renderAlertsShell();
+    } catch (err) {
+      if (status) status.textContent = `All races failed: ${err?.message || 'unknown error'}`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
   $('pulseClearScopeBtn')?.addEventListener('click', async () => {
     const btn = $('pulseClearScopeBtn');
     if (btn) btn.disabled = true;

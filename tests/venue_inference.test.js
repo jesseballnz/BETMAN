@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const { inferMeetingFromQuestion, buildSelectionFactAnswer, buildAiContextSummary, isLiveRaceEntry, FINISHED_RACE_STATUSES } = require(path.join(ROOT, 'scripts', 'frontend_server.js'));
+const { inferMeetingFromQuestion, inferExplicitRaceContext, buildSelectionFactAnswer, buildAiContextSummary, isLiveRaceEntry, FINISHED_RACE_STATUSES } = require(path.join(ROOT, 'scripts', 'frontend_server.js'));
 
 // ─── inferMeetingFromQuestion ───────────────────────────────────────────────
 
@@ -53,6 +53,42 @@ const racesWithTeAroha = [{ meeting: 'Te Aroha', race_number: 1 }];
 const r7 = inferMeetingFromQuestion('What about Te Aroha R1?', racesWithTeAroha);
 assert.strictEqual(r7.mentioned, 'Te Aroha');
 assert.deepStrictEqual(r7.matched, ['Te Aroha']);
+
+// 7b) Explicit race anchoring should keep meeting+r race paired correctly
+const raceAnchor = inferExplicitRaceContext('Analyse Ellerslie R1 for me', [
+  { meeting: 'Ellerslie', race_number: 1, description: 'ELL R1' },
+  { meeting: 'Riverton', race_number: 1, description: 'RIV R1' }
+]);
+assert.deepStrictEqual(raceAnchor, {
+  meeting: 'Ellerslie',
+  raceNumber: '1',
+  raceName: 'ELL R1',
+  anchorType: 'explicit-race'
+});
+
+// 7c) Fallback payload meeting/race should also anchor explicitly
+const payloadAnchor = inferExplicitRaceContext('Who wins race 1?', [
+  { meeting: 'Ellerslie', race_number: 1, description: 'ELL R1' },
+  { meeting: 'Riverton', race_number: 1, description: 'RIV R1' }
+], 'Ellerslie', '1');
+assert.deepStrictEqual(payloadAnchor, {
+  meeting: 'Ellerslie',
+  raceNumber: '1',
+  raceName: 'ELL R1',
+  anchorType: 'explicit-race'
+});
+
+// 7d) Explicit question context must override stale fallback payload context
+const overrideAnchor = inferExplicitRaceContext('Analyse Riverton R1 for me', [
+  { meeting: 'Ellerslie', race_number: 1, description: 'ELL R1' },
+  { meeting: 'Riverton', race_number: 1, description: 'RIV R1' }
+], 'Ellerslie', '1');
+assert.deepStrictEqual(overrideAnchor, {
+  meeting: 'Riverton',
+  raceNumber: '1',
+  raceName: 'RIV R1',
+  anchorType: 'explicit-race'
+});
 
 // ─── buildSelectionFactAnswer: venue-aware ──────────────────────────────────
 

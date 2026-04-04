@@ -79,6 +79,13 @@ const a3 = buildSelectionFactAnswer('What is the read for R8?', {}, TENANT_ID);
 assert(/R8 context only/i.test(a3));
 assert(a3.includes('The Espy'));
 
+const a3b = buildSelectionFactAnswer('Analyse Ellerslie R1', {
+  raceContext: { meeting: 'Tauherenikau', raceNumber: '7', raceName: 'Tauherenikau Race 7', anchorType: 'explicit-race' }
+}, TENANT_ID);
+assert(a3b.includes('Tauherenikau'), 'raceContext fallback should anchor to the explicit meeting');
+assert(/Race 7/i.test(a3b), 'raceContext fallback should anchor to the explicit race');
+assert(a3b.includes('Not So Unusual'), 'raceContext fallback should use the explicit race field');
+
 const a4 = buildSelectionFactAnswer('Do we have any multis or exotic bets today?', {}, TENANT_ID);
 assert(/leading exotic/i.test(a4));
 assert(/Top-3 profile/i.test(a4));
