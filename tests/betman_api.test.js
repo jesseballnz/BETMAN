@@ -10,6 +10,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 
 const {
   generateApiKey,
@@ -44,6 +45,22 @@ function fakeReq(method, urlStr, headers = {}) {
     on(ev, cb) {
       if (ev === 'end') setTimeout(cb, 0);
     }
+  };
+}
+
+function buildKeyRecord(secret, overrides = {}) {
+  const normalized = String(secret || '').trim();
+  if (!normalized) throw new Error('Secret required for API key test record');
+  return {
+    label: overrides.label || null,
+    rateLimit: overrides.rateLimit || 60,
+    rateWindow: overrides.rateWindow || 60,
+    active: overrides.active !== false,
+    createdAt: overrides.createdAt || null,
+    revokedAt: overrides.revokedAt || null,
+    keyPrefix: overrides.keyPrefix || normalized.slice(0, 10) || null,
+    keyPreview: overrides.keyPreview || normalized.slice(-6) || null,
+    secretHash: overrides.secretHash || crypto.createHash('sha256').update(normalized).digest('hex')
   };
 }
 
@@ -207,7 +224,7 @@ asyncTests.push((async () => {
 asyncTests.push((async () => {
   const revokedKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: revokedKey, label: 'Revoked', active: false }] })
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [buildKeyRecord(revokedKey, { label: 'Revoked', active: false })] })
   });
   const req = fakeReq('GET', '/api/v1/races', { 'x-api-key': revokedKey });
   const res = fakeRes();
@@ -236,7 +253,7 @@ asyncTests.push((async () => {
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: testKey, label: 'Test', active: true, rateLimit: 100, rateWindow: 60 }] }),
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true, rateLimit: 100, rateWindow: 60 })] }),
     loadJson: (p, f) => {
       if (p.includes('races.json')) return { races: [
         { meeting: 'Pukekohe', race_number: '3', description: 'Maiden 1200m', distance: '1200m', country: 'NZ', runners: [{ name: 'Star Runner', runner_number: '1', odds: 3.5 }] }
@@ -354,7 +371,7 @@ asyncTests.push((async () => {
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: testKey, label: 'Test', active: true }] }),
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] }),
     loadJson: (p, f) => {
       if (p.includes('races.json')) return { races: [
         { meeting: 'Pukekohe', race_number: '5', distance: '1400m', runners: [{ name: 'Thunder', runner_number: '2', odds: 5.0 }] }
@@ -377,7 +394,7 @@ asyncTests.push((async () => {
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: testKey, label: 'Test', active: true }] }),
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] }),
     loadJson: (p, f) => {
       if (p.includes('status.json')) return {
         updatedAt: '2026-03-26T00:00:00Z',
@@ -408,7 +425,7 @@ asyncTests.push((async () => {
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: testKey, label: 'Test', active: true }] })
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] })
   });
   const req = fakeReq('GET', '/api/v1/me', { 'x-api-key': testKey });
   const res = fakeRes();
@@ -427,7 +444,7 @@ asyncTests.push((async () => {
   const handler = makeHandler({
     getAuthState: () => ({
       username: 'admin', password: 'pass',
-      users: [{ username: 'punter@test.com', password: 'pass', role: 'user', tenantId: 'acct_punter', planType: 'single', apiKeys: [{ key: userKey, label: 'Punter', active: true }] }],
+      users: [{ username: 'punter@test.com', password: 'pass', role: 'user', tenantId: 'acct_punter', planType: 'single', apiKeys: [buildKeyRecord(userKey, { label: 'Punter', active: true })] }],
       adminApiKeys: []
     })
   });
@@ -449,7 +466,7 @@ asyncTests.push((async () => {
   const handler = makeHandler({
     getAuthState: () => ({
       username: 'admin', password: 'pass',
-      users: [{ username: 'user@test.com', password: 'pass', role: 'user', tenantId: 'default', apiKeys: [{ key: userKey, label: 'User', active: true }] }],
+      users: [{ username: 'user@test.com', password: 'pass', role: 'user', tenantId: 'default', apiKeys: [buildKeyRecord(userKey, { label: 'User', active: true })] }],
       adminApiKeys: []
     })
   });
@@ -466,7 +483,7 @@ asyncTests.push((async () => {
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: testKey, label: 'Test', active: true }] })
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] })
   });
   const req = fakeReq('GET', '/api/v1/nonexistent', { 'x-api-key': testKey });
   const res = fakeRes();
@@ -492,7 +509,7 @@ asyncTests.push((async () => {
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: testKey, label: 'Test', active: true }] }),
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] }),
     loadJson: (p, f) => {
       if (p.includes('races.json')) return { races: [
         { meeting: 'Pukekohe', race_number: '3', description: 'Maiden 1200m', runners: [{ name: 'Star', runner_number: '1' }] }
@@ -523,7 +540,7 @@ asyncTests.push((async () => {
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: testKey, label: 'Test', active: true }] })
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] })
   });
   const req = fakePostReq('/api/v1/ask-betman', {}, { 'x-api-key': testKey });
   const res = fakeRes();
@@ -557,7 +574,7 @@ asyncTests.push((async () => {
     ],
   };
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [{ key: testKey, label: 'Test', active: true }] }], adminApiKeys: [] }),
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] }], adminApiKeys: [] }),
     loadJson: (p, f) => {
       if (p.includes('tracked_bets.json')) return trackedRows;
       if (p.includes('settled_bets.json')) return settledRows;
@@ -587,7 +604,7 @@ asyncTests.push((async () => {
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [{ key: testKey, label: 'Test', active: true }] }], adminApiKeys: [] }),
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] }], adminApiKeys: [] }),
     loadJson: (p, f) => {
       if (p.includes('status.json')) {
         return {
@@ -628,7 +645,7 @@ asyncTests.push((async () => {
     { meeting: 'Ashburton', race: '1', selection: 'Quinto', type: 'odds_runner', result: 'win', position: 1, winner: 'Quinto', settled_at: '2026-04-02T02:00:00.000Z' },
   ];
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [{ key: testKey, label: 'Test', active: true }] }], adminApiKeys: [] }),
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] }], adminApiKeys: [] }),
     loadJson: (p, f) => {
       if (p.includes('tracked_bets.json')) return trackedRows;
       if (p.includes('settled_bets.json')) return settledRows;
@@ -692,7 +709,7 @@ asyncTests.push((async () => {
     { id: 'existing-1', username: 'alice', meeting: 'Newcastle', race: 'R1', selection: '7. Cavalry', betType: 'Win', status: 'active', result: 'pending', trackedAt: '2026-03-31T03:00:00.000Z' },
   ];
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [{ key: testKey, label: 'Test', active: true }] }], adminApiKeys: [] }),
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'alice', password: 'pw', tenantId: 'default', apiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] }], adminApiKeys: [] }),
     loadJson: (p, f) => {
       if (p.includes('tracked_bets.json')) return trackedRows;
       if (p.includes('settled_bets.json')) return [];
@@ -725,7 +742,7 @@ asyncTests.push((async () => {
     { id: 'existing-alice', username: 'alice', meeting: 'Newcastle', race: 'R1', selection: '7. Cavalry', betType: 'Win', status: 'active', result: 'pending', trackedAt: '2026-03-31T03:00:00.000Z' },
   ];
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'bob', password: 'pw', tenantId: 'default', apiKeys: [{ key: aliceKey, label: 'Bob key', active: true }] }], adminApiKeys: [] }),
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [{ username: 'bob', password: 'pw', tenantId: 'default', apiKeys: [buildKeyRecord(aliceKey, { label: 'Bob key', active: true })] }], adminApiKeys: [] }),
     loadJson: (p, f) => {
       if (p.includes('tracked_bets.json')) return trackedRows;
       if (p.includes('settled_bets.json')) return [];
@@ -759,7 +776,7 @@ asyncTests.push((async () => {
     getAuthState: () => ({
       username: 'admin',
       password: 'pass',
-      users: [{ username: 'devdassk+betman@icloud.com', password: 'pw', tenantId: 'default', apiKeys: [{ key: plusKey, label: 'Plus key', active: true }] }],
+      users: [{ username: 'devdassk+betman@icloud.com', password: 'pw', tenantId: 'default', apiKeys: [buildKeyRecord(plusKey, { label: 'Plus key', active: true })] }],
       adminApiKeys: []
     })
   });
@@ -774,11 +791,60 @@ asyncTests.push((async () => {
   console.log('  ✓ api-key auth accepts plus-addressed email users');
 })());
 
+// 22e. /keys listing resolves mixed-case email principals case-insensitively
+asyncTests.push((async () => {
+  const mixedKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin',
+      password: 'pass',
+      users: [{ username: 'Trader@Test.com', password: 'pw', tenantId: 'default', apiKeys: [buildKeyRecord(mixedKey, { label: 'Mixed key', active: true })] }],
+      adminApiKeys: []
+    }),
+    getSessionPrincipal: () => ({ username: 'trader@test.com', tenantId: 'default', effectiveTenantId: 'default' })
+  });
+  const req = fakeReq('GET', '/api/v1/keys');
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/keys');
+  await handler(req, res, url);
+  assert.strictEqual(res.statusCode, 200);
+  const parsed = JSON.parse(res.body);
+  assert.strictEqual(parsed.ok, true);
+  assert.strictEqual(parsed.keys.length, 1);
+  assert.strictEqual(parsed.keys[0].label, 'Mixed key');
+  console.log('  ✓ /keys listing matches mixed-case email principals');
+})());
+
+// 22f. admin key creation matches target email usernames case-insensitively
+asyncTests.push((async () => {
+  const adminKey = generateApiKey();
+  let savedState = null;
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin',
+      password: 'pass',
+      users: [{ username: 'Trader@Test.com', password: 'pw', tenantId: 'default', apiKeys: [] }],
+      adminApiKeys: [buildKeyRecord(adminKey, { label: 'Admin', active: true })]
+    }),
+    saveAuthState: (next) => { savedState = next; }
+  });
+  const req = fakePostReq('/api/v1/keys', { username: 'trader@test.com', label: 'Lowercase target' }, { 'x-api-key': adminKey });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/keys');
+  await handler(req, res, url);
+  await new Promise(r => setTimeout(r, 25));
+  assert.strictEqual(res.statusCode, 201);
+  assert.ok(savedState, 'saveAuthState should be called');
+  assert.strictEqual(savedState.users[0].apiKeys.length, 1);
+  assert.strictEqual(savedState.users[0].apiKeys[0].label, 'Lowercase target');
+  console.log('  ✓ admin key creation matches mixed-case target emails');
+})());
+
 // 23. Models endpoint
 asyncTests.push((async () => {
   const testKey = generateApiKey();
   const handler = makeHandler({
-    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [{ key: testKey, label: 'Test', active: true }] })
+    getAuthState: () => ({ username: 'admin', password: 'pass', users: [], adminApiKeys: [buildKeyRecord(testKey, { label: 'Test', active: true })] })
   });
   const req = fakeReq('GET', '/api/v1/models', { 'x-api-key': testKey });
   const res = fakeRes();

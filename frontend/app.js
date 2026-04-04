@@ -58,6 +58,56 @@ let aiUserNotes = [];
 let strategyRaceModelCache = new Map();
 let runnerMetricsIndex = new Map();
 let runnerMetricsMeta = { loadedAt: 0, rows: 0 };
+const modalFocusReturn = new Map();
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(', ');
+
+function getFocusableElements(root){
+  if (!root) return [];
+  return [...root.querySelectorAll(FOCUSABLE_SELECTOR)].filter(el => {
+    if (!el) return false;
+    if (el.getAttribute('aria-hidden') === 'true') return false;
+    if (el.closest('.hidden')) return false;
+    if (el.hidden) return false;
+    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  });
+}
+
+function focusFirstIn(root){
+  const first = getFocusableElements(root)[0];
+  if (first) {
+    try { first.focus({ preventScroll: true }); return true; } catch {}
+  }
+  if (root?.focus) {
+    try { root.focus({ preventScroll: true }); return true; } catch {}
+  }
+  return false;
+}
+
+function showModalWithFocus(modal){
+  if (!modal) return;
+  if (!modal.hasAttribute('tabindex')) modal.setAttribute('tabindex', '-1');
+  modalFocusReturn.set(modal.id || String(Date.now()), document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => focusFirstIn(modal.querySelector('[role="dialog"]') || modal));
+}
+
+function hideModalWithFocus(modal){
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  const returnTo = modalFocusReturn.get(modal.id || '');
+  if (returnTo?.isConnected && !returnTo.hasAttribute('disabled')) {
+    try { returnTo.focus({ preventScroll: true }); } catch {}
+  }
+}
 
 async function loadRunnerMetrics(force = false){
   if (!force && runnerMetricsMeta.loadedAt && (Date.now() - runnerMetricsMeta.loadedAt) < 60_000) return;
@@ -1210,6 +1260,8 @@ async function renderPulseConfigPanel(){
   const thresholdSummary = pulseThresholdSummary(thresholds);
   const alertTypeEnabledCount = meta.filter(item => pulseConfigState.alertTypes[item.key] !== false).length;
   const targetBucketCount = [targeting.countries.length, targeting.meetings.length, targeting.races.length].reduce((sum, count) => sum + count, 0);
+  const stagedMeetingCount = targeting.meetings.length;
+  const stagedRaceCount = targeting.races.length;
   const severityPreset = thresholds.minSeverity || PULSE_SEVERITY_LEVELS[0];
   const minutePresets = [null, 5, 10, 15, 25, 45];
   const movePresets = [null, 1, 2, 4, 8];
@@ -1247,7 +1299,7 @@ async function renderPulseConfigPanel(){
         <div class='sub'>Anchor today’s book fast, then tighten gates only if the feed is getting too chatty.</div>
         <div class='pulse-quick-actions'>
           <button id='pulseQuickSelectedMeetingBtn' class='btn ${quickMeetingReady ? '' : 'btn-ghost'} compact-btn' ${quickMeetingReady ? '' : 'disabled'}>${quickMeetingReady ? `Focus ${escapeHtml(selectedMeetingLabel)}` : 'Select a meeting first'}</button>
-          <button id='pulseClearScopeBtn' class='btn btn-ghost compact-btn'>Full Feed</button>
+          <button id='pulseClearScopeBtn' class='btn btn-ghost compact-btn'>Reset to full feed</button>
         </div>
       </div>
     </div>
@@ -1265,12 +1317,12 @@ async function renderPulseConfigPanel(){
       <div class='pulse-quick-setup'>
         <div>
           <div class='pulse-config-item-title'>Meeting launchpad</div>
-          <div class='sub'>Tap a live meeting chip to stage it instantly. Then apply meetings or races with one click.</div>
+          <div class='sub'>Tap a live meeting chip to stage it instantly. Then push either the whole meeting scope or only your pinned races live.</div>
         </div>
         <div class='pulse-quick-actions'>
-          <button id='pulseApplyMeetingsBtn' class='btn btn-ghost compact-btn'>Apply Meetings</button>
-          <button id='pulseClearMeetingsBtn' class='btn btn-ghost compact-btn'>Clear Meetings</button>
-          <button id='pulseApplyRacesBtn' class='btn btn-ghost compact-btn'>Apply Races</button>
+          <button id='pulseApplyMeetingsBtn' class='btn btn-ghost compact-btn' ${stagedMeetingCount ? '' : 'disabled'}>Use staged meetings</button>
+          <button id='pulseClearMeetingsBtn' class='btn btn-ghost compact-btn' ${stagedMeetingCount ? '' : 'disabled'}>Clear meetings</button>
+          <button id='pulseApplyRacesBtn' class='btn btn-ghost compact-btn' ${stagedRaceCount ? '' : 'disabled'}>Use pinned races</button>
         </div>
       </div>
       ${targetOptions.meetingCards.length ? `<div class='pulse-meeting-chip-row'>${targetOptions.meetingCards.slice(0, 10).map(item => `<button type='button' class='pulse-meeting-chip ${selectedMeetingLabel && normalizePulseMeetingName(selectedMeetingLabel) === normalizePulseMeetingName(item.meeting) ? 'is-primary' : ''}' data-meeting='${escapeAttr(item.meeting)}'>${escapeHtml(item.country ? `${item.country} · ` : '')}${escapeHtml(item.meeting)}${item.nextRace != null ? ` <span>R${escapeHtml(String(item.nextRace))}</span>` : ''}${item.activeRaceCount ? ` <span>${escapeHtml(String(item.activeRaceCount))} live</span>` : ''}</button>`).join('')}</div>` : ''}
@@ -1301,12 +1353,12 @@ async function renderPulseConfigPanel(){
           <textarea id='pulseTargetMeetings' class='hidden' rows='1'>${escapeHtml(targeting.meetings.join('\n'))}</textarea>
         </div>
         <div class='pulse-target-block'>
-          <div class='pulse-config-item-title'>Races</div>
-          <div class='sub'>Pin exact races when you want hard surgical focus, or jump back to all races within the current meeting scope.</div>
-          <div class='pulse-chip-input-row'>
-            <input id='pulseTargetRacesInput' list='pulseTargetRacesList' placeholder='Add race' />
+          <div class='pulse-config-item-title'>Exact races</div>
+          <div class='sub'>Pin exact races for surgical focus. “Use all races” clears race pins and falls back to your meeting or country scope.</div>
+          <div class='pulse-chip-input-row pulse-chip-input-row-wide'>
+            <input id='pulseTargetRacesInput' list='pulseTargetRacesList' placeholder='Add exact race' />
             <button type='button' class='btn btn-ghost compact-btn pulse-add-chip-btn' data-add-target='pulseTargetRaces'>Add</button>
-            <button type='button' id='pulseAllRacesBtn' class='btn btn-ghost compact-btn'>All races</button>
+            <button type='button' id='pulseAllRacesBtn' class='btn btn-ghost compact-btn'>Use all races</button>
           </div>
           <datalist id='pulseTargetRacesList'>${targetOptions.races.map(value => `<option value='${escapeAttr(value.label)}'></option>`).join('')}</datalist>
           <div id='pulseTargetRacesChips' class='pulse-selection-chip-row'></div>
@@ -1397,21 +1449,32 @@ async function renderPulseConfigPanel(){
   updatePulseMeetingAwareUi();
   if (status && pulseConfigFlash) status.textContent = pulseConfigFlash;
   const syncTargetChips = () => {
-    renderPulseChipField('pulseTargetCountries', pulseChipValuesFromField('pulseTargetCountries', normalizePulseCountry), 'All countries');
-    renderPulseChipField('pulseTargetMeetings', pulseChipValuesFromField('pulseTargetMeetings', normalizePulseMeetingName), 'All meetings');
-    renderPulseChipField('pulseTargetRaces', pulseChipValuesFromField('pulseTargetRaces', normalizePulseRaceTarget).map(value => value.replace('::', ' | R')), 'All races');
-    const selectedMeetings = new Set(pulseChipValuesFromField('pulseTargetMeetings', normalizePulseMeetingName).map(v => v.toLowerCase()));
+    const countries = pulseChipValuesFromField('pulseTargetCountries', normalizePulseCountry);
+    const meetings = pulseChipValuesFromField('pulseTargetMeetings', normalizePulseMeetingName);
+    const races = pulseChipValuesFromField('pulseTargetRaces', normalizePulseRaceTarget);
+    renderPulseChipField('pulseTargetCountries', countries, 'All countries');
+    renderPulseChipField('pulseTargetMeetings', meetings, 'All meetings');
+    renderPulseChipField('pulseTargetRaces', races.map(value => value.replace('::', ' | R')), 'All races');
+    const selectedMeetings = new Set(meetings.map(v => v.toLowerCase()));
     cfg.querySelectorAll('.pulse-meeting-chip').forEach(chip => {
       const meeting = normalizePulseMeetingName(chip.dataset.meeting || '').toLowerCase();
       const active = !!meeting && selectedMeetings.has(meeting);
       chip.classList.toggle('active', active);
       chip.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
+    const applyMeetingsBtn = $('pulseApplyMeetingsBtn');
+    if (applyMeetingsBtn) applyMeetingsBtn.disabled = meetings.length === 0;
+    const clearMeetingsBtn = $('pulseClearMeetingsBtn');
+    if (clearMeetingsBtn) clearMeetingsBtn.disabled = meetings.length === 0;
+    const applyRacesBtn = $('pulseApplyRacesBtn');
+    if (applyRacesBtn) applyRacesBtn.disabled = races.length === 0;
+    const allRacesBtn = $('pulseAllRacesBtn');
+    if (allRacesBtn) allRacesBtn.disabled = races.length === 0;
     const summary = pulseTargetingSummary({
       mode: cfg.querySelector('input[name="pulseTargetMode"]:checked')?.value || targeting.mode,
-      countries: pulseChipValuesFromField('pulseTargetCountries', normalizePulseCountry),
-      meetings: pulseChipValuesFromField('pulseTargetMeetings', normalizePulseMeetingName),
-      races: pulseChipValuesFromField('pulseTargetRaces', normalizePulseRaceTarget)
+      countries,
+      meetings,
+      races,
     });
     if ($('pulseLiveRulesSummary')) $('pulseLiveRulesSummary').textContent = summary;
   };
@@ -2792,15 +2855,13 @@ function openSummaryPopup(title, html){
   if (!modal) return;
   $('summaryModalTitle').textContent = title || 'Bet Summary';
   $('summaryModalBody').innerHTML = html || '';
-  modal.classList.remove('hidden');
-  modal.setAttribute('aria-hidden', 'false');
+  showModalWithFocus(modal);
 }
 
 function closeSummaryPopup(){
   const modal = $('summaryModal');
   if (!modal) return;
-  modal.classList.add('hidden');
-  modal.setAttribute('aria-hidden', 'true');
+  hideModalWithFocus(modal);
 }
 
 function statusMeetingsFromData(data){
@@ -3002,6 +3063,9 @@ let racesCacheWarning = '';
 const MEETING_LOCK_KEY = 'betmanMeetingLock';
 const RACE_CACHE_STORAGE_KEY = 'betmanRaceCache.v2';
 const LAST_RACE_STORAGE_KEY = 'betmanLastRaceSelection';
+const RACE_CACHE_MAX_DAYS = 3;
+const RACE_CACHE_MAX_BYTES = 4.5 * 1024 * 1024; // ~4.5MB guard inside 5MB browser quota
+let raceCacheWritesDisabled = false;
 
 function currentSelectedDateStr(){
   const base = new Date();
@@ -3009,35 +3073,98 @@ function currentSelectedDateStr(){
   return fmtDate(base);
 }
 
-function persistRacesToLocalCache(dateStr, races){
-  if (!dateStr || !Array.isArray(races) || !races.length) return;
+function isQuotaExceededError(err){
+  if (!err) return false;
+  if (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED') return true;
+  if (typeof err.code === 'number' && (err.code === 22 || err.code === 1014)) return true;
+  const msg = String(err.message || err).toLowerCase();
+  return msg.includes('quota') || msg.includes('storage');
+}
+
+function serializeRaceCachePayload(payload){
   try {
-    const existing = JSON.parse(localStorage.getItem(RACE_CACHE_STORAGE_KEY) || '{}');
-    existing[dateStr] = { date: dateStr, savedAt: Date.now(), races };
-    const keys = Object.keys(existing).sort();
-    while (keys.length > 3) {
-      const oldest = keys.shift();
-      delete existing[oldest];
-    }
-    localStorage.setItem(RACE_CACHE_STORAGE_KEY, JSON.stringify(existing));
+    const serialized = JSON.stringify(payload);
+    return { serialized, size: serialized.length };
   } catch (err) {
-    console.warn('race_cache_local_save_failed', err?.message || err);
-    try {
-      const existing = JSON.parse(localStorage.getItem(RACE_CACHE_STORAGE_KEY) || '{}');
-      const keys = Object.keys(existing).sort();
-      while (keys.length) {
-        const oldest = keys.shift();
-        delete existing[oldest];
-        try {
-          localStorage.setItem(RACE_CACHE_STORAGE_KEY, JSON.stringify(existing));
-          console.warn('race_cache_local_pruned', oldest);
-          return;
-        } catch {
-          continue;
-        }
-      }
-    } catch {}
+    console.warn('race_cache_payload_stringify_failed', err?.message || err);
+    return { serialized: null, size: 0 };
   }
+}
+
+function disableRaceCache(reason){
+  console.warn('race_cache_local_disabled', reason);
+  try { localStorage.removeItem(RACE_CACHE_STORAGE_KEY); } catch {}
+  raceCacheWritesDisabled = true;
+}
+
+function pruneAndPersistRaceCache(payload, reason){
+  const orderedKeys = Object.keys(payload).sort();
+  while (orderedKeys.length > 1) {
+    const oldest = orderedKeys.shift();
+    delete payload[oldest];
+    const { serialized, size } = serializeRaceCachePayload(payload);
+    if (!serialized) {
+      disableRaceCache('stringify_failed_after_prune');
+      return false;
+    }
+    if (size > RACE_CACHE_MAX_BYTES) {
+      console.warn('race_cache_payload_too_large_after_prune', size, RACE_CACHE_MAX_BYTES);
+      continue;
+    }
+    try {
+      localStorage.setItem(RACE_CACHE_STORAGE_KEY, serialized);
+      console.warn('race_cache_local_pruned', oldest);
+      return true;
+    } catch (err2) {
+      if (!isQuotaExceededError(err2)) {
+        console.warn('race_cache_local_save_failed', err2?.message || err2);
+        return false;
+      }
+    }
+  }
+  disableRaceCache(reason || 'unbounded_payload');
+  return false;
+}
+
+function attemptPersistRaceCachePayload(payload){
+  if (raceCacheWritesDisabled) return false;
+  const { serialized, size } = serializeRaceCachePayload(payload);
+  if (!serialized) {
+    disableRaceCache('stringify_failed');
+    return false;
+  }
+  if (size > RACE_CACHE_MAX_BYTES) {
+    console.warn('race_cache_payload_too_large', size, RACE_CACHE_MAX_BYTES);
+    return pruneAndPersistRaceCache(payload, 'payload_too_large');
+  }
+  try {
+    localStorage.setItem(RACE_CACHE_STORAGE_KEY, serialized);
+    return true;
+  } catch (err) {
+    if (!isQuotaExceededError(err)) {
+      console.warn('race_cache_local_save_failed', err?.message || err);
+      return false;
+    }
+    return pruneAndPersistRaceCache(payload, err?.message || err);
+  }
+}
+
+function persistRacesToLocalCache(dateStr, races){
+  if (!dateStr || !Array.isArray(races) || !races.length || raceCacheWritesDisabled) return;
+  let existing;
+  try {
+    existing = JSON.parse(localStorage.getItem(RACE_CACHE_STORAGE_KEY) || '{}');
+  } catch {
+    existing = {};
+  }
+  if (!existing || typeof existing !== 'object') existing = {};
+  existing[dateStr] = { date: dateStr, savedAt: Date.now(), races };
+  const keys = Object.keys(existing).sort();
+  while (keys.length > RACE_CACHE_MAX_DAYS) {
+    const oldest = keys.shift();
+    delete existing[oldest];
+  }
+  attemptPersistRaceCachePayload(existing);
 }
 
 function hydrateRacesFromLocalCache(dateStr){
@@ -5893,8 +6020,11 @@ function buildStrategyPrintHtml(ctx = {}){
 function toggleStrategyPrintModal(show){
   const modal = $('strategyPrintModal');
   if (!modal) return;
-  modal.classList.toggle('hidden', !show);
-  modal.setAttribute('aria-hidden', show ? 'false' : 'true');
+  if (show) {
+    showModalWithFocus(modal);
+    return;
+  }
+  hideModalWithFocus(modal);
 }
 
 function printStrategyBook(){
@@ -14156,12 +14286,12 @@ function toggleAuthModal(show){
   const modal = $('authModal');
   if (!modal) return;
   const shouldShow = (typeof show === 'boolean') ? show : modal.classList.contains('hidden');
-  modal.classList.toggle('hidden', !shouldShow);
-  modal.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
-  if (!shouldShow) {
-    clearApiKeySecretDisplay();
-  } else {
+  if (shouldShow) {
+    showModalWithFocus(modal);
     updateApiKeyPanel();
+  } else {
+    hideModalWithFocus(modal);
+    clearApiKeySecretDisplay();
   }
 }
 

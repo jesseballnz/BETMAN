@@ -87,6 +87,14 @@ const RACE_LIST_CACHE_TTL_MS = Number(process.env.RACE_LIST_CACHE_TTL_MS || (30 
 const raceListCache = new Map();
 const AUTH_USER = process.env.BETMAN_USERNAME || 'betman';
 const AUTH_PASS = process.env.BETMAN_PASSWORD || 'change-me-now';
+const PASSWORD_SCRYPT_DEFAULTS = Object.freeze({
+  N: Number(process.env.BETMAN_PASSWORD_SCRYPT_N || 16384),
+  r: Number(process.env.BETMAN_PASSWORD_SCRYPT_R || 8),
+  p: Number(process.env.BETMAN_PASSWORD_SCRYPT_P || 1),
+  keyLen: Number(process.env.BETMAN_PASSWORD_SCRYPT_KEYLEN || 32)
+});
+const API_KEY_PREFIX_LENGTH = Number(process.env.BETMAN_API_KEY_PREFIX_LEN || 10);
+const API_KEY_PREVIEW_LENGTH = Number(process.env.BETMAN_API_KEY_PREVIEW_LEN || 6);
 const SESSION_TTL_MS = Number(process.env.BETMAN_SESSION_TTL_MS || (1000 * 60 * 60 * 12));
 const SIGNUP_VERIFICATION_REQUIRED = String(process.env.BETMAN_SIGNUP_VERIFICATION || 'true').toLowerCase() === 'true';
 const HTTP_BASIC_PROMPT = String(process.env.BETMAN_HTTP_BASIC_PROMPT || 'false').toLowerCase() === 'true';
@@ -479,20 +487,68 @@ function setCachedRaceList(key, payload){
   }
 }
 
+function deriveApiKeyPrefix(secret){
+  const normalized = String(secret || '').trim();
+  if (!normalized) return null;
+  return normalized.slice(0, API_KEY_PREFIX_LENGTH) || null;
+}
+
+function deriveApiKeyPreview(secret){
+  const normalized = String(secret || '').trim();
+  if (!normalized) return null;
+  if (normalized.length <= API_KEY_PREVIEW_LENGTH) return normalized;
+  return normalized.slice(-API_KEY_PREVIEW_LENGTH);
+}
+
+function buildStoredApiKey(secret, props = {}){
+  const normalizedSecret = String(secret || '').trim();
+  if (!normalizedSecret) return null;
+  return {
+    label: props.label || null,
+    rateLimit: Number(props.rateLimit) || 60,
+    rateWindow: Number(props.rateWindow) || 60,
+    active: props.active !== false,
+    createdAt: props.createdAt || new Date().toISOString(),
+    revokedAt: props.revokedAt || null,
+    keyPrefix: props.keyPrefix || deriveApiKeyPrefix(normalizedSecret),
+    keyPreview: props.keyPreview || deriveApiKeyPreview(normalizedSecret),
+    secretHash: props.secretHash || hashApiSecret(normalizedSecret)
+  };
+}
+
+function matchesKeyIdentifier(record, identifier){
+  if (!record) return false;
+  const cleaned = String(identifier || '').trim();
+  if (!cleaned) return false;
+  const prefix = String(record.keyPrefix || '');
+  const preview = String(record.keyPreview || '');
+  if (prefix && prefix.startsWith(cleaned)) return true;
+  if (preview && (preview === cleaned || cleaned.endsWith(preview))) return true;
+  return false;
+}
+
 function normalizeStoredApiKeyRecord(raw){
   if (!raw || typeof raw !== 'object') return null;
-  const key = String(raw.key || '').trim();
-  if (!key) return null;
-  return {
-    ...raw,
-    key,
+  const legacyKey = String(raw.key || '').trim();
+  const secretHash = String(raw.secretHash || raw.secret_hash || '').trim();
+  if (!secretHash && !legacyKey) return null;
+  const normalized = {
     label: raw.label || null,
     rateLimit: Number(raw.rateLimit) || 60,
     rateWindow: Number(raw.rateWindow) || 60,
     active: raw.active !== false,
     createdAt: raw.createdAt || null,
-    revokedAt: raw.revokedAt || null
+    revokedAt: raw.revokedAt || null,
+    keyPrefix: raw.keyPrefix || raw.key_prefix || null,
+    keyPreview: raw.keyPreview || raw.key_preview || null,
+    secretHash: secretHash || (legacyKey ? hashApiSecret(legacyKey) : null)
   };
+  if (legacyKey) {
+    if (!normalized.keyPrefix) normalized.keyPrefix = deriveApiKeyPrefix(legacyKey);
+    if (!normalized.keyPreview) normalized.keyPreview = deriveApiKeyPreview(legacyKey);
+  }
+  if (!normalized.secretHash) return null;
+  return normalized;
 }
 
 function normalizeStoredApiKeys(list){
@@ -1070,6 +1126,28 @@ function parseCookies(req){
   return out;
 }
 
+function requestIsSecure(req){
+  const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  if (forwardedProto === 'https') return true;
+  return !!req?.socket?.encrypted;
+}
+
+function buildSessionCookieHeader(req, sid, maxAgeSec = Math.floor(SESSION_TTL_MS / 1000)){
+  const parts = [
+    `betman_session=${encodeURIComponent(String(sid || ''))}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${Math.max(0, Number(maxAgeSec) || 0)}`
+  ];
+  if (requestIsSecure(req)) parts.push('Secure');
+  return parts.join('; ');
+}
+
+function clearSessionCookieHeader(req){
+  return buildSessionCookieHeader(req, '', 0);
+}
+
 function createSession(principal){
   if (principal && !principal.effectiveTenantId) {
     principal.effectiveTenantId = effectiveTenantId(principal);
@@ -1117,7 +1195,7 @@ function validateCredentials(username, password){
   const hashed = hashApiSecret(pass);
   const adminUser = normalizeUsername(authState.username);
   const adminMeta = authState.adminMeta || {};
-  const adminPasswordValid = pass === authState.password;
+  const adminPasswordValid = passwordMatches(authState.password, pass);
   const adminKeyValid = adminMeta.apiKeyHash && hashed === adminMeta.apiKeyHash;
   if (user === adminUser && (adminPasswordValid || adminKeyValid)) {
     const principal = { username: authState.username, role: 'admin', isAdmin: true, source: 'admin', tenantId: 'default' };
@@ -1126,9 +1204,9 @@ function validateCredentials(username, password){
   }
   const found = (authState.users || []).find(u => normalizeUsername(u.username) === user);
   if (!found) return null;
-  const passwordMatches = pass === found.password;
+  const passwordValid = passwordMatches(found.password, pass);
   const apiKeyMatches = found.apiKeyHash && hashed === found.apiKeyHash;
-  if (!passwordMatches && !apiKeyMatches) return null;
+  if (!passwordValid && !apiKeyMatches) return null;
   const role = found.role || 'user';
   const principal = { username: found.username, role, isAdmin: role === 'admin', source: 'users', tenantId: normalizeTenantId(found.tenantId || 'default') };
   principal.effectiveTenantId = effectiveTenantId(principal);
@@ -1139,7 +1217,8 @@ function findPrincipalByApiKey(apiKey){
   const rawKey = String(apiKey || '').trim();
   if (!rawKey) return null;
 
-  const adminMatch = normalizeStoredApiKeys(authState.adminApiKeys).find((key) => key.key === rawKey && key.active !== false);
+  const candidateHash = hashApiSecret(rawKey);
+  const adminMatch = normalizeStoredApiKeys(authState.adminApiKeys).find((key) => key.secretHash === candidateHash && key.active !== false);
   if (adminMatch) {
     const principal = { username: authState.username, role: 'admin', isAdmin: true, source: 'api_key', tenantId: 'default' };
     principal.effectiveTenantId = effectiveTenantId(principal);
@@ -1147,7 +1226,7 @@ function findPrincipalByApiKey(apiKey){
   }
 
   const foundUser = (authState.users || []).find((user) =>
-    normalizeStoredApiKeys(user.apiKeys).some((key) => key.key === rawKey && key.active !== false)
+    normalizeStoredApiKeys(user.apiKeys).some((key) => key.secretHash === candidateHash && key.active !== false)
   );
   if (foundUser) {
     const role = foundUser.role || 'user';
@@ -1201,6 +1280,59 @@ function hashApiSecret(secret){
   return crypto.createHash('sha256').update(String(secret || '')).digest('hex');
 }
 
+function hashPassword(secret){
+  const normalized = String(secret || '');
+  if (!normalized) return '';
+  try {
+    const { N, r, p, keyLen } = PASSWORD_SCRYPT_DEFAULTS;
+    const salt = crypto.randomBytes(16);
+    const derived = crypto.scryptSync(normalized, salt, keyLen, { N, r, p });
+    return `scrypt:${N}:${r}:${p}:${salt.toString('base64')}:${derived.toString('base64')}`;
+  } catch (err) {
+    console.error('password_hash_scrypt_failed', err?.message || err);
+    return hashPasswordLegacySha256(normalized);
+  }
+}
+
+function hashPasswordLegacySha256(secret){
+  return `sha256:${hashApiSecret(secret)}`;
+}
+
+function passwordMatches(storedValue, providedValue){
+  const stored = String(storedValue || '');
+  const provided = String(providedValue || '');
+  if (!stored) return false;
+  if (stored.startsWith('scrypt:')) return verifyScryptPassword(stored, provided);
+  if (stored.startsWith('sha256:')) return timingSafeEquals(stored, hashPasswordLegacySha256(provided));
+  // Legacy plaintext support for migration safety.
+  return stored === provided;
+}
+
+function verifyScryptPassword(stored, provided){
+  try {
+    const parts = String(stored || '').split(':');
+    if (parts.length < 6) return false;
+    const [, nRaw, rRaw, pRaw, saltB64, hashB64] = parts;
+    const N = Number(nRaw);
+    const r = Number(rRaw);
+    const p = Number(pRaw);
+    if (!Number.isFinite(N) || !Number.isFinite(r) || !Number.isFinite(p)) return false;
+    const salt = Buffer.from(saltB64, 'base64');
+    const hash = Buffer.from(hashB64, 'base64');
+    const derived = crypto.scryptSync(String(provided || ''), salt, hash.length, { N, r, p });
+    return crypto.timingSafeEqual(hash, derived);
+  } catch {
+    return false;
+  }
+}
+
+function timingSafeEquals(a, b){
+  const bufA = Buffer.from(String(a || ''), 'utf8');
+  const bufB = Buffer.from(String(b || ''), 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 const OPENAI_COMPLIMENTARY_GLOBAL = String(process.env.BETMAN_OPENAI_COMPLIMENTARY || 'false').toLowerCase() === 'true';
 
 function canUseOpenAiByPrincipal(principal){
@@ -1226,7 +1358,7 @@ function requireAuth(req, res){
   };
   if (HTTP_BASIC_PROMPT) headers['WWW-Authenticate'] = 'Basic realm="BETMAN", charset="UTF-8"';
   const cookies = parseCookies(req);
-  if (cookies.betman_session) headers['Set-Cookie'] = 'betman_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+  if (cookies.betman_session) headers['Set-Cookie'] = clearSessionCookieHeader(req);
   res.writeHead(401, headers);
   res.end(JSON.stringify({ ok: false, error: 'auth_required' }));
   return false;
@@ -1257,7 +1389,7 @@ function saveAuthState(next){
     }))
   };
   fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
-  fs.writeFileSync(AUTH_FILE, JSON.stringify(authState, null, 2));
+  fs.writeFileSync(AUTH_FILE, JSON.stringify(authState, null, 2), { mode: 0o600 });
 
   const pool = getPgPool();
   if (pool) {
@@ -1379,6 +1511,34 @@ function isSmallModel(model){
   return m.includes('deepseek-r1:8b') || m.includes('llama3.1:8b') || m.includes('llama3.2:3b') || m.includes('qwen2.5:1.5b') || m.includes('qwen2.5:3b');
 }
 
+function getModelProfileForModel(model){
+  const m = String(model || '').toLowerCase();
+  if (isSmallModel(m)) {
+    return {
+      contextRace: envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS_SMALL', 8000, 3000, 16000),
+      contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL_SMALL', 2600, 900, 10000),
+      historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS_SMALL', 6, 0, 16),
+      historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS_SMALL', 1200, 300, 4000),
+      maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS_SMALL', 1100, 500, 2200),
+      maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS_SMALL', 900, 300, 3000),
+      temperatureRace: 0.15,
+      temperatureGeneral: 0.28,
+      numCtxFloor: envNumber('BETMAN_OLLAMA_NUM_CTX_SMALL', 8192, 4096, 32768)
+    };
+  }
+  return {
+    contextRace: envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS', 12000, 4000, 24000),
+    contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL', 4200, 1000, 16000),
+    historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS', 8, 0, 24),
+    historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS', 1600, 300, 5000),
+    maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS', 1400, 600, 3000),
+    maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS', 1100, 400, 4000),
+    temperatureRace: 0.2,
+    temperatureGeneral: 0.35,
+    numCtxFloor: envNumber('BETMAN_OLLAMA_NUM_CTX', 16384, 4096, 65536)
+  };
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000){
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -1452,7 +1612,7 @@ function resolveAiProvider(){
 function inferProviderForModel(model){
   const m = String(model || '').trim().toLowerCase();
   if (!m) return '';
-  if ((m.includes('deepseek-r1:8b') || m.includes('llama3.1:8b') || m.includes('qwen2.5:') || m.includes('qwen-') || m.includes('ollama/'))) return 'ollama';
+  if ((m.includes('deepseek-r1:8b') || m.includes('llama3.1:8b') || m.includes('llama3.2:3b') || m.includes('qwen2.5:') || m.includes('qwen-') || m.includes('ollama/'))) return 'ollama';
   if (m.includes('gpt-') || m.includes('openai/')) return 'openai';
   return '';
 }
@@ -4069,33 +4229,16 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     throw new Error('openai_model_not_allowed');
   }
 
-  const modelProfile = (() => {
-    const m = String(effectiveModel || '').toLowerCase();
-    if (isSmallModel(m)) {
-      return {
-        contextRace: envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS_SMALL', 8000, 3000, 16000),
-        contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL_SMALL', 2600, 900, 10000),
-        historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS_SMALL', 6, 0, 16),
-        historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS_SMALL', 1200, 300, 4000),
-        maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS_SMALL', 1100, 500, 2200),
-        maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS_SMALL', 900, 300, 3000),
-        temperatureRace: 0.15,
-        temperatureGeneral: 0.28,
-        numCtxFloor: envNumber('BETMAN_OLLAMA_NUM_CTX_SMALL', 8192, 4096, 32768)
-      };
-    }
-    return {
-      contextRace: envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS', 12000, 4000, 24000),
-      contextGeneral: envNumber('BETMAN_CONTEXT_MAX_GENERAL', 4200, 1000, 16000),
-      historyTurns: envNumber('BETMAN_CHAT_HISTORY_TURNS', 8, 0, 24),
-      historyChars: envNumber('BETMAN_CHAT_HISTORY_CHARS', 1600, 300, 5000),
-      maxTokensRace: envNumber('BETMAN_CHAT_MAX_TOKENS_RACE_ANALYSIS', 1400, 600, 3000),
-      maxTokensGeneral: envNumber('BETMAN_CHAT_MAX_TOKENS', 1100, 400, 4000),
-      temperatureRace: 0.2,
-      temperatureGeneral: 0.35,
-      numCtxFloor: envNumber('BETMAN_OLLAMA_NUM_CTX', 16384, 4096, 65536)
-    };
-  })();
+  let modelProfile = getModelProfileForModel(effectiveModel);
+  let temperature = isRaceAnalysis ? modelProfile.temperatureRace : modelProfile.temperatureGeneral;
+  let maxTokens = isRaceAnalysis ? modelProfile.maxTokensRace : modelProfile.maxTokensGeneral;
+
+  function refreshModelProfile(nextModel){
+    if (!nextModel) return;
+    modelProfile = getModelProfileForModel(nextModel);
+    temperature = isRaceAnalysis ? modelProfile.temperatureRace : modelProfile.temperatureGeneral;
+    maxTokens = isRaceAnalysis ? modelProfile.maxTokensRace : modelProfile.maxTokensGeneral;
+  }
 
   // Temporal race detection: when venue is matched and user asks about "the next race"
   // or "the last race", find the matching race and inject raceContext so full field data is included.
@@ -4208,8 +4351,6 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   messages.push({ role: 'user', content: `Latest user question (answer this): ${question}\n\nContext Summary:\n${contextSummary}` });
 
-  const temperature = isRaceAnalysis ? modelProfile.temperatureRace : modelProfile.temperatureGeneral;
-  const maxTokens = isRaceAnalysis ? modelProfile.maxTokensRace : modelProfile.maxTokensGeneral;
   const fakeAiMode = String(process.env.BETMAN_FAKE_AI || '').toLowerCase() === 'true';
   if (fakeAiMode) {
     const placeholder = `[fake-ai:${effectiveModel}] ${question}`;
@@ -4329,6 +4470,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
         console.error('ollama_unavailable_fallback_openai', lastError?.message || lastError || 'ollama_unavailable');
         provider = 'openai';
         effectiveModel = process.env.BETMAN_OPENAI_MODEL || process.env.BETMAN_CHAT_MODEL || 'gpt-4o-mini';
+        refreshModelProfile(effectiveModel);
       } else {
         throw lastError || new Error('ollama_unavailable');
       }
@@ -4592,11 +4734,10 @@ const server = http.createServer(async (req, res)=>{
       }
 
       const sid = createSession(principal);
-      res.setHeader('Set-Cookie', `betman_session=${encodeURIComponent(sid)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}`);
+      res.setHeader('Set-Cookie', buildSessionCookieHeader(req, sid));
       return okJson(res, {
         ok: true,
         user: principal.username,
-        sessionToken: sid,
         tenantId: principal.tenantId || 'default',
         effectiveTenantId: principal.effectiveTenantId || (principal.tenantId || 'default')
       });
@@ -5061,7 +5202,7 @@ const server = http.createServer(async (req, res)=>{
         let payload = {};
         try { payload = body ? JSON.parse(body) : {}; } catch {}
         const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-        const filePath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'feel_meter.json'), 'feel_meter.json');
+        const filePath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'feel_meter.json'), 'feel_meter.json');
         let feel = { score: 50, wins: 0, losses: 0, updatedAt: '' };
         try { feel = JSON.parse(fs.readFileSync(filePath,'utf8')); } catch {}
 
@@ -5094,7 +5235,7 @@ const server = http.createServer(async (req, res)=>{
         let payload = {};
         try { payload = body ? JSON.parse(body) : {}; } catch {}
         const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-        const filePath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'bet_results.json'), 'bet_results.json');
+        const filePath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'bet_results.json'), 'bet_results.json');
         let arr = [];
         try { arr = JSON.parse(fs.readFileSync(filePath,'utf8')); } catch {}
 
@@ -5209,7 +5350,7 @@ const server = http.createServer(async (req, res)=>{
         try { payload = body ? JSON.parse(body) : {}; } catch {}
 
         const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-        const queuePath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'ai_bet_queue.json'), 'ai_bet_queue.json');
+        const queuePath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'ai_bet_queue.json'), 'ai_bet_queue.json');
         const queue = loadJson(queuePath, []);
         const norm = (s) => String(s || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
         const keep = queue.filter(x => !(
@@ -5240,8 +5381,8 @@ const server = http.createServer(async (req, res)=>{
         try { payload = body ? JSON.parse(body) : {}; } catch {}
 
         const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-        const queuePath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'ai_bet_queue.json'), 'ai_bet_queue.json');
-        const placedPath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'placed_bets.json'), 'placed_bets.json');
+        const queuePath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'ai_bet_queue.json'), 'ai_bet_queue.json');
+        const placedPath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'placed_bets.json'), 'placed_bets.json');
         const existingQueue = loadJson(queuePath, []);
         const placed = loadJson(placedPath, []);
         const items = Array.isArray(payload.bets) ? payload.bets : [];
@@ -5392,12 +5533,11 @@ const server = http.createServer(async (req, res)=>{
         if (payload.day === 'tomorrow') d.setDate(d.getDate()+1);
         const date = payload.date || fmt.format(d);
 
-        const cacheKey = JSON.stringify({ country: pollCountries, date: String(date || ''), meeting: String(payload.meeting || ''), day: String(payload.day || 'today') });
+        const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
+        const cacheKey = JSON.stringify({ tenantId, country: pollCountries, date: String(date || ''), meeting: String(payload.meeting || ''), day: String(payload.day || 'today') });
         if ((Date.now() - lastPollCacheTs) < 60000 && lastPollCacheKey === cacheKey) {
           return send(res, 200, 'ok');
         }
-
-        const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
         const stakePath = resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'stake.json'), 'stake.json');
         const stakeData = fs.existsSync(stakePath) ? JSON.parse(fs.readFileSync(stakePath,'utf8')) : { stakePerRace: 10, exoticStakePerRace: 1, earlyWindowMin: 1800, aiWindowMin: 10 };
         const args = [
@@ -5421,8 +5561,8 @@ const server = http.createServer(async (req, res)=>{
           '--ew_place_min=2'
         ];
         const { spawnSync } = require('child_process');
-        spawnSync(args[0], args.slice(1), { stdio: 'ignore' });
-        spawnSync('node', [path.join(process.cwd(), 'scripts', 'race_cache_writer.js')], { stdio: 'ignore' });
+        spawnSync(args[0], args.slice(1), { stdio: 'ignore', env: { ...process.env, TENANT_ID: tenantId } });
+        spawnSync('node', [path.join(process.cwd(), 'scripts', 'race_cache_writer.js')], { stdio: 'ignore', env: { ...process.env, TENANT_ID: tenantId } });
         spawnSync('node', [path.join(process.cwd(), 'scripts', 'status_writer.js')], {
           stdio: 'ignore',
           env: { ...process.env, TENANT_ID: tenantId }
@@ -5543,20 +5683,10 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       if (cacheFresh && cacheCompatible) {
         if (String(cached.mode || '').toLowerCase() === 'ai' && withinMinRefresh) {
           const resolvedModel = String(cached.modelUsed || cached.modelRequested || requestedModel || process.env.BETMAN_CHAT_MODEL || 'qwen2.5:1.5b').toLowerCase();
-          const smallModel = isSmallModel(resolvedModel);
-          const fallbackContextMax = isRaceAnalysis
-            ? (smallModel
-              ? envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS_SMALL', 8000, 3000, 16000)
-              : envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS', 12000, 4000, 24000))
-            : (smallModel
-              ? envNumber('BETMAN_CONTEXT_MAX_GENERAL_SMALL', 4000, 900, 10000)
-              : envNumber('BETMAN_CONTEXT_MAX_GENERAL', 7000, 1000, 16000));
-          const fallbackHistoryTurns = smallModel
-            ? envNumber('BETMAN_CHAT_HISTORY_TURNS_SMALL', 8, 0, 16)
-            : envNumber('BETMAN_CHAT_HISTORY_TURNS', 12, 0, 24);
-          const fallbackHistoryChars = smallModel
-            ? envNumber('BETMAN_CHAT_HISTORY_CHARS_SMALL', 1800, 300, 4000)
-            : envNumber('BETMAN_CHAT_HISTORY_CHARS', 2400, 300, 5000);
+          const fallbackProfile = getModelProfileForModel(resolvedModel);
+          const fallbackContextMax = isRaceAnalysis ? fallbackProfile.contextRace : fallbackProfile.contextGeneral;
+          const fallbackHistoryTurns = fallbackProfile.historyTurns;
+          const fallbackHistoryChars = fallbackProfile.historyChars;
 
           return okJson(res, {
             ok: true,
@@ -5746,20 +5876,10 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     });
 
     const resolvedModelForMeta = String(aiMeta?.modelUsed || effectivePayload?.model || process.env.BETMAN_CHAT_MODEL || '').toLowerCase();
-    const smallModelForMeta = isSmallModel(resolvedModelForMeta);
-    const fallbackContextMeta = isRaceAnalysis
-      ? (smallModelForMeta
-        ? envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS_SMALL', 8000, 3000, 16000)
-        : envNumber('BETMAN_CONTEXT_MAX_RACE_ANALYSIS', 12000, 4000, 24000))
-      : (smallModelForMeta
-        ? envNumber('BETMAN_CONTEXT_MAX_GENERAL_SMALL', 4000, 900, 10000)
-        : envNumber('BETMAN_CONTEXT_MAX_GENERAL', 7000, 1000, 16000));
-    const fallbackTurnsMeta = smallModelForMeta
-      ? envNumber('BETMAN_CHAT_HISTORY_TURNS_SMALL', 8, 0, 16)
-      : envNumber('BETMAN_CHAT_HISTORY_TURNS', 12, 0, 24);
-    const fallbackCharsMeta = smallModelForMeta
-      ? envNumber('BETMAN_CHAT_HISTORY_CHARS_SMALL', 1800, 300, 4000)
-      : envNumber('BETMAN_CHAT_HISTORY_CHARS', 2400, 300, 5000);
+    const fallbackProfileMeta = getModelProfileForModel(resolvedModelForMeta);
+    const fallbackContextMeta = isRaceAnalysis ? fallbackProfileMeta.contextRace : fallbackProfileMeta.contextGeneral;
+    const fallbackTurnsMeta = fallbackProfileMeta.historyTurns;
+    const fallbackCharsMeta = fallbackProfileMeta.historyChars;
 
     return okJson(res, {
       ok: true,
@@ -5798,7 +5918,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         const newUsernameCheck = newUsernameInput.trim();
         const newPassword = String(payload.newPassword || '');
 
-        if (currentPassword !== authState.password) {
+        if (!passwordMatches(authState.password, currentPassword)) {
           return okJson(res, { ok: false, error: 'invalid_current_password' }, 403);
         }
         if (!newUsernameCheck || newUsernameCheck.length < 3) {
@@ -5808,7 +5928,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
           return okJson(res, { ok: false, error: 'password_too_short' }, 400);
         }
 
-        saveAuthState({ username: newUsername, password: newPassword, users: authState.users || [] });
+        saveAuthState({ username: newUsername, password: hashPassword(newPassword), users: authState.users || [] });
         return okJson(res, { ok: true, username: authState.username, message: 'credentials_updated' });
       });
       return;
@@ -5841,7 +5961,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         const emailSlug = email.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
         const tenantId = normalizeTenantId(payload.tenantId || (emailSlug ? `acct_${emailSlug}` : (principal?.effectiveTenantId || 'default')));
 
-        if (currentPassword !== authState.password) {
+        if (!passwordMatches(authState.password, currentPassword)) {
           return okJson(res, { ok: false, error: 'invalid_current_password' }, 403);
         }
         const firstNameCheck = firstNameInput.trim();
@@ -5876,7 +5996,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
           lastName,
           companyName,
           name: planType === 'commercial' ? companyName : `${firstName} ${lastName}`,
-          password,
+          password: hashPassword(password),
           tenantId,
           role: 'user',
           openaiEnabled: false,
@@ -5950,7 +6070,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         const usernameNormalized = normalizeUsername(usernameInput);
         const newPassword = String(payload.newPassword || '');
 
-        if (currentPassword !== authState.password) {
+        if (!passwordMatches(authState.password, currentPassword)) {
           return okJson(res, { ok: false, error: 'invalid_current_password' }, 403);
         }
         if (!usernameCheck) return okJson(res, { ok: false, error: 'missing_username' }, 400);
@@ -5959,14 +6079,14 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         }
 
         if (normalizeUsername(username) === normalizeUsername(authState.username)) {
-          saveAuthState({ username: authState.username, password: newPassword, users: authState.users || [] });
+          saveAuthState({ username: authState.username, password: hashPassword(newPassword), users: authState.users || [] });
           return okJson(res, { ok: true, user: username, message: 'password_updated' });
         }
 
         const users = [...(authState.users || [])];
         const idx = users.findIndex(u => normalizeUsername(u.username) === usernameNormalized);
         if (idx < 0) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
-        users[idx] = { ...users[idx], password: newPassword, updatedAt: new Date().toISOString() };
+        users[idx] = { ...users[idx], password: hashPassword(newPassword), updatedAt: new Date().toISOString() };
         saveAuthState({ username: authState.username, password: authState.password, users });
         return okJson(res, { ok: true, user: username, message: 'password_updated' });
       });
@@ -5989,7 +6109,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         const usernameCheck = usernameInput.trim();
         const usernameNormalized = normalizeUsername(usernameInput);
 
-        if (currentPassword !== authState.password) {
+        if (!passwordMatches(authState.password, currentPassword)) {
           return okJson(res, { ok: false, error: 'invalid_current_password' }, 403);
         }
         if (!usernameCheck) return okJson(res, { ok: false, error: 'missing_username' }, 400);
@@ -6023,47 +6143,45 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         if (!eligible) {
           return okJson(res, { ok: false, error: 'api_key_not_allowed' }, 403);
         }
-        const apiKey = `betman_${crypto.randomBytes(24).toString('hex')}`;
-        const preview = apiKey.slice(-6);
-        const hash = hashApiSecret(apiKey);
+        const apiKey = genApiKey();
         const nowIso = new Date().toISOString();
-        const newKey = {
-          key: apiKey,
+        const storedKey = buildStoredApiKey(apiKey, {
           label: 'Self Service',
           rateLimit: 60,
           rateWindow: 60,
           active: true,
           createdAt: nowIso
-        };
+        });
+        if (!storedKey) return okJson(res, { ok: false, error: 'api_key_generation_failed' }, 500);
 
         if (principal?.isAdmin && !userRecord) {
           const adminMeta = {
             ...(authState.adminMeta || {}),
-            apiKeyHash: hash,
+            apiKeyHash: storedKey.secretHash,
             apiKeyCreatedAt: nowIso,
-            apiKeyPreview: preview
+            apiKeyPreview: storedKey.keyPreview
           };
           const adminKeys = [...(authState.adminApiKeys || [])];
-          adminKeys.push(newKey);
+          adminKeys.push(storedKey);
           saveAuthState({ username: authState.username, password: authState.password, users: authState.users || [], adminMeta, adminApiKeys: adminKeys });
-          return okJson(res, { ok: true, apiKey, createdAt: nowIso }, 200, req, noStoreHeaders());
+          return okJson(res, { ok: true, apiKey, createdAt: nowIso, keyPreview: storedKey.keyPreview }, 200, req, noStoreHeaders());
         }
 
         const users = [...(authState.users || [])];
         const idx = users.findIndex(u => normalizeUsername(u.username) === normalizeUsername(principal?.username));
         if (idx < 0) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
         const userKeys = [...(users[idx].apiKeys || [])];
-        userKeys.push(newKey);
+        userKeys.push(storedKey);
         users[idx] = {
           ...users[idx],
-          apiKeyHash: hash,
+          apiKeyHash: storedKey.secretHash,
           apiKeyCreatedAt: nowIso,
-          apiKeyPreview: preview,
+          apiKeyPreview: storedKey.keyPreview,
           apiKeys: userKeys,
           updatedAt: nowIso
         };
         saveAuthState({ username: authState.username, password: authState.password, users, adminApiKeys: authState.adminApiKeys || [] });
-        return okJson(res, { ok: true, apiKey, createdAt: nowIso }, 200, req, noStoreHeaders());
+        return okJson(res, { ok: true, apiKey, createdAt: nowIso, keyPreview: storedKey.keyPreview }, 200, req, noStoreHeaders());
       });
       return;
     }
@@ -6083,27 +6201,26 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         }
 
         if (principal?.isAdmin) {
-          if (currentPassword !== authState.password) {
+          if (!passwordMatches(authState.password, currentPassword)) {
             return okJson(res, { ok: false, error: 'invalid_current_password' }, 403);
           }
-          saveAuthState({ username: authState.username, password: newPassword, users: authState.users || [] });
+          saveAuthState({ username: authState.username, password: hashPassword(newPassword), users: authState.users || [] });
           return okJson(res, { ok: true, user: authState.username, message: 'password_updated' });
         }
 
         const users = [...(authState.users || [])];
         const idx = users.findIndex(u => normalizeUsername(u.username) === normalizeUsername(principal?.username));
         if (idx < 0) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
-        if (currentPassword !== users[idx].password) {
+        if (!passwordMatches(users[idx].password, currentPassword)) {
           return okJson(res, { ok: false, error: 'invalid_current_password' }, 403);
         }
-        users[idx] = { ...users[idx], password: newPassword, updatedAt: new Date().toISOString() };
+        users[idx] = { ...users[idx], password: hashPassword(newPassword), updatedAt: new Date().toISOString() };
         saveAuthState({ username: authState.username, password: authState.password, users });
         return okJson(res, { ok: true, user: users[idx].username, message: 'password_updated' });
       });
       return;
     }
 
-    return send(res, 404, 'not found');
   }
 
   /* ── API key management (session-auth) ─────────────────────────── */
@@ -6113,18 +6230,23 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     if (principal.isAdmin) {
       const allKeys = [];
       (authState.adminApiKeys || []).forEach(k => {
-        allKeys.push({ username: authState.username, role: 'admin', label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null });
+        const prefix = k?.keyPrefix ? `${k.keyPrefix}…` : (k?.keyPreview ? `…${k.keyPreview}` : 'n/a');
+        allKeys.push({ username: authState.username, role: 'admin', label: k.label || null, keyPrefix: prefix, active: k.active !== false, createdAt: k.createdAt || null });
       });
       (authState.users || []).forEach(u => {
         (u.apiKeys || []).forEach(k => {
-          allKeys.push({ username: u.username, role: u.role || 'user', label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null });
+          const prefix = k?.keyPrefix ? `${k.keyPrefix}…` : (k?.keyPreview ? `…${k.keyPreview}` : 'n/a');
+          allKeys.push({ username: u.username, role: u.role || 'user', label: k.label || null, keyPrefix: prefix, active: k.active !== false, createdAt: k.createdAt || null });
         });
       });
       return okJson(res, { ok: true, keys: allKeys });
     }
     const userRec = (authState.users || []).find(u => normalizeUsername(u.username) === normalizeUsername(principal.username));
     const keys = (userRec?.apiKeys || []).map(k => ({
-      label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null
+      label: k.label || null,
+      keyPrefix: k?.keyPrefix ? `${k.keyPrefix}…` : (k?.keyPreview ? `…${k.keyPreview}` : 'n/a'),
+      active: k.active !== false,
+      createdAt: k.createdAt || null
     }));
     return okJson(res, { ok: true, keys });
   }
@@ -6139,21 +6261,22 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       const principal = req.authPrincipal;
       const label = String(payload.label || 'API Key').trim().slice(0, 100);
       const targetUser = principal.isAdmin ? String(payload.username || principal.username).trim() : principal.username;
-
-      const newKey = {
-        key: genApiKey(),
+      const apiKeySecret = genApiKey();
+      const createdAtIso = new Date().toISOString();
+      const storedKey = buildStoredApiKey(apiKeySecret, {
         label,
         rateLimit: Number(payload.rateLimit) || 60,
         rateWindow: Number(payload.rateWindow) || 60,
         active: true,
-        createdAt: new Date().toISOString()
-      };
+        createdAt: createdAtIso
+      });
+      if (!storedKey) return okJson(res, { ok: false, error: 'api_key_generation_failed' }, 500);
 
       const isAdminUser = normalizeUsername(targetUser) === normalizeUsername(authState.username);
       if (isAdminUser) {
         if (!principal.isAdmin) return okJson(res, { ok: false, error: 'forbidden' }, 403);
         const adminKeys = authState.adminApiKeys || [];
-        adminKeys.push(newKey);
+        adminKeys.push(storedKey);
         saveAuthState({ ...authState, adminApiKeys: adminKeys });
       } else {
         const users = [...(authState.users || [])];
@@ -6163,12 +6286,19 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
           return okJson(res, { ok: false, error: 'forbidden' }, 403);
         }
         const userKeys = users[idx].apiKeys || [];
-        userKeys.push(newKey);
+        userKeys.push(storedKey);
         users[idx] = { ...users[idx], apiKeys: userKeys };
         saveAuthState({ ...authState, users });
       }
 
-      return okJson(res, { ok: true, key: newKey.key, label: newKey.label, message: 'Store this key securely — it cannot be retrieved again.' }, 201);
+      return okJson(res, {
+        ok: true,
+        key: apiKeySecret,
+        label: storedKey.label,
+        keyPreview: storedKey.keyPreview,
+        createdAt: createdAtIso,
+        message: 'Store this key securely — it cannot be retrieved again.'
+      }, 201);
     });
     return;
   }
@@ -6181,12 +6311,13 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       let payload = {};
       try { payload = body ? JSON.parse(body) : {}; } catch {}
       const principal = req.authPrincipal;
-      const keyPrefix = String(payload.keyPrefix || '').trim().replace(/…$/, '');
-      if (!keyPrefix) return okJson(res, { ok: false, error: 'missing_keyPrefix' }, 400);
+      const rawIdentifier = String(payload.keyPrefix || payload.keyIdentifier || '').trim();
+      const keyIdentifier = rawIdentifier.replace(/…/g, '');
+      if (!keyIdentifier) return okJson(res, { ok: false, error: 'missing_keyPrefix' }, 400);
 
       let found = false;
       if (principal.isAdmin && authState.adminApiKeys) {
-        const idx = authState.adminApiKeys.findIndex(k => k.key.startsWith(keyPrefix));
+        const idx = authState.adminApiKeys.findIndex(k => matchesKeyIdentifier(k, keyIdentifier));
         if (idx >= 0) {
           authState.adminApiKeys[idx].active = false;
           authState.adminApiKeys[idx].revokedAt = new Date().toISOString();
@@ -6198,7 +6329,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         const users = [...(authState.users || [])];
         for (let i = 0; i < users.length; i++) {
           const ukeys = users[i].apiKeys || [];
-          const kidx = ukeys.findIndex(k => k.key.startsWith(keyPrefix));
+          const kidx = ukeys.findIndex(k => matchesKeyIdentifier(k, keyIdentifier));
           if (kidx >= 0) {
             if (!principal.isAdmin && normalizeUsername(users[i].username) !== normalizeUsername(principal.username)) {
               return okJson(res, { ok: false, error: 'forbidden' }, 403);
@@ -6387,7 +6518,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     if (cookies.betman_session) sessions.delete(cookies.betman_session);
     const headers = {
       'Content-Type': 'application/json',
-      'Set-Cookie': 'betman_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'Set-Cookie': clearSessionCookieHeader(req),
       'X-Auth-Reason': 'logout'
     };
     if (HTTP_BASIC_PROMPT) headers['WWW-Authenticate'] = 'Basic realm="BETMAN-LOGOUT", charset="UTF-8"';
@@ -6844,7 +6975,7 @@ if (require.main === module) {
   initAuthPersistence().finally(() => {
     server.listen(port, ()=>{
       console.log(`frontend server running: http://localhost:${port}`);
-      if (authState.password === 'change-me-now') {
+      if (passwordMatches(authState.password, 'change-me-now')) {
         console.log('WARNING: Using default BETMAN_PASSWORD. Set BETMAN_USERNAME/BETMAN_PASSWORD env vars or update via /api/auth-config.');
       }
       if (DB_URL) console.log('Postgres persistence: enabled');

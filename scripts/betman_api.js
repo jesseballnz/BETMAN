@@ -22,6 +22,8 @@ const { prunePulseTargetingAgainstRaces } = require('./pulse_targeting_semantics
 const API_VERSION = '1.0.0';
 const DEFAULT_RATE_LIMIT   = Number(process.env.BETMAN_API_RATE_LIMIT   || 60);   // requests per window
 const DEFAULT_RATE_WINDOW  = Number(process.env.BETMAN_API_RATE_WINDOW  || 60);   // window in seconds
+const API_KEY_PREFIX_LENGTH = Number(process.env.BETMAN_API_KEY_PREFIX_LEN || 10);
+const API_KEY_PREVIEW_LENGTH = Number(process.env.BETMAN_API_KEY_PREVIEW_LEN || 6);
 const TAB_BASE = 'https://api.tab.co.nz/affiliates/v1';
 const PULSE_CONFIG_FILE = 'pulse_config.json';
 const DEFAULT_PULSE_CONFIG = Object.freeze({
@@ -113,6 +115,80 @@ function isLiveRaceEntry(entry, raceMap) {
 
 function generateApiKey() {
   return `bm_${crypto.randomBytes(24).toString('hex')}`;
+}
+
+function hashApiKeySecret(secret) {
+  return crypto.createHash('sha256').update(String(secret || '')).digest('hex');
+}
+
+function deriveApiKeyPrefix(secret) {
+  const normalized = String(secret || '').trim();
+  if (!normalized) return null;
+  return normalized.slice(0, API_KEY_PREFIX_LENGTH) || null;
+}
+
+function deriveApiKeyPreview(secret) {
+  const normalized = String(secret || '').trim();
+  if (!normalized) return null;
+  if (normalized.length <= API_KEY_PREVIEW_LENGTH) return normalized;
+  return normalized.slice(-API_KEY_PREVIEW_LENGTH);
+}
+
+function buildStoredApiKey(secret, props = {}) {
+  const normalized = String(secret || '').trim();
+  if (!normalized) return null;
+  return {
+    label: props.label || null,
+    rateLimit: Number(props.rateLimit) || DEFAULT_RATE_LIMIT,
+    rateWindow: Number(props.rateWindow) || DEFAULT_RATE_WINDOW,
+    active: props.active !== false,
+    createdAt: props.createdAt || new Date().toISOString(),
+    revokedAt: props.revokedAt || null,
+    keyPrefix: props.keyPrefix || deriveApiKeyPrefix(normalized),
+    keyPreview: props.keyPreview || deriveApiKeyPreview(normalized),
+    secretHash: props.secretHash || hashApiKeySecret(normalized)
+  };
+}
+
+function normalizeApiKeyRecord(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const legacyKey = String(raw.key || '').trim();
+  const secretHash = String(raw.secretHash || '').trim();
+  if (!secretHash && !legacyKey) return null;
+  const record = {
+    label: raw.label || null,
+    rateLimit: Number(raw.rateLimit) || DEFAULT_RATE_LIMIT,
+    rateWindow: Number(raw.rateWindow) || DEFAULT_RATE_WINDOW,
+    active: raw.active !== false,
+    createdAt: raw.createdAt || null,
+    revokedAt: raw.revokedAt || null,
+    keyPrefix: raw.keyPrefix || null,
+    keyPreview: raw.keyPreview || null,
+    secretHash: secretHash || (legacyKey ? hashApiKeySecret(legacyKey) : null)
+  };
+  if (legacyKey) {
+    if (!record.keyPrefix) record.keyPrefix = deriveApiKeyPrefix(legacyKey);
+    if (!record.keyPreview) record.keyPreview = deriveApiKeyPreview(legacyKey);
+  }
+  if (!record.secretHash) return null;
+  return record;
+}
+
+function normalizeApiKeyList(list) {
+  return (Array.isArray(list) ? list : [])
+    .map(normalizeApiKeyRecord)
+    .filter(Boolean);
+}
+
+function matchesKeyIdentifier(record, identifier) {
+  if (!record) return false;
+  const cleaned = String(identifier || '').trim();
+  if (!cleaned) return false;
+  const prefix = String(record.keyPrefix || '');
+  const preview = String(record.keyPreview || '');
+  if (prefix && prefix.startsWith(cleaned)) return true;
+  if (preview && (preview === cleaned || cleaned.endsWith(preview))) return true;
+  return false;
 }
 
 /**
@@ -340,13 +416,8 @@ function pulseAlertPassesThresholds(row, config) {
   return true;
 }
 
-function buildPulseMeetingCountryIndex() {
-  const racesPath = path.join(__dirname, '..', 'frontend', 'data', 'races.json');
-  let payload = { races: [] };
-  try {
-    payload = JSON.parse(fs.readFileSync(racesPath, 'utf8'));
-  } catch {}
-  const rows = Array.isArray(payload?.races) ? payload.races : (Array.isArray(payload) ? payload : []);
+function buildPulseMeetingCountryIndex(racesPayload = { races: [] }) {
+  const rows = Array.isArray(racesPayload?.races) ? racesPayload.races : (Array.isArray(racesPayload) ? racesPayload : []);
   const index = new Map();
   rows.forEach((race) => {
     const meeting = normalizePulseMeetingName(race?.meeting).toLowerCase();
@@ -389,11 +460,11 @@ function pulseAlertMatchesTargeting(row, config) {
   return !!matchers[targeting.mode];
 }
 
-function filterAlertsByPulseConfig(rows, config) {
+function filterAlertsByPulseConfig(rows, config, racesPayload = { races: [] }) {
   const normalizedConfig = normalizePulseConfig(config || {});
   if (normalizedConfig.enabled === false) return [];
-  const meetingCountryIndex = buildPulseMeetingCountryIndex();
-  const enabled = config?.alertTypes || DEFAULT_PULSE_CONFIG.alertTypes;
+  const meetingCountryIndex = buildPulseMeetingCountryIndex(racesPayload);
+  const enabled = normalizedConfig.alertTypes || DEFAULT_PULSE_CONFIG.alertTypes;
   return (Array.isArray(rows) ? rows : []).map((row) => enrichPulseAlert(row, meetingCountryIndex)).filter((row) => {
     const key = pulseConfigKeyForAlertType(row?.type);
     if (key && enabled[key] === false) return false;
@@ -521,16 +592,17 @@ function createApiHandler(deps) {
   function findKeyRecord(apiKey) {
     if (!apiKey) return null;
     const state = getAuthState();
+    const candidateHash = sha256(apiKey);
 
     const legacyAdminHash = String(state?.adminMeta?.apiKeyHash || '').trim();
-    if (legacyAdminHash && sha256(apiKey) === legacyAdminHash) {
+    if (legacyAdminHash && candidateHash === legacyAdminHash) {
       return {
         keyRecord: {
-          key: apiKey,
           label: 'legacy-admin-key',
           active: true,
           createdAt: state?.adminMeta?.apiKeyCreatedAt || null,
           keyPreview: state?.adminMeta?.apiKeyPreview || null,
+          secretHash: legacyAdminHash,
           legacy: true
         },
         principal: {
@@ -545,19 +617,19 @@ function createApiHandler(deps) {
     }
 
     const allUsers = [
-      { username: state.username, role: 'admin', isAdmin: true, tenantId: 'default', apiKeys: state.adminApiKeys || [] },
+      { username: state.username, role: 'admin', isAdmin: true, tenantId: 'default', apiKeys: normalizeApiKeyList(state.adminApiKeys) },
       ...(state.users || []).map(u => ({
         username: u.username,
         role: u.role || 'user',
         isAdmin: (u.role || 'user') === 'admin',
         tenantId: u.tenantId || 'default',
         planType: u.planType || 'single',
-        apiKeys: u.apiKeys || []
+        apiKeys: normalizeApiKeyList(u.apiKeys)
       }))
     ];
     for (const user of allUsers) {
       const keys = user.apiKeys || [];
-      const match = keys.find(k => k.key === apiKey && k.active !== false);
+      const match = keys.find(k => k.secretHash === candidateHash && k.active !== false);
       if (match) {
         return {
           keyRecord: match,
@@ -617,9 +689,23 @@ function createApiHandler(deps) {
 
   /* ── Data readers ─────────────────────────────────────────────────── */
 
-  function readDataFile(filename, fallback) {
-    const p = path.join(dataDir, filename);
-    return loadJson(p, fallback);
+  function readDataFileForPrincipal(principal, filename, fallback) {
+    const tenantId = effectiveTenantId(principal);
+    const defaultPath = path.join(dataDir, filename);
+
+    // Private tenant reads must never silently fall back to shared default files,
+    // otherwise tenant A can observe stale/default tenant B/system data.
+    if (isPrivateTenantPrincipal(principal)) {
+      return loadJson(resolveTenantOwnedDataPath(tenantId, filename), fallback);
+    }
+
+    if (typeof resolveTenantPathById === 'function') {
+      return loadJson(resolveTenantPathById(tenantId, defaultPath, filename), fallback);
+    }
+    if (typeof resolveTenantPath === 'function') {
+      return loadJson(resolveTenantPath({ authPrincipal: principal }, defaultPath, filename), fallback);
+    }
+    return loadJson(defaultPath, fallback);
   }
 
   function writeJson(filePath, payload) {
@@ -627,17 +713,21 @@ function createApiHandler(deps) {
     fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
   }
 
+  function normalizeTenantId(value) {
+    const raw = String(value || 'default').trim();
+    const clean = raw.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return clean || 'default';
+  }
+
   function effectiveTenantId(principal) {
-    return principal?.effectiveTenantId || principal?.tenantId || 'default';
+    return normalizeTenantId(principal?.effectiveTenantId || principal?.tenantId || 'default');
   }
 
   function resolveTenantOwnedDataPath(tenantId = 'default', filename) {
-    if (resolveTenantPathById) {
-      const normalized = String(tenantId || 'default').trim() || 'default';
-      if (normalized !== 'default') {
-        const tenantRoot = path.join(rootDir, 'memory', 'tenants', normalized, 'frontend-data');
-        return path.join(tenantRoot, filename);
-      }
+    const normalized = normalizeTenantId(tenantId || 'default');
+    if (normalized !== 'default') {
+      const tenantRoot = path.join(rootDir, 'memory', 'tenants', normalized, 'frontend-data');
+      return path.join(tenantRoot, filename);
     }
     return path.join(rootDir, 'frontend', 'data', filename);
   }
@@ -798,7 +888,7 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/races ────────────────────────────────────────── */
     if (req.method === 'GET' && route === '/races') {
-      const races = readDataFile('races.json', { races: [] });
+      const races = readDataFileForPrincipal(principal, 'races.json', { races: [] });
       const list = Array.isArray(races.races) ? races.races : (Array.isArray(races) ? races : []);
       const country = String(url.searchParams.get('country') || '').toUpperCase();
       const meeting = String(url.searchParams.get('meeting') || '').toLowerCase();
@@ -834,7 +924,7 @@ function createApiHandler(deps) {
     if (req.method === 'GET' && raceDetailMatch) {
       const meetingSlug = decodeURIComponent(raceDetailMatch[1]).toLowerCase();
       const raceNum = raceDetailMatch[2];
-      const races = readDataFile('races.json', { races: [] });
+      const races = readDataFileForPrincipal(principal, 'races.json', { races: [] });
       const list = Array.isArray(races.races) ? races.races : (Array.isArray(races) ? races : []);
       const race = list.find(r =>
         String(r.meeting || '').toLowerCase().includes(meetingSlug) &&
@@ -888,7 +978,7 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/suggested-bets ───────────────────────────────── */
     if (req.method === 'GET' && route === '/suggested-bets') {
-      const status = readDataFile('status.json', {});
+      const status = readDataFileForPrincipal(principal, 'status.json', {});
       const bets = status.suggestedBets || [];
       const meeting = String(url.searchParams.get('meeting') || '').toLowerCase();
       const raceParam = String(url.searchParams.get('race') || '').replace(/^R/i, '').trim();
@@ -934,8 +1024,8 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/interesting-runners ──────────────────────────── */
     if (req.method === 'GET' && route === '/interesting-runners') {
-      const status = readDataFile('status.json', {});
-      const races = readDataFile('races.json', { races: [] });
+      const status = readDataFileForPrincipal(principal, 'status.json', {});
+      const races = readDataFileForPrincipal(principal, 'races.json', { races: [] });
       const raceMap = buildRaceMapFromPayload(races);
       const runners = (status.interestingRunners || []).filter((row) => isLiveRaceEntry(row, raceMap));
       return apiJson(req, res, {
@@ -956,7 +1046,7 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/market-movers ────────────────────────────────── */
     if (req.method === 'GET' && route === '/market-movers') {
-      const status = readDataFile('status.json', {});
+      const status = readDataFileForPrincipal(principal, 'status.json', {});
       const movers = status.marketMovers || [];
       const meeting = String(url.searchParams.get('meeting') || '').toLowerCase();
       let filtered = movers;
@@ -1113,7 +1203,7 @@ function createApiHandler(deps) {
 
     /* ── GET/POST /api/v1/heatmap + detail placeholders ───────────── */
     if (req.method === 'GET' && route === '/heatmap') {
-      const data = readDataFile('heatmap_observations.json', { observations: [] });
+      const data = readDataFileForPrincipal(principal, 'heatmap_observations.json', { observations: [] });
       return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
@@ -1128,7 +1218,7 @@ function createApiHandler(deps) {
       req.on('end', () => {
         let payload = {};
         try { payload = body ? JSON.parse(body) : {}; } catch {}
-        const existing = readDataFile('heatmap_observations.json', { observations: [] });
+        const existing = readDataFileForPrincipal(principal, 'heatmap_observations.json', { observations: [] });
         const observation = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2,9)}`,
           meeting: payload.meeting || null,
@@ -1150,7 +1240,8 @@ function createApiHandler(deps) {
         const next = {
           observations: [observation, ...((Array.isArray(existing.observations) ? existing.observations : []))]
         };
-        fs.writeFileSync(path.join(dataDir, 'heatmap_observations.json'), JSON.stringify(next, null, 2));
+        fs.mkdirSync(path.dirname(resolveTenantOwnedDataPath(effectiveTenantId(principal), 'heatmap_observations.json')), { recursive: true });
+        fs.writeFileSync(resolveTenantOwnedDataPath(effectiveTenantId(principal), 'heatmap_observations.json'), JSON.stringify(next, null, 2));
         return apiJson(req, res, { ok: true, api_version: API_VERSION, observation }, 200, rateInfo);
       });
       return true;
@@ -1158,7 +1249,7 @@ function createApiHandler(deps) {
 
     if (req.method === 'GET' && route.startsWith('/heatmap/')) {
       const parts = route.split('/').filter(Boolean);
-      const data = readDataFile('heatmap_observations.json', { observations: [] });
+      const data = readDataFileForPrincipal(principal, 'heatmap_observations.json', { observations: [] });
       const rows = Array.isArray(data.observations) ? data.observations : [];
       if (parts.length >= 3) {
         const [, meeting, race] = parts;
@@ -1181,7 +1272,7 @@ function createApiHandler(deps) {
         ok: true,
         api_version: API_VERSION,
         updatedAt: data.updatedAt || null,
-        alerts: filterAlertsByPulseConfig(Array.isArray(data.alerts) ? data.alerts : [], config)
+        alerts: filterAlertsByPulseConfig(Array.isArray(data.alerts) ? data.alerts : [], config, loadJson(resolveTenantOwnedDataPath(tenantId, 'races.json'), { races: [] }))
       }, 200, rateInfo), true;
     }
 
@@ -1197,7 +1288,7 @@ function createApiHandler(deps) {
       return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
-        alerts: filterAlertsByPulseConfig(Array.isArray(data) ? data : [], config)
+        alerts: filterAlertsByPulseConfig(Array.isArray(data) ? data : [], config, loadJson(resolveTenantOwnedDataPath(tenantId, 'races.json'), { races: [] }))
       }, 200, rateInfo), true;
     }
 
@@ -1265,7 +1356,7 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/status ───────────────────────────────────────── */
     if (req.method === 'GET' && route === '/status') {
-      const status = readDataFile('status.json', {});
+      const status = readDataFileForPrincipal(principal, 'status.json', {});
       return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
@@ -1286,7 +1377,7 @@ function createApiHandler(deps) {
         return apiError(req, res, 400, 'invalid_period', `Period must be one of: ${validPeriods.join(', ')}`, rateInfo), true;
       }
       const fileMap = { daily: 'success_daily.json', weekly: 'success_weekly.json', monthly: 'success_monthly.json' };
-      const data = readDataFile(fileMap[period], {});
+      const data = readDataFileForPrincipal(principal, fileMap[period], {});
       return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
@@ -1297,7 +1388,7 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/stake-config ─────────────────────────────────── */
     if (req.method === 'GET' && route === '/stake-config') {
-      const stake = readDataFile('stake.json', {});
+      const stake = readDataFileForPrincipal(principal, 'stake.json', {});
       return apiJson(req, res, {
         ok: true,
         api_version: API_VERSION,
@@ -1331,8 +1422,8 @@ function createApiHandler(deps) {
           }
 
           // Build context from available data
-          const races = readDataFile('races.json', { races: [] });
-          const status = readDataFile('status.json', {});
+          const races = readDataFileForPrincipal(principal, 'races.json', { races: [] });
+          const status = readDataFileForPrincipal(principal, 'status.json', {});
           const raceList = Array.isArray(races.races) ? races.races : (Array.isArray(races) ? races : []);
 
           // Try to match question to a specific race via explicit hints
@@ -1507,9 +1598,9 @@ function createApiHandler(deps) {
 
     /* ── GET /api/v1/bet-history ──────────────────────────────────── */
     if (req.method === 'GET' && route === '/bet-history') {
-      const results = readDataFile('bet_results.json', []);
-      const placed = readDataFile('placed_bets.json', []);
-      const settled = readDataFile('settled_bets.json', []);
+      const results = readDataFileForPrincipal(principal, 'bet_results.json', []);
+      const placed = readDataFileForPrincipal(principal, 'placed_bets.json', []);
+      const settled = readDataFileForPrincipal(principal, 'settled_bets.json', []);
       const limitParam = Math.min(Number(url.searchParams.get('limit') || 50), 200);
       return apiJson(req, res, {
         ok: true,
@@ -1594,20 +1685,23 @@ function createApiHandler(deps) {
       const state = getAuthState();
       if (principal.isAdmin) {
         const allKeys = [];
-        (state.adminApiKeys || []).forEach(k => {
-          allKeys.push({ username: state.username, role: 'admin', label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null });
+        normalizeApiKeyList(state.adminApiKeys).forEach(k => {
+          const prefix = k?.keyPrefix ? `${k.keyPrefix}…` : (k?.keyPreview ? `…${k.keyPreview}` : 'n/a');
+          allKeys.push({ username: state.username, role: 'admin', label: k.label || null, keyPrefix: prefix, active: k.active !== false, createdAt: k.createdAt || null });
         });
         (state.users || []).forEach(u => {
-          (u.apiKeys || []).forEach(k => {
-            allKeys.push({ username: u.username, role: u.role || 'user', label: k.label || null, keyPrefix: k.key.slice(0, 10) + '…', active: k.active !== false, createdAt: k.createdAt || null });
+          normalizeApiKeyList(u.apiKeys).forEach(k => {
+            const prefix = k?.keyPrefix ? `${k.keyPrefix}…` : (k?.keyPreview ? `…${k.keyPreview}` : 'n/a');
+            allKeys.push({ username: u.username, role: u.role || 'user', label: k.label || null, keyPrefix: prefix, active: k.active !== false, createdAt: k.createdAt || null });
           });
         });
         return apiJson(req, res, { ok: true, api_version: API_VERSION, keys: allKeys }, 200, rateInfo), true;
       } else {
-        const userRec = (state.users || []).find(u => u.username === principal.username);
-        const keys = (userRec?.apiKeys || []).map(k => ({
+        const principalUsername = normalizePrincipalUsername(principal.username);
+        const userRec = (state.users || []).find(u => normalizePrincipalUsername(u.username) === principalUsername);
+        const keys = normalizeApiKeyList(userRec?.apiKeys).map(k => ({
           label: k.label || null,
-          keyPrefix: k.key.slice(0, 10) + '…',
+          keyPrefix: k?.keyPrefix ? `${k.keyPrefix}…` : (k?.keyPreview ? `…${k.keyPreview}` : 'n/a'),
           active: k.active !== false,
           createdAt: k.createdAt || null
         }));
@@ -1628,38 +1722,44 @@ function createApiHandler(deps) {
           }
           const label = String(payload.label || 'API Key').trim().slice(0, 100);
           const targetUser = principal.isAdmin ? String(payload.username || principal.username).trim() : principal.username;
+          const targetUserNormalized = normalizePrincipalUsername(targetUser);
           const rateLimit = principal.isAdmin ? (Number(payload.rateLimit) || DEFAULT_RATE_LIMIT) : DEFAULT_RATE_LIMIT;
           const rateWindow = principal.isAdmin ? (Number(payload.rateWindow) || DEFAULT_RATE_WINDOW) : DEFAULT_RATE_WINDOW;
 
-          const newKey = {
-            key: generateApiKey(),
+          const apiKeySecret = generateApiKey();
+          const createdAtIso = new Date().toISOString();
+          const storedKey = buildStoredApiKey(apiKeySecret, {
             label,
             rateLimit,
             rateWindow,
             active: true,
-            createdAt: new Date().toISOString()
-          };
+            createdAt: createdAtIso
+          });
+          if (!storedKey) {
+            apiError(req, res, 500, 'api_key_generation_failed', 'Unable to generate API key.', rateInfo);
+            return resolve(true);
+          }
 
           const state = getAuthState();
-          const isAdminUser = targetUser === state.username;
+          const isAdminUser = targetUserNormalized === normalizePrincipalUsername(state.username);
 
           if (isAdminUser) {
             if (!principal.isAdmin) {
               apiError(req, res, 403, 'forbidden', 'Cannot create keys for admin account.', rateInfo);
               return resolve(true);
             }
-            const adminKeys = state.adminApiKeys || [];
-            adminKeys.push(newKey);
+            const adminKeys = normalizeApiKeyList(state.adminApiKeys || []);
+            adminKeys.push(storedKey);
             persistAuthState({ ...state, adminApiKeys: adminKeys });
           } else {
             const users = [...(state.users || [])];
-            const idx = users.findIndex(u => u.username === targetUser);
+            const idx = users.findIndex(u => normalizePrincipalUsername(u.username) === targetUserNormalized);
             if (idx < 0) {
               apiError(req, res, 404, 'user_not_found', `User "${targetUser}" not found.`, rateInfo);
               return resolve(true);
             }
-            const userKeys = users[idx].apiKeys || [];
-            userKeys.push(newKey);
+            const userKeys = normalizeApiKeyList(users[idx].apiKeys || []);
+            userKeys.push(storedKey);
             users[idx] = { ...users[idx], apiKeys: userKeys };
             persistAuthState({ ...state, users });
           }
@@ -1668,12 +1768,13 @@ function createApiHandler(deps) {
             ok: true,
             api_version: API_VERSION,
             message: 'API key created. Store the key securely — it cannot be retrieved again.',
-            key: newKey.key,
-            label: newKey.label,
+            key: apiKeySecret,
+            keyPreview: storedKey.keyPreview,
+            label: storedKey.label,
             username: targetUser,
-            rateLimit: newKey.rateLimit,
-            rateWindow: newKey.rateWindow,
-            createdAt: newKey.createdAt
+            rateLimit: storedKey.rateLimit,
+            rateWindow: storedKey.rateWindow,
+            createdAt: storedKey.createdAt
           }, 201, rateInfo);
           resolve(true);
         });
@@ -1691,10 +1792,12 @@ function createApiHandler(deps) {
             apiError(req, res, 400, 'invalid_json', 'Request body must be valid JSON.', rateInfo);
             return resolve(true);
           }
-          const keyPrefix = String(payload.keyPrefix || '').trim();
+          const rawIdentifier = String(payload.keyPrefix || payload.keyIdentifier || '').trim();
+          const keyIdentifier = rawIdentifier.replace(/…/g, '');
           const keyFull = String(payload.key || '').trim();
+          const candidateHash = keyFull ? sha256(keyFull) : null;
 
-          if (!keyPrefix && !keyFull) {
+          if (!keyIdentifier && !candidateHash) {
             apiError(req, res, 400, 'missing_key', 'Provide "key" (full key) or "keyPrefix" to identify the key to revoke.', rateInfo);
             return resolve(true);
           }
@@ -1703,18 +1806,19 @@ function createApiHandler(deps) {
           let found = false;
 
           function matchKey(k) {
-            if (keyFull && k.key === keyFull) return true;
-            if (keyPrefix && k.key.startsWith(keyPrefix)) return true;
+            if (!k) return false;
+            if (candidateHash && k.secretHash === candidateHash) return true;
+            if (keyIdentifier && matchesKeyIdentifier(k, keyIdentifier)) return true;
             return false;
           }
 
           // Check admin keys
           if (principal.isAdmin && state.adminApiKeys) {
-            const idx = state.adminApiKeys.findIndex(matchKey);
+            const adminKeys = normalizeApiKeyList(state.adminApiKeys).slice();
+            const idx = adminKeys.findIndex(matchKey);
             if (idx >= 0) {
-              state.adminApiKeys[idx].active = false;
-              state.adminApiKeys[idx].revokedAt = new Date().toISOString();
-              persistAuthState(state);
+              adminKeys[idx] = { ...adminKeys[idx], active: false, revokedAt: new Date().toISOString() };
+              persistAuthState({ ...state, adminApiKeys: adminKeys });
               found = true;
             }
           }
@@ -1723,15 +1827,14 @@ function createApiHandler(deps) {
           if (!found) {
             const users = [...(state.users || [])];
             for (let i = 0; i < users.length; i++) {
-              const userKeys = users[i].apiKeys || [];
+              const userKeys = normalizeApiKeyList(users[i].apiKeys || []).slice();
               const kidx = userKeys.findIndex(matchKey);
               if (kidx >= 0) {
                 if (!principal.isAdmin && users[i].username !== principal.username) {
                   apiError(req, res, 403, 'forbidden', 'You can only revoke your own API keys.', rateInfo);
                   return resolve(true);
                 }
-                userKeys[kidx].active = false;
-                userKeys[kidx].revokedAt = new Date().toISOString();
+                userKeys[kidx] = { ...userKeys[kidx], active: false, revokedAt: new Date().toISOString() };
                 users[i] = { ...users[i], apiKeys: userKeys };
                 persistAuthState({ ...state, users });
                 found = true;
