@@ -259,6 +259,7 @@ function loadAuthState(){
   return {
     username: fromFile?.username || AUTH_USER,
     password: fromFile?.password || AUTH_PASS,
+    adminApiKeys: Array.isArray(fromFile?.adminApiKeys) ? fromFile.adminApiKeys : [],
     users
   };
 }
@@ -274,6 +275,7 @@ async function initAuthPersistence(){
       authState = {
         username: fromDb.username || authState.username,
         password: fromDb.password || authState.password,
+        adminApiKeys: Array.isArray(fromDb.adminApiKeys) ? fromDb.adminApiKeys : (authState.adminApiKeys || []),
         users: Array.isArray(fromDb.users) ? fromDb.users : authState.users
       };
       console.log('Auth state loaded from Postgres.');
@@ -656,9 +658,16 @@ async function ensurePgSchema(pool){
       username TEXT NOT NULL,
       password TEXT NOT NULL,
       users JSONB NOT NULL DEFAULT '[]'::jsonb,
+      admin_api_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  // Migration: add admin_api_keys column for existing installations
+  await pool.query(`
+    ALTER TABLE betman_auth_state ADD COLUMN IF NOT EXISTS admin_api_keys JSONB NOT NULL DEFAULT '[]'::jsonb
+  `).catch((e) => {
+    console.warn('admin_api_keys migration (may already exist):', e.message);
+  });
   await pool.query(`
     CREATE TABLE IF NOT EXISTS betman_data (
       tenant_id TEXT NOT NULL,
@@ -680,26 +689,28 @@ async function ensurePgSchema(pool){
 }
 
 async function loadAuthStateFromPg(pool){
-  const r = await pool.query('SELECT username, password, users FROM betman_auth_state WHERE id=1');
+  const r = await pool.query('SELECT username, password, users, admin_api_keys FROM betman_auth_state WHERE id=1');
   if (!r.rows?.length) return null;
   const row = r.rows[0];
   return {
     username: row.username,
     password: row.password,
+    adminApiKeys: Array.isArray(row.admin_api_keys) ? row.admin_api_keys : [],
     users: Array.isArray(row.users) ? row.users : []
   };
 }
 
 async function saveAuthStateToPg(pool, state){
   await pool.query(
-    `INSERT INTO betman_auth_state (id, username, password, users, updated_at)
-     VALUES (1, $1, $2, $3::jsonb, NOW())
+    `INSERT INTO betman_auth_state (id, username, password, users, admin_api_keys, updated_at)
+     VALUES (1, $1, $2, $3::jsonb, $4::jsonb, NOW())
      ON CONFLICT (id) DO UPDATE
      SET username=EXCLUDED.username,
          password=EXCLUDED.password,
          users=EXCLUDED.users,
+         admin_api_keys=EXCLUDED.admin_api_keys,
          updated_at=NOW()`,
-    [state.username, state.password, JSON.stringify(state.users || [])]
+    [state.username, state.password, JSON.stringify(state.users || []), JSON.stringify(state.adminApiKeys || [])]
   );
 }
 
@@ -881,6 +892,7 @@ function saveAuthState(next){
   authState = {
     username: next.username,
     password: next.password,
+    adminApiKeys: Array.isArray(next.adminApiKeys) ? next.adminApiKeys : (authState.adminApiKeys || []),
     users: (Array.isArray(next.users) ? next.users : (authState.users || [])).map(u => ({
       ...u,
       tenantId: normalizeTenantId(u.tenantId || 'default'),

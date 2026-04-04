@@ -21,6 +21,13 @@ const DEFAULT_RATE_LIMIT   = Number(process.env.BETMAN_API_RATE_LIMIT   || 60); 
 const DEFAULT_RATE_WINDOW  = Number(process.env.BETMAN_API_RATE_WINDOW  || 60);   // window in seconds
 const TAB_BASE = 'https://api.tab.co.nz/affiliates/v1';
 
+/* ── Username normalisation (mirrors frontend_server.js) ──────────── */
+
+function normalizeUsername(u) {
+  const v = String(u || '').trim();
+  return v.includes('@') ? v.toLowerCase() : v;
+}
+
 /* ── API-key helpers ───────────────────────────────────────────────── */
 
 function generateApiKey() {
@@ -867,7 +874,7 @@ function createApiHandler(deps) {
         });
         return apiJson(res, { ok: true, api_version: API_VERSION, keys: allKeys }, 200, rateInfo), true;
       } else {
-        const userRec = (state.users || []).find(u => u.username === principal.username);
+        const userRec = (state.users || []).find(u => normalizeUsername(u.username) === normalizeUsername(principal.username));
         const keys = (userRec?.apiKeys || []).map(k => ({
           label: k.label || null,
           keyPrefix: k.key.slice(0, 10) + '…',
@@ -902,7 +909,7 @@ function createApiHandler(deps) {
           };
 
           const state = getAuthState();
-          const isAdminUser = targetUser === state.username;
+          const isAdminUser = normalizeUsername(targetUser) === normalizeUsername(state.username);
 
           if (isAdminUser) {
             if (!principal.isAdmin) {
@@ -914,7 +921,7 @@ function createApiHandler(deps) {
             persistAuthState({ ...state, adminApiKeys: adminKeys });
           } else {
             const users = [...(state.users || [])];
-            const idx = users.findIndex(u => u.username === targetUser);
+            const idx = users.findIndex(u => normalizeUsername(u.username) === normalizeUsername(targetUser));
             if (idx < 0) {
               apiError(res, 404, 'user_not_found', `User "${targetUser}" not found.`, rateInfo);
               return resolve(true);
@@ -985,7 +992,7 @@ function createApiHandler(deps) {
               const userKeys = users[i].apiKeys || [];
               const kidx = userKeys.findIndex(matchKey);
               if (kidx >= 0) {
-                if (!principal.isAdmin && users[i].username !== principal.username) {
+                if (!principal.isAdmin && normalizeUsername(users[i].username) !== normalizeUsername(principal.username)) {
                   apiError(res, 403, 'forbidden', 'You can only revoke your own API keys.', rateInfo);
                   return resolve(true);
                 }
@@ -1025,6 +1032,7 @@ module.exports = {
   rateCheck,
   apiJson,
   apiError,
+  normalizeUsername,
   API_VERSION,
   DEFAULT_RATE_LIMIT,
   DEFAULT_RATE_WINDOW
