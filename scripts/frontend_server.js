@@ -952,6 +952,17 @@ function isSmallModel(model){
   return m.includes('deepseek-r1:8b') || m.includes('llama3.1:8b') || m.includes('llama3.2:3b') || m.includes('qwen2.5:1.5b') || m.includes('qwen2.5:3b');
 }
 
+const MULTI_TERMS_REGEX = /\b(?:multis?|h2h|head[\s-]?to[\s-]?head|parlay|double|treble|accumulator|acca|combo|\d+[\s-]?legs?)\b/i;
+const COMPARISON_REGEX = /\b(?:vs\.?|versus|against|compared?\s+to|better\s+than|over|or)\b/i;
+
+function isMultiQuestion(text){
+  return MULTI_TERMS_REGEX.test(String(text || ''));
+}
+
+function isComparisonQuestion(text){
+  return COMPARISON_REGEX.test(String(text || ''));
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000){
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -2389,10 +2400,72 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
     return `${x.meeting} Race ${x.race}: I like ${x.selection} as a ${x.type} at $${x.stake}. ${p != null ? `Model probability is around ${p.toFixed(1)}%. ` : ''}Market edge is ${edgeTxt}. Signal reason: ${reason}. Confidence is ${conf}.`;
   };
 
-  const horseMatch = nonMulti.find(x => q.includes(String(x.selection || '').toLowerCase())) ||
-    suggested.find(x => q.includes(String(x.selection || '').toLowerCase()));
-  if (horseMatch && (!ctxSelections || ctxSelections.length <= 1)) {
-    return explain(horseMatch) + ' Main risk: race shape/tempo can flip late, so treat this as probability not certainty.';
+  const horseMatches = [
+    ...nonMulti.filter(x => q.includes(String(x.selection || '').toLowerCase())),
+    ...suggested.filter(x => q.includes(String(x.selection || '').toLowerCase()))
+  ].filter((x, i, arr) => arr.findIndex(y => String(y.selection || '').toLowerCase() === String(x.selection || '').toLowerCase()) === i);
+
+  // Runner-vs-runner comparison: when the question mentions two or more runners
+  if (horseMatches.length >= 2 && (!ctxSelections || ctxSelections.length <= 1)) {
+    const racesTop = Array.isArray(racesData.races) ? racesData.races : [];
+    const comparisonLines = horseMatches.slice(0, 4).map(x => {
+      const p = parsePct(x.reason);
+      const o = parseOdds(x.reason);
+      const imp = Number.isFinite(o) && o > 0 ? (100 / o) : null;
+      const edge = (p != null && imp != null) ? (p - imp) : null;
+      const mtg = String(x.meeting || '').trim().toLowerCase();
+      const rc = String(x.race || '').trim();
+      const raceObj = racesTop.find(r =>
+        String(r.meeting || '').trim().toLowerCase() === mtg &&
+        String(r.race_number || '').trim() === rc
+      );
+      const runner = raceObj?.runners?.find(rr => String(rr.name || '').trim().toLowerCase() === String(x.selection || '').trim().toLowerCase());
+      const profileBits = [];
+      if (runner?.barrier != null) profileBits.push(`gate ${runner.barrier}`);
+      if (runner?.jockey) profileBits.push(runner.jockey);
+      if (runner?.weight || runner?.weight_total) profileBits.push(`${runner.weight || runner.weight_total}kg`);
+      if (runner?.speedmap) profileBits.push(`maps ${runner.speedmap.toLowerCase()}`);
+      if (runner?.last_twenty_starts) profileBits.push(`form ${runner.last_twenty_starts}`);
+      const profileStr = profileBits.length ? ` (${profileBits.join(', ')})` : '';
+      return {
+        name: x.selection,
+        meeting: x.meeting,
+        race: x.race,
+        p,
+        odds: o,
+        edge,
+        profileStr,
+        line: `• ${x.selection}${profileStr}: ${p != null ? `model ${p.toFixed(1)}%` : 'model n/a'}${Number.isFinite(o) ? ` @ $${o.toFixed(2)}` : ''}${edge != null ? `, edge ${edge >= 0 ? '+' : ''}${edge.toFixed(1)} pts` : ''}`
+      };
+    });
+    const sorted = comparisonLines.slice().sort((a, b) => (b.p || 0) - (a.p || 0));
+    const best = sorted[0];
+    const sameRace = new Set(comparisonLines.map(c => `${c.meeting}|${c.race}`)).size === 1;
+    const raceLabel = sameRace ? `${best.meeting} Race ${best.race}` : 'across races';
+
+    let verdict = `Head-to-head comparison (${raceLabel}):\n${sorted.map(c => c.line).join('\n')}`;
+    verdict += `\n\nVerdict: ${best.name} is the model's pick`;
+    if (best.p != null && sorted[1]?.p != null) {
+      const gap = best.p - sorted[1].p;
+      verdict += ` with a ${gap.toFixed(1)}-point probability edge over ${sorted[1].name}`;
+    }
+    verdict += '.';
+    if (best.edge != null && best.edge > 0) {
+      verdict += ` Market edge is positive at +${best.edge.toFixed(1)} pts — value confirmed.`;
+    } else if (best.edge != null) {
+      verdict += ` Market edge is ${best.edge.toFixed(1)} pts — price is tight, proceed with caution.`;
+    }
+    if (sameRace && sorted.length >= 2 && sorted[0].p != null && sorted[1].p != null) {
+      const joint = Math.max(0, (sorted[0].p * sorted[1].p / 100) * 0.92);
+      verdict += `\nSame-race joint likelihood (both place): ${joint.toFixed(1)}%.`;
+    }
+    verdict += '\nMain risk: race shape/tempo can change — this is probability, not certainty.';
+    return verdict;
+  }
+
+  // Single horse question
+  if (horseMatches.length === 1 && (!ctxSelections || ctxSelections.length <= 1)) {
+    return explain(horseMatches[0]) + ' Main risk: race shape/tempo can flip late, so treat this as probability not certainty.';
   }
 
   // If client sent explicit dragged selections/race context, anchor response to that context first.
@@ -2562,7 +2635,7 @@ ${extra}` : base;
 
   if (q.includes('top') || q.includes('best') || q.includes('winner') || q.includes('pick')) {
     // If user is asking for a multi/exotic, let the multi handler below take priority
-    const isMultiIntent = q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4') || q.includes('parlay') || q.includes('double') || q.includes('treble') || q.includes('accumulator') || q.includes('acca') || q.includes('combo') || /\d[\s-]?leg/i.test(q);
+    const isMultiIntent = isMultiQuestion(q) || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4');
     if (!isMultiIntent) {
       const top = nonMulti[0] || suggested[0];
       const alts = nonMulti.slice(1,3).map(x => `${x.selection}`).join(', ');
@@ -2570,7 +2643,7 @@ ${extra}` : base;
     }
   }
 
-  const isMultiFallback = q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4') || q.includes('parlay') || q.includes('double') || q.includes('treble') || q.includes('accumulator') || q.includes('acca') || q.includes('combo') || /\d[\s-]?leg/i.test(q);
+  const isMultiFallback = isMultiQuestion(q) || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4');
   if (isMultiFallback) {
     // Detect how many legs the user wants (e.g. "2 leg multi", "3 leg parlay")
     const legCountMatch = q.match(/(\d+)[\s-]?leg/i);
@@ -2876,6 +2949,19 @@ function buildAiContextSummary({
 
   lines.push(`Suggested (${suggested.length || 0}): ${summarizeList(suggested, 6, formatSuggested)}`);
   if (jointRows?.length) lines.push(`Joint likelihoods: ${summarizeList(jointRows, 6, formatJoint)}`);
+
+  // User meeting notes: high priority — these contain first-hand observations including weather
+  const userNotes = Array.isArray(clientContext?.userNotes) ? clientContext.userNotes.slice(0, 5) : [];
+  if (userNotes.length) {
+    const noteParts = userNotes
+      .map(n => trimText(String(n?.text || ''), 120))
+      .filter(Boolean);
+    if (noteParts.length) {
+      const meetingTag = userNotes[0]?.meeting ? ` (${userNotes[0].meeting})` : '';
+      lines.push(`User meeting notes${meetingTag}: ${noteParts.join(' | ')}`);
+    }
+  }
+
   if (interesting?.length) lines.push(`Interesting: ${summarizeList(interesting, 5, formatInteresting)}`);
   const contextMeeting = String(clientContext?.raceContext?.meeting || clientContext?.uiContext?.meeting || '').trim().toLowerCase();
   let scopedMovers = Array.isArray(marketMovers) ? marketMovers.slice() : [];
@@ -3018,17 +3104,6 @@ function buildAiContextSummary({
   }
   if (webContext?.query) lines.push(`Search query: ${trimText(webContext.query, 120)}`);
 
-  const userNotes = Array.isArray(clientContext?.userNotes) ? clientContext.userNotes.slice(0, 5) : [];
-  if (userNotes.length) {
-    const noteParts = userNotes
-      .map(n => trimText(String(n?.text || ''), 120))
-      .filter(Boolean);
-    if (noteParts.length) {
-      const meetingTag = userNotes[0]?.meeting ? ` (${userNotes[0].meeting})` : '';
-      lines.push(`User meeting notes${meetingTag}: ${noteParts.join(' | ')}`);
-    }
-  }
-
   const summary = lines.filter(Boolean).join('\n');
   if (summary.length <= maxLength) return summary;
   // Truncate lower-priority sections first (from end) instead of slicing mid-content.
@@ -3059,9 +3134,11 @@ Hard rules:
 11) If RACE_FIELD_DATA is provided, use it to populate full-field horse profiles (runner name/number/barrier/jockey/trainer/weight/age/sex/gear/form/formComment/formIndicators/odds/pedigree/speedmap/stats) before writing any narrative. The "stats" field contains track/distance/condition-specific starts:wins-seconds-thirds records — use them to assess each runner's suitability to today's race conditions. The "form" field is a concise recent-starts string (e.g. "12x34" where digits are finishing positions and x means unplaced beyond 9th) — count actual wins (1s) and places (1-3) to assess true form. The "formIndicators" field contains flags such as early speed (HIGH/MODERATE/LOW), wet track aptitude, and racing pattern — always reference these when assessing map fit and track condition suitability. The "lastStarts" array gives finish positions with distance/track/condition for each recent run — use it to evaluate consistency, class, and track/distance trends. The "loveracingNote" field, when present, contains official form notes — treat it as additional source data for narrative commentary. The "apprentice" field, when populated, indicates the jockey allowance claim (e.g. "-2kg") — factor weight reduction into your assessment.
 12) Never output placeholder tokens (e.g., [Jockey Name], [Trainer Name], [Weight]); if unknown, write "n/a".
 13) If meetingProfile data is present in MANDATORY_RACE_VALUES, use it to weight your analysis: pace-bias stats (e.g., "Midfield 4/8") indicate which running styles are winning at the venue today; barrier-bias stats indicate which barrier ranges are favoured. Factor these into your race map, runner assessments, and final tips.
-14) If "User meeting notes" are provided in context, treat them as first-hand observations from the punter. Incorporate them into your analysis and reference specific notes where relevant.
+14) If "User meeting notes" are provided in context, treat them as first-hand observations from the punter at the track or from their research. ALWAYS incorporate them — especially weather conditions, track state, rail position changes, and pace observations. Reference specific notes in your analysis (e.g. "Your note about the track playing fast inside lines up with..."). Weather notes are critical: explain how observed conditions affect specific runners (wet-track specialists, frontrunners on firm, wind impact on pace).
 15) If the context states there are no races at a specific venue, do NOT fabricate analysis for that venue. Clearly state there are no races there and suggest the available alternatives listed in context.
 16) If race data is scoped to a specific venue the user mentioned, anchor your analysis to that venue only. Do not discuss races from other venues unless asked.
+17) Weather and track conditions: if meeting notes mention weather (rain, wind, sun, heavy, soft, firm) or if loveracingWeather is in MANDATORY_RACE_VALUES, factor conditions into every assessment. Explain which runners benefit or suffer from the conditions and adjust your verdict accordingly.
+18) For runner-vs-runner comparisons: compare side-by-side using model probability, odds, edge, form, barrier, jockey/trainer, speed map position, and conditions. State a clear winner and the margin of your preference.
 
 Response format:
 - Verdict (1-2 lines)
@@ -3075,9 +3152,9 @@ Response format:
 
 Tone: plain English, no fluff, no hype.`;
 
-const BETMAN_CHAT_SYSTEM_PROMPT = `You are BETMAN's racing intelligence copilot.
+const BETMAN_CHAT_SYSTEM_PROMPT = `You are BETMAN's racing intelligence copilot — the brains of a world-class RacingOS.
 
-Goal: answer real-world horse racing questions with informed, practical reasoning, not canned templates.
+Goal: answer real-world horse racing questions with informed, practical reasoning, not canned templates. You are an expert punter the user can have an intelligent discussion with about any racing topic.
 
 Rules:
 1) Be conversational but precise.
@@ -3089,11 +3166,13 @@ Rules:
 7) For follow-ups, carry forward relevant prior context and assumptions so the answer feels continuous.
 8) For broad "ask me anything racing" questions, provide depth: map/tempo, form cycle, trainer/jockey patterns, market/price dynamics, and risk management implications.
 9) If meeting profile data is available (pace/barrier bias from completed races), factor it into your assessment of which running styles and barrier positions suit the venue.
-10) If the user has added meeting notes (labelled "User meeting notes" in context), incorporate those observations into your answer.
+10) If the user has added meeting notes (labelled "User meeting notes" in context), these are first-hand observations from the punter at the track or from their research. ALWAYS incorporate them — especially weather conditions, track state, rail position, and pace observations. Reference specific notes in your answer (e.g. "Your note about the track playing fast inside lines up with...").
 11) If the context states there are no races at a specific venue, do NOT fabricate analysis for that venue. Clearly state there are no races there and suggest the available alternatives listed in context.
 12) If race data is scoped to a specific venue the user mentioned, anchor your answer to that venue only. Do not discuss races from other venues unless asked.
 13) For multi/parlay/double/treble questions: pick legs ONLY from the Suggested bets in context. State each leg's runner, meeting, race, odds, and win probability. Compute combined multi odds (multiply individual odds) and joint likelihood (multiply individual win probabilities / 100). If Joint likelihoods are in context, use them. Never invent figures not in context.
 14) For same-race multi or H2H questions: explain both runners with win probabilities, compute the joint likelihood for both finishing in position, and note the inherent negative correlation (two runners in the same race compete for the same positions).
+15) For runner-vs-runner comparison questions (e.g. "Runner A vs Runner B", "who is better"): compare both runners side-by-side using model probability, odds, edge, form, barrier, jockey/trainer, speed map position, and any relevant meeting notes or weather observations. State a clear verdict on which runner you prefer and why.
+16) Weather and track conditions: if meeting notes mention weather (rain, wind, sun, heavy, soft, firm), factor this into every relevant answer. Explain how conditions affect specific runners (wet-track specialists, frontrunners on firm, etc). If loveracing weather data is in context, use it too.
 
 Style: expert punter, plain English, no fluff.`;
 
@@ -3186,7 +3265,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const sourceTag = String(clientContext?.source || '').toLowerCase();
   const isRaceAnalysis = sourceTag === 'race-analysis';
   const isStrategy = sourceTag === 'strategy' || /\bstrategy\b/i.test(String(question || ''));
-  const isMultiRequest = !isRaceAnalysis && /\b(?:multi|h2h|head[\s-]?to[\s-]?head|parlay|double|treble|accumulator|acca|combo|(\d[\s-]?leg))\b/i.test(String(question || ''));
+  const isMultiRequest = !isRaceAnalysis && isMultiQuestion(question);
+  const isComparisonRequest = !isRaceAnalysis && isComparisonQuestion(question);
   const selections = Array.isArray(clientContext.selections) ? clientContext.selections : [];
   const hasDraggedSelections = selections.length > 0;
   const scopedSelections = hasDraggedSelections
@@ -3439,12 +3519,12 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     question,
     races: hasDraggedSelections ? liveRaces.filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : venueScopedRaces,
     meetingProfiles: loadMeetingProfiles('today'),
-    maxLength: (isRaceAnalysis || isMultiRequest) ? modelProfile.contextRace : modelProfile.contextGeneral,
+    maxLength: (isRaceAnalysis || isMultiRequest || isComparisonRequest) ? modelProfile.contextRace : modelProfile.contextGeneral,
     venueNote
   });
 
   const customInstructions = loadText(AI_INSTRUCTIONS_FILE, '').trim();
-  const systemPrompt = (isRaceAnalysis || isStrategy || isMultiRequest) ? BETMAN_ANALYST_SYSTEM_PROMPT : BETMAN_CHAT_SYSTEM_PROMPT;
+  const systemPrompt = (isRaceAnalysis || isStrategy || isMultiRequest || isComparisonRequest) ? BETMAN_ANALYST_SYSTEM_PROMPT : BETMAN_CHAT_SYSTEM_PROMPT;
   const messages = [
     {
       role: 'system',
@@ -3486,6 +3566,18 @@ Step-by-step:
 7. State the risk: if any single leg fails, the whole multi fails. Note which leg is weakest.
 8. Do NOT invent odds, probabilities, or confidence percentages not in context — write "n/a" if missing.`
     });
+  } else if (isComparisonRequest) {
+    messages.push({
+      role: 'system',
+      content: `Runner comparison: the user is comparing two or more runners. Provide a real-world, data-driven head-to-head comparison.
+
+For each runner, state: model win probability, odds, market edge, form, barrier, jockey, trainer, speed map position, and any relevant weather/track suitability.
+Compare them side-by-side — who has the better probability, edge, form cycle, map position, and conditions suitability.
+State a clear verdict: which runner you prefer and why, with the margin of confidence.
+If meeting notes mention weather or track conditions, explain how those conditions favour one runner over the other.
+If both runners are in the same race, note the pace dynamic between them.
+Do NOT invent data — use only what is in context.`
+    });
   }
   if (customInstructions) {
     messages.push({ role: 'system', content: `Mandatory House Instructions:\n${customInstructions}` });
@@ -3510,8 +3602,8 @@ Step-by-step:
 
   messages.push({ role: 'user', content: `Latest user question (answer this): ${question}\n\nContext Summary:\n${contextSummary}` });
 
-  const temperature = (isRaceAnalysis || isMultiRequest) ? modelProfile.temperatureRace : modelProfile.temperatureGeneral;
-  const maxTokens = (isRaceAnalysis || isMultiRequest) ? modelProfile.maxTokensRace : modelProfile.maxTokensGeneral;
+  const temperature = (isRaceAnalysis || isMultiRequest || isComparisonRequest) ? modelProfile.temperatureRace : modelProfile.temperatureGeneral;
+  const maxTokens = (isRaceAnalysis || isMultiRequest || isComparisonRequest) ? modelProfile.maxTokensRace : modelProfile.maxTokensGeneral;
   const fakeAiMode = String(process.env.BETMAN_FAKE_AI || '').toLowerCase() === 'true';
   if (fakeAiMode) {
     const placeholder = `[fake-ai:${effectiveModel}] ${question}`;
@@ -3520,7 +3612,7 @@ Step-by-step:
       requestedModel: requestedModel || null,
       modelUsed: effectiveModel,
       modelAdjusted: !!requestedModel && requestedModel !== effectiveModel,
-      contextMaxLength: (isRaceAnalysis || isMultiRequest) ? modelProfile.contextRace : modelProfile.contextGeneral,
+      contextMaxLength: (isRaceAnalysis || isMultiRequest || isComparisonRequest) ? modelProfile.contextRace : modelProfile.contextGeneral,
       historyTurnsUsed: modelProfile.historyTurns,
       historyCharsUsed: modelProfile.historyChars
     };
@@ -3750,7 +3842,7 @@ Step-by-step:
     requestedModel: requestedModel || null,
     modelUsed: effectiveModel,
     modelAdjusted: !!requestedModel && requestedModel !== effectiveModel,
-    contextMaxLength: (isRaceAnalysis || isMultiRequest) ? modelProfile.contextRace : modelProfile.contextGeneral,
+    contextMaxLength: (isRaceAnalysis || isMultiRequest || isComparisonRequest) ? modelProfile.contextRace : modelProfile.contextGeneral,
     historyTurnsUsed: modelProfile.historyTurns,
     historyCharsUsed: modelProfile.historyChars
   };
@@ -4763,7 +4855,7 @@ if (url.pathname === '/api/ask-selection') {
     }
 
     const selectionCount = Number(payload.selectionCount || 0);
-    const asksMulti = q.includes('multi') || q.includes('same race') || q.includes('same-race') || q.includes('h2h') || q.includes('head to head') || q.includes('parlay') || q.includes('double') || q.includes('treble') || q.includes('accumulator') || q.includes('acca') || q.includes('combo') || /\d[\s-]?leg/i.test(q);
+    const asksMulti = isMultiQuestion(q) || q.includes('same race') || q.includes('same-race');
     const hasMode = q.includes('same race') || q.includes('same-race') || q.includes('h2h') || q.includes('head to head');
     const selections = Array.isArray(payload.selections) ? payload.selections : [];
     const uniqueRaces = new Set(
@@ -5696,6 +5788,8 @@ module.exports = {
   normalizeRunnerName,
   buildAiContextSummary,
   isSmallModel,
+  isMultiQuestion,
+  isComparisonQuestion,
   inferMeetingFromQuestion,
   inferNextRaceAtVenue,
   inferTemporalRaceAtVenue,
