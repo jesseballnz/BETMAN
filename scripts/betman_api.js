@@ -203,10 +203,6 @@ function extractApiKey(req, url) {
   const bearerMatch = auth.match(/^Bearer\s+(.+)$/i);
   if (bearerMatch && bearerMatch[1]) return String(bearerMatch[1]).trim();
 
-  if (url && url.searchParams) {
-    const qp = String(url.searchParams.get('api_key') || '').trim();
-    if (qp) return qp;
-  }
   return null;
 }
 
@@ -665,7 +661,7 @@ function createApiHandler(deps) {
 
     const rawKey = extractApiKey(req, url);
     if (!rawKey) {
-      apiError(req, res, 401, 'api_key_required', 'Provide an API key via X-API-Key header or api_key query parameter.');
+      apiError(req, res, 401, 'api_key_required', 'Provide an API key via X-API-Key header or Authorization: Bearer header.');
       return null;
     }
     const record = findKeyRecord(rawKey);

@@ -8,6 +8,7 @@ const { mergePublicStatusLists } = require('./status_snapshot_merge');
 const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
 const { buildRaceResultIndex, resolveTrackedBet, buildVisibleSettledRows, buildTrackedHistoryRows } = require('./tracked_bet_matching');
 const { prunePulseTargetingAgainstRaces } = require('./pulse_targeting_semantics');
+const { assertRuntimeConfig } = require('./runtime_config');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -47,25 +48,7 @@ const DEFAULT_OLLAMA_FALLBACK_MODELS = ['qwen2.5:1.5b', 'llama3.2:3b', 'deepseek
 const crypto = require('crypto');
 
 const DB_URL = process.env.DATABASE_URL || process.env.BETMAN_DATABASE_URL || '';
-function readStripeSecretFromCreds(){
-  try {
-    const p = path.join(process.cwd(), 'creds');
-    const txt = fs.readFileSync(p, 'utf8');
-    const m = txt.match(/Secret\s*key\s*=\s*(sk_[a-zA-Z0-9_]+)/i);
-    return m ? String(m[1]).trim() : '';
-  } catch { return ''; }
-}
-
-function readStripeWebhookSecretFromCreds(){
-  try {
-    const p = path.join(process.cwd(), 'creds');
-    const txt = fs.readFileSync(p, 'utf8');
-    const m = txt.match(/Webhook\s*secret\s*=\s*(whsec_[a-zA-Z0-9_]+)/i);
-    return m ? String(m[1]).trim() : '';
-  } catch { return ''; }
-}
-
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || process.env.BETMAN_STRIPE_SECRET_KEY || readStripeSecretFromCreds();
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || process.env.BETMAN_STRIPE_SECRET_KEY || '';
 const STRIPE_LINK_SINGLE = process.env.STRIPE_LINK_SINGLE || process.env.BETMAN_STRIPE_LINK_SINGLE || 'https://buy.stripe.com/8x2cN538qbMqaiY8mocZa00';
 const STRIPE_LINK_SINGLE_DAY = process.env.STRIPE_LINK_SINGLE_DAY || process.env.BETMAN_STRIPE_LINK_SINGLE_DAY || 'https://buy.stripe.com/5kQ7sL9wOcQudva9qscZa03';
 const STRIPE_LINK_COMMERCIAL = process.env.STRIPE_LINK_COMMERCIAL || process.env.BETMAN_STRIPE_LINK_COMMERCIAL || 'https://buy.stripe.com/6oU7sL10ig2G0IobyAcZa01';
@@ -80,13 +63,14 @@ const TENANTS_ROOT = path.join(process.cwd(), 'memory', 'tenants');
 const AI_INSTRUCTIONS_FILE = path.join(process.cwd(), 'instructions', 'instructions.md');
 const RACE_ANALYSIS_CACHE_FILE = 'race-analysis-cache.json';
 const PULSE_CONFIG_FILE = 'pulse_config.json';
+const BAKEOFF_AUTOTUNE_STATE_FILE = 'bakeoff_autotune_state.json';
 const AI_CACHE_ENABLED = String(process.env.AI_CACHE_ENABLED || process.env.BETMAN_AI_CACHE_ENABLED || 'true').toLowerCase() === 'true';
 const RACE_ANALYSIS_CACHE_TTL_MS = Number(process.env.RACE_ANALYSIS_CACHE_TTL_MS || (30 * 60 * 1000));
 const RACE_ANALYSIS_MIN_REFRESH_MS = Number(process.env.RACE_ANALYSIS_MIN_REFRESH_MS || (5 * 60 * 1000));
 const RACE_LIST_CACHE_TTL_MS = Number(process.env.RACE_LIST_CACHE_TTL_MS || (30 * 60 * 1000));
 const raceListCache = new Map();
 const AUTH_USER = process.env.BETMAN_USERNAME || 'betman';
-const AUTH_PASS = process.env.BETMAN_PASSWORD || 'change-me-now';
+const AUTH_PASS = process.env.BETMAN_PASSWORD || '';
 const PASSWORD_SCRYPT_DEFAULTS = Object.freeze({
   N: Number(process.env.BETMAN_PASSWORD_SCRYPT_N || 16384),
   r: Number(process.env.BETMAN_PASSWORD_SCRYPT_R || 8),
@@ -100,7 +84,7 @@ const SIGNUP_VERIFICATION_REQUIRED = String(process.env.BETMAN_SIGNUP_VERIFICATI
 const HTTP_BASIC_PROMPT = String(process.env.BETMAN_HTTP_BASIC_PROMPT || 'false').toLowerCase() === 'true';
 const sessions = new Map();
 const signupChallenges = new Map();
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || process.env.BETMAN_STRIPE_WEBHOOK_SECRET || readStripeWebhookSecretFromCreds() || '';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || process.env.BETMAN_STRIPE_WEBHOOK_SECRET || '';
 let lastPollCacheTs = 0;
 let lastPollCacheKey = '';
 let lastPerformancePollTs = 0;
@@ -328,6 +312,63 @@ function savePulseConfig(tenantId = 'default', payload = {}, principal = null){
     targeting,
     updatedAt: new Date().toISOString(),
     updatedBy: principal?.username || payload?.updatedBy || null,
+  }, principal);
+  writeJson(filePath, next);
+  return next;
+}
+
+function normalizeBakeoffAutoTuneState(raw = {}, principal = null){
+  return {
+    enabled: raw?.enabled === true,
+    autoPromote: raw?.autoPromote === true,
+    useWeighted: raw?.useWeighted === true,
+    nightlyRetrain: raw?.nightlyRetrain === true,
+    champion: raw?.champion ? String(raw.champion).trim() : null,
+    previousChampion: raw?.previousChampion ? String(raw.previousChampion).trim() : null,
+    weights: Array.isArray(raw?.weights)
+      ? raw.weights
+          .map((w) => ({
+            model: String(w?.model || '').trim(),
+            score: Number(w?.score || 0),
+            weight: Number(w?.weight || 0),
+          }))
+          .filter((w) => w.model)
+      : [],
+    updatedAt: raw?.updatedAt || null,
+    updatedBy: raw?.updatedBy || principal?.username || null,
+  };
+}
+
+function loadBakeoffAutoTuneState(tenantId = 'default'){
+  const normalizedTenantId = normalizeTenantId(tenantId || 'default');
+  const legacyDefaultPath = path.join(process.cwd(), 'frontend', 'data', BAKEOFF_AUTOTUNE_STATE_FILE);
+  const tenantPath = tenantDataPath(normalizedTenantId, BAKEOFF_AUTOTUNE_STATE_FILE);
+
+  if (normalizedTenantId === 'default') {
+    const tenantExists = fs.existsSync(tenantPath);
+    const legacyExists = fs.existsSync(legacyDefaultPath);
+    if (tenantExists) {
+      const migrated = normalizeBakeoffAutoTuneState(loadJson(tenantPath, {}));
+      if (!legacyExists) writeJson(legacyDefaultPath, migrated);
+      return migrated;
+    }
+    return normalizeBakeoffAutoTuneState(loadJson(legacyDefaultPath, {}));
+  }
+
+  return normalizeBakeoffAutoTuneState(loadJson(resolveTenantOwnedPathById(normalizedTenantId, legacyDefaultPath, BAKEOFF_AUTOTUNE_STATE_FILE), {}));
+}
+
+function saveBakeoffAutoTuneState(tenantId = 'default', payload = {}, principal = null){
+  const normalizedTenantId = normalizeTenantId(tenantId || 'default');
+  const filePath = normalizedTenantId === 'default'
+    ? path.join(process.cwd(), 'frontend', 'data', BAKEOFF_AUTOTUNE_STATE_FILE)
+    : tenantDataPath(normalizedTenantId, BAKEOFF_AUTOTUNE_STATE_FILE);
+  const current = loadBakeoffAutoTuneState(normalizedTenantId);
+  const next = normalizeBakeoffAutoTuneState({
+    ...current,
+    ...payload,
+    updatedAt: new Date().toISOString(),
+    updatedBy: principal?.username || payload?.updatedBy || current?.updatedBy || null,
   }, principal);
   writeJson(filePath, next);
   return next;
@@ -1044,6 +1085,16 @@ function noStoreHeaders(){
     'Pragma': 'no-cache',
     'Expires': '0'
   };
+}
+
+function wrongApiSurface(res, req, pathName, expected){
+  return okJson(res, {
+    ok: false,
+    error: 'wrong_api_surface',
+    path: pathName,
+    expected,
+    message: `This endpoint is not served by BETMAN. Use ${expected}.`
+  }, 404, req);
 }
 
 function normalizeUsername(u){
@@ -3135,6 +3186,10 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
     aiWindowMin: status.aiWindowMin ?? null
   };
 
+  const asksBestBet = /\b(best bet|best opportunity|top pick|best play|best bet of the day|bet of the day)\b/i.test(q);
+  const asksNextRace = /\b(next race|upcoming race|coming up)\b/i.test(q);
+  const asksTomorrow = /\b(tomorrow|tmrw|tmr)\b/i.test(q) || String(clientContext?.day || '').toLowerCase() === 'tomorrow' || String(clientContext?.uiContext?.day || '').toLowerCase() === 'tomorrow';
+
   // When a venue is matched, scope suggested bets to that venue.
   // When "next race" or "last race" is detected, further scope to that race.
   let scopedSuggested = suggested;
@@ -3145,6 +3200,55 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
     if (temporal) {
       const rNum = String(temporal.race.race_number);
       scopedSuggested = scopedSuggested.filter(x => String(x.race || '').replace(/^R/i, '').trim() === rNum);
+    }
+  }
+
+  if (asksBestBet) {
+    let bestPool = scopedSuggested.slice();
+
+    if (asksNextRace) {
+      if (venueInf.matched.length > 0) {
+        const temporal = inferTemporalRaceAtVenue(question, allRaces, venueInf.matched[0]);
+        if (temporal) {
+          const rNum = String(temporal.race.race_number || '').trim();
+          bestPool = bestPool.filter(x => String(x.race || '').replace(/^R/i, '').trim() === rNum);
+        }
+      } else {
+        const nextLiveRace = liveRaces
+          .slice()
+          .sort((a, b) => {
+            const aTime = Date.parse(String(a.start_time || a.startTime || a.start_time_nz || '')) || 0;
+            const bTime = Date.parse(String(b.start_time || b.startTime || b.start_time_nz || '')) || 0;
+            if (aTime && bTime) return aTime - bTime;
+            return (Number(a.race_number) || 0) - (Number(b.race_number) || 0);
+          })[0] || null;
+        if (nextLiveRace) {
+          bestPool = bestPool.filter(x =>
+            String(x.meeting || '').trim().toLowerCase() === String(nextLiveRace.meeting || '').trim().toLowerCase() &&
+            String(x.race || '').replace(/^R/i, '').trim() === String(nextLiveRace.race_number || '').trim()
+          );
+        }
+      }
+    }
+
+    const bestNonMulti = bestPool.filter(x => !['multi','top2','top3','top4','trifecta'].includes(String(x.type || '').toLowerCase()));
+    const rankedPool = (bestNonMulti.length ? bestNonMulti : bestPool).slice();
+    const top = rankedPool[0] || null;
+    const next = rankedPool[1] || null;
+
+    if (asksTomorrow && !top) {
+      return 'I do not have tomorrow\'s suggested bets loaded yet. Ask me again once tomorrow\'s card and prices are in.';
+    }
+
+    if (top) {
+      const meeting = String(top.meeting || 'Unknown meeting');
+      const race = String(top.race || 'n/a').replace(/^R/i, '');
+      const selection = String(top.selection || top.runner || 'Unknown runner');
+      const odds = top.odds ? ` at ${top.odds}` : '';
+      const reason = String(top.reason || 'This is currently the strongest surfaced BETMAN edge.').trim();
+      const timingLabel = asksTomorrow ? 'tomorrow' : (asksNextRace ? 'in the next race' : 'right now');
+      const runnerUp = next ? ` Next in line: ${next.selection || next.runner} ${next.meeting} R${next.race}.` : '';
+      return `Best bet ${timingLabel}: ${selection} ${meeting} R${race}${odds}. ${reason}.${runnerUp}`.trim();
     }
   }
 
@@ -4037,7 +4141,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const openAiBase = String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
   const ollamaBase = String(process.env.OLLAMA_BASE_URL || process.env.BETMAN_OLLAMA_BASE_URL || process.env.BETMAN_CHAT_BASE_URL || BETMAN_OLLAMA_DEFAULT_BASE).replace(/\/$/, '');
   const ollamaDisabled = String(process.env.BETMAN_OLLAMA_DISABLED || 'false').toLowerCase() === 'true';
-  const provider = (ollamaDisabled && requestedProvider === 'ollama' && key) ? 'openai' : requestedProvider;
+  let provider = (ollamaDisabled && requestedProvider === 'ollama' && key) ? 'openai' : requestedProvider;
   if (provider === 'openai' && !key) return null;
   console.log('[ai-chat] provider', provider, 'question', question);
 
@@ -4859,14 +4963,13 @@ const server = http.createServer(async (req, res)=>{
       try {
         const stripe = getStripe();
         if (!stripe) return okJson(res, { ok: false, error: 'stripe_not_configured' }, 503);
+        if (!STRIPE_WEBHOOK_SECRET) return okJson(res, { ok: false, error: 'stripe_webhook_secret_not_configured' }, 503);
+
+        const sig = req.headers['stripe-signature'];
+        if (!sig) return okJson(res, { ok: false, error: 'stripe_signature_missing' }, 400);
 
         let event = null;
-        const sig = req.headers['stripe-signature'];
-        if (STRIPE_WEBHOOK_SECRET && sig) {
-          event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
-        } else {
-          event = JSON.parse(body || '{}');
-        }
+        event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
 
         const type = String(event?.type || '');
         const obj = event?.data?.object || {};
@@ -5606,6 +5709,14 @@ if (req.method === 'GET' && url.pathname === '/api/race-analysis') {
   return okJson(res, { ok: true, ...cached, cached: true });
 }
 
+if (url.pathname === '/api/chat') {
+  return wrongApiSurface(res, req, '/api/chat', '/api/ask-betman');
+}
+
+if (url.pathname === '/api/show' || url.pathname === '/api/delete') {
+  return wrongApiSurface(res, req, url.pathname, 'your Ollama server base URL, not BETMAN');
+}
+
 if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman') {
   let body='';
   req.on('data', c=>body+=c);
@@ -5643,15 +5754,19 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
 
     const selectionCount = Number(payload.selectionCount || 0);
     const asksMulti = q.includes('multi') || q.includes('same race') || q.includes('same-race') || q.includes('h2h') || q.includes('head to head');
-    const hasMode = q.includes('same race') || q.includes('same-race') || q.includes('h2h') || q.includes('head to head');
+    const explicitlySameRace = q.includes('same race') || q.includes('same-race');
+    const explicitlyH2H = q.includes('h2h') || q.includes('head to head');
+    const explicitlyMultiRace = /\b(2|two|3|three|4|four|multi[- ]race|across races|across two races|two race|three race|four race)\b/i.test(q);
+    const hasMode = explicitlySameRace || explicitlyH2H || explicitlyMultiRace;
     const selections = Array.isArray(payload.selections) ? payload.selections : [];
     const uniqueRaces = new Set(
       selections.map(s => `${String(s.meeting || '').trim().toLowerCase()}|${String(s.race || '').trim()}`).filter(Boolean)
     );
-    const isMultiRaceContext = !!payload?.multiRaceContext?.enabled || uniqueRaces.size > 1;
+    const isMultiRaceContext = !!payload?.multiRaceContext?.enabled || explicitlyMultiRace || uniqueRaces.size > 1;
     // Only ask for H2H/SRM clarification when the user has dragged same-race
-    // selections. When no selections are present (e.g., "pick me a multi"),
-    // let the request proceed so the AI can recommend the best available multi.
+    // selections and has not already asked for a cross-race multi. When no
+    // selections are present (e.g., "pick me a 2 race multi tomorrow"), let
+    // the request proceed so the AI can recommend the best available multi.
     const hasDraggedSameRace = selections.length >= 2 && uniqueRaces.size === 1;
     if (asksMulti && !hasMode && hasDraggedSameRace && selectionCount !== 1 && !isMultiRaceContext) {
       return okJson(res, {
@@ -6443,7 +6558,8 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       const payload = loadJson(path.join(dir, latest), {});
       const markdown = latest.replace(/\.json$/i, '.md');
       const raw = latest.replace(/^leaderboard-/i, 'bakeoff-').replace(/\.json$/i, '.jsonl');
-      return okJson(res, { ok: true, ...payload, file: latest, markdown: fs.existsSync(path.join(dir, markdown)) ? markdown : null, raw: fs.existsSync(path.join(dir, raw)) ? raw : null });
+      const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
+      return okJson(res, { ok: true, ...payload, autotuneState: loadBakeoffAutoTuneState(tenantId), file: latest, markdown: fs.existsSync(path.join(dir, markdown)) ? markdown : null, raw: fs.existsSync(path.join(dir, raw)) ? raw : null });
     } catch (e) {
       return okJson(res, { ok: false, error: 'read_failed', detail: String(e.message || e) }, 500);
     }
@@ -6722,6 +6838,29 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     }
   }
 
+  if (url.pathname === '/api/v1/bakeoff-autotune') {
+    const principal = req.authPrincipal;
+    if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
+    if (!principal?.isAdmin) return okJson(res, { ok: false, error: 'admin_required' }, 403, req);
+    const tenantId = principal.effectiveTenantId || 'default';
+
+    if (req.method === 'GET') {
+      return okJson(res, { ok: true, state: loadBakeoffAutoTuneState(tenantId) }, 200, req);
+    }
+
+    if (req.method === 'PUT' || req.method === 'PATCH') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        let payload = {};
+        try { payload = body ? JSON.parse(body) : {}; } catch {}
+        const next = saveBakeoffAutoTuneState(tenantId, payload || {}, principal);
+        return okJson(res, { ok: true, state: next }, 200, req);
+      });
+      return;
+    }
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/v1/settled-bets') {
     const principal = req.authPrincipal;
     if (!principal) return okJson(res, { ok: false, error: 'auth_required' }, 401, req);
@@ -6973,11 +7112,9 @@ process.on('uncaughtException', (err) => {
 
 if (require.main === module) {
   initAuthPersistence().finally(() => {
+    assertRuntimeConfig(process.env);
     server.listen(port, ()=>{
       console.log(`frontend server running: http://localhost:${port}`);
-      if (passwordMatches(authState.password, 'change-me-now')) {
-        console.log('WARNING: Using default BETMAN_PASSWORD. Set BETMAN_USERNAME/BETMAN_PASSWORD env vars or update via /api/auth-config.');
-      }
       if (DB_URL) console.log('Postgres persistence: enabled');
     });
   });

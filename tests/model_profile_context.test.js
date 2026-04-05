@@ -48,6 +48,7 @@ async function postAsk(payload){
   const env = {
     ...process.env,
     PORT: String(PORT),
+    BETMAN_PASSWORD: process.env.BETMAN_PASSWORD || 'test-only-password',
     BETMAN_FAKE_AI: 'true',
     BETMAN_AI_CACHE_ENABLED: 'false',
     AI_CACHE_ENABLED: 'false',

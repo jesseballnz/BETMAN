@@ -5852,6 +5852,7 @@ Rules:
 
 You MUST explicitly mention each of these runners by name: ${selectionNames}.`;
   try {
+    const resolvedAiModel = await resolveAutoTuneModelSelection();
     const res = await fetchLocal('./api/ask-selection', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5861,8 +5862,8 @@ You MUST explicitly mention each of these runners by name: ${selectionNames}.`;
         selections: picks,
         source: 'strategy',
         uiContext: { day: selectedDay, country: selectedCountry, meeting: selectedMeeting },
-        provider: selectedAiModel.provider,
-        model: selectedAiModel.model,
+        provider: resolvedAiModel.provider,
+        model: resolvedAiModel.model,
         userNotes: queryAiUserNotes('', selectedMeeting).slice(0, 5).map(n => ({ text: n.text, meeting: n.meeting, createdAt: n.createdAt }))
       })
     });
@@ -11030,9 +11031,9 @@ function ensureAiCooldownTimer(){
   }, 1000);
 }
 
-function renderCachedAiAnalysisIfPresent(race){
+async function renderCachedAiAnalysisIfPresent(race){
   if (!race) return false;
-  const resolved = resolveAutoTuneModelSelection();
+  const resolved = await resolveAutoTuneModelSelection();
   const key = buildAiAnalysisCacheKey(resolved.provider, resolved.model);
   if (!key) return false;
   const cached = aiAnalysisCache.get(key);
@@ -11072,9 +11073,9 @@ function bindAiAnalyseButton(){
         if (btn.dataset.loading !== '1') btn.textContent = defaultAiAnalyseLabel;
       }, 1200);
     };
-    const serveCache = () => {
+    const serveCache = async () => {
       if (!selectedRace) return false;
-      const resolved = resolveAutoTuneModelSelection();
+      const resolved = await resolveAutoTuneModelSelection();
       const key = buildAiAnalysisCacheKey(resolved.provider, resolved.model);
       if (!key) return false;
       const cached = aiAnalysisCache.get(key);
@@ -11113,7 +11114,7 @@ function bindAiAnalyseButton(){
       alert('Select a race first.');
       return;
     }
-    if (serveCache()) return;
+    if (await serveCache()) return;
     setButtonLoading('Analysing…');
     showAnalysisProcessingHint();
     analysisViewMode = 'engine';
@@ -11128,7 +11129,7 @@ function bindAiAnalyseButton(){
     const cooldownKey = buildAiCooldownKey(selectedRace);
     await ensureInstructionsLoaded().catch(()=>{});
     await loadRunnerMetrics().catch(()=>{});
-    const autoTuneSelection = resolveAutoTuneModelSelection();
+    const autoTuneSelection = await resolveAutoTuneModelSelection();
     const cacheKey = (() => {
       if (!selectedRace) return '';
       const raceKey = buildAiRaceKey(selectedRace);
@@ -13072,17 +13073,31 @@ function approximateTokenCount(text){
   return Math.max(1, Math.round(str.length / 4));
 }
 
-const BAKEOFF_AUTOTUNE_KEY = 'bakeoffAutoTuneState.v1';
+let bakeoffAutoTuneStateCache = null;
 
-function getBakeoffAutoTuneState(){
-  try { return JSON.parse(localStorage.getItem(BAKEOFF_AUTOTUNE_KEY) || '{}'); } catch { return {}; }
+async function getBakeoffAutoTuneState(){
+  if (bakeoffAutoTuneStateCache) return bakeoffAutoTuneStateCache;
+  try {
+    const res = await fetchLocal('./api/v1/bakeoff-autotune', { cache: 'no-store' });
+    const out = await res.json().catch(() => ({}));
+    bakeoffAutoTuneStateCache = out?.state || {};
+    return bakeoffAutoTuneStateCache;
+  } catch {
+    bakeoffAutoTuneStateCache = {};
+    return bakeoffAutoTuneStateCache;
+  }
 }
 
-function setBakeoffAutoTuneState(next){
-  const prev = getBakeoffAutoTuneState();
-  const out = { ...prev, ...next, updatedAt: new Date().toISOString() };
-  try { localStorage.setItem(BAKEOFF_AUTOTUNE_KEY, JSON.stringify(out)); } catch {}
-  return out;
+async function setBakeoffAutoTuneState(next){
+  const prev = await getBakeoffAutoTuneState();
+  const res = await fetchLocal('./api/v1/bakeoff-autotune', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...prev, ...next }),
+  });
+  const out = await res.json().catch(() => ({}));
+  bakeoffAutoTuneStateCache = out?.state || { ...prev, ...next, updatedAt: new Date().toISOString() };
+  return bakeoffAutoTuneStateCache;
 }
 
 function computeModelWeights(rows){
@@ -13101,9 +13116,23 @@ function computeModelWeights(rows){
     .sort((a,b)=>b.weight-a.weight);
 }
 
-function chooseChampion(rows){
+function chooseChampion(rows, options = {}){
   if (!Array.isArray(rows) || !rows.length) return null;
-  const sorted = rows.slice().sort((a,b)=>Number(b.composite||0)-Number(a.composite||0));
+  const availableModels = new Set((options.availableModels || []).map(m => String(m || '').trim()).filter(Boolean));
+  const filtered = rows.filter(r => {
+    const model = String(r?.model || '').trim();
+    if (!model) return false;
+    if (!availableModels.size) return true;
+    return availableModels.has(model);
+  });
+  if (!filtered.length) return null;
+  const sorted = filtered.slice().sort((a,b)=>{
+    const compositeDiff = Number(b.composite||0) - Number(a.composite||0);
+    if (compositeDiff) return compositeDiff;
+    const qualityDiff = Number(b.qualityAvg||0) - Number(a.qualityAvg||0);
+    if (qualityDiff) return qualityDiff;
+    return Number(b.successRate||0) - Number(a.successRate||0);
+  });
   const best = sorted[0];
   const second = sorted[1] || null;
   const compositeGap = Number(best?.composite || 0) - Number(second?.composite || 0);
@@ -13111,11 +13140,13 @@ function chooseChampion(rows){
   const quality = formatBakeoffPct(best?.qualityAvg || 0);
   const runs = Number(best?.runs || 0);
   const canPromote = success >= 55 && quality >= 55 && runs >= 20 && compositeGap >= 0.5;
+  const canManualPromote = success >= 55 && quality >= 55;
   return {
     best,
     second,
     compositeGap,
     canPromote,
+    canManualPromote,
     reasons: [
       `success ${success.toFixed(1)}% (min 55%)`,
       `quality ${quality.toFixed(1)}% (min 55%)`,
@@ -13135,8 +13166,8 @@ function pickWeightedModel(weights){
   return weights[0]?.model || null;
 }
 
-function resolveAutoTuneModelSelection(){
-  const s = getBakeoffAutoTuneState();
+async function resolveAutoTuneModelSelection(){
+  const s = await getBakeoffAutoTuneState();
   if (aiModelManualLock) {
     return { provider: selectedAiModel.provider || inferProviderFromModel(selectedAiModel.model), model: selectedAiModel.model, source: 'manual-lock' };
   }
@@ -13154,7 +13185,7 @@ function resolveAutoTuneModelSelection(){
   return { ...selectedAiModel, source: 'manual' };
 }
 
-function renderBakeoffAutoTunePanel(rows, out){
+async function renderBakeoffAutoTunePanel(rows, out){
   const wrap = $('bakeoffAutoTune');
   if (!wrap) return;
   if (!Array.isArray(rows) || !rows.length) {
@@ -13162,20 +13193,35 @@ function renderBakeoffAutoTunePanel(rows, out){
     return;
   }
 
-  const state = getBakeoffAutoTuneState();
-  const championDecision = chooseChampion(rows);
+  const availableModels = Array.from(new Set([
+    ...((aiModelCatalog.ollamaModels || []).map(m => String(m).trim()).filter(Boolean)),
+    ...((aiModelCatalog.openaiModels || []).map(m => String(m).trim()).filter(Boolean))
+  ]));
+  const availableSet = new Set(availableModels);
+  const filteredRows = rows.filter(r => availableSet.has(String(r?.model || '').trim()));
+  if (!filteredRows.length) {
+    wrap.innerHTML = `<h4>Self-Tuning Engine</h4><div class='sub'>No currently available models match the leaderboard. Refresh model catalog or run a new bakeoff.</div>`;
+    return;
+  }
+
+  const state = await getBakeoffAutoTuneState();
+  const championDecision = chooseChampion(filteredRows, { availableModels });
   const challenger = championDecision?.best?.model || null;
-  const weights = computeModelWeights(rows).slice(0, 8);
+  const weights = computeModelWeights(filteredRows).slice(0, 8);
 
   let champion = state.champion || null;
+  if (champion && !availableSet.has(champion)) {
+    champion = null;
+    await setBakeoffAutoTuneState({ champion: null });
+  }
   if (state.autoPromote && championDecision?.canPromote && challenger && challenger !== champion) {
     const prev = champion || state.previousChampion || null;
-    const updated = setBakeoffAutoTuneState({ champion: challenger, previousChampion: prev });
+    const updated = await setBakeoffAutoTuneState({ champion: challenger, previousChampion: prev });
     champion = updated.champion;
   }
 
   const weightsChanged = JSON.stringify(state.weights || []) !== JSON.stringify(weights);
-  if (weightsChanged) setBakeoffAutoTuneState({ weights });
+  if (weightsChanged) await setBakeoffAutoTuneState({ weights });
 
   const weightsRows = weights.map((w, i) => `<tr><td>${i+1}</td><td>${escapeHtml(String(w.model || '—'))}</td><td>${Number(w.score || 0).toFixed(2)}</td><td>${(Number(w.weight || 0) * 100).toFixed(1)}%</td></tr>`).join('');
 
@@ -13191,11 +13237,12 @@ function renderBakeoffAutoTunePanel(rows, out){
     </div>
 
     <div class='sub'>Phase 1 (Champion/Challenger): ${championDecision?.reasons?.join(' · ') || 'n/a'}</div>
+    <div class='sub' style='margin-top:4px'>Admin mode: manual promotion is allowed for a strong available challenger now. Auto-promotion still requires the full gate.</div>
     <div class='btn-row' style='margin:8px 0 12px'>
       <button class='btn btn-ghost compact-btn' id='autotuneEnableBtn'>${state.enabled ? 'Disable' : 'Enable'} AutoTune</button>
       <button class='btn btn-ghost compact-btn' id='autotuneAutoPromoteBtn'>${state.autoPromote ? 'Disable' : 'Enable'} Auto Promote</button>
       <button class='btn btn-ghost compact-btn' id='autotuneWeightedBtn'>${state.useWeighted ? 'Disable' : 'Enable'} Weighted Routing</button>
-      <button class='btn btn-ghost compact-btn' id='autotunePromoteBtn' ${championDecision?.canPromote ? '' : 'disabled'}>Promote Challenger</button>
+      <button class='btn btn-ghost compact-btn' id='autotunePromoteBtn' ${championDecision?.canManualPromote ? '' : 'disabled'}>Promote Challenger</button>
       <button class='btn btn-ghost compact-btn' id='autotuneRollbackBtn' ${champion ? '' : 'disabled'}>Rollback Champion</button>
       <button class='btn btn-ghost compact-btn' id='autotuneNightlyBtn'>${state.nightlyRetrain ? 'Disable' : 'Enable'} Nightly Retrain Gate</button>
       <button class='btn btn-ghost compact-btn' id='autotuneTrainNowBtn'>Run Retrain Now</button>
@@ -13207,38 +13254,38 @@ function renderBakeoffAutoTunePanel(rows, out){
     <div class='sub' style='margin-top:8px'>Phase 3 Gate: nightly retrain is configuration state in UI; deployment remains gated by bakeoff pass + manual oversight.</div>
   `;
 
-  $('autotuneEnableBtn')?.addEventListener('click', () => {
-    const s = getBakeoffAutoTuneState();
-    setBakeoffAutoTuneState({ enabled: !s.enabled });
-    renderBakeoffAutoTunePanel(rows, out);
+  $('autotuneEnableBtn')?.addEventListener('click', async () => {
+    const s = await getBakeoffAutoTuneState();
+    await setBakeoffAutoTuneState({ enabled: !s.enabled });
+    await renderBakeoffAutoTunePanel(filteredRows, out);
   });
-  $('autotuneAutoPromoteBtn')?.addEventListener('click', () => {
-    const s = getBakeoffAutoTuneState();
-    setBakeoffAutoTuneState({ autoPromote: !s.autoPromote });
-    renderBakeoffAutoTunePanel(rows, out);
+  $('autotuneAutoPromoteBtn')?.addEventListener('click', async () => {
+    const s = await getBakeoffAutoTuneState();
+    await setBakeoffAutoTuneState({ autoPromote: !s.autoPromote });
+    await renderBakeoffAutoTunePanel(filteredRows, out);
   });
-  $('autotuneWeightedBtn')?.addEventListener('click', () => {
-    const s = getBakeoffAutoTuneState();
-    setBakeoffAutoTuneState({ useWeighted: !s.useWeighted });
-    renderBakeoffAutoTunePanel(rows, out);
+  $('autotuneWeightedBtn')?.addEventListener('click', async () => {
+    const s = await getBakeoffAutoTuneState();
+    await setBakeoffAutoTuneState({ useWeighted: !s.useWeighted });
+    await renderBakeoffAutoTunePanel(filteredRows, out);
   });
-  $('autotunePromoteBtn')?.addEventListener('click', () => {
-    if (!championDecision?.canPromote || !championDecision?.best?.model) return;
-    const s = getBakeoffAutoTuneState();
+  $('autotunePromoteBtn')?.addEventListener('click', async () => {
+    if (!championDecision?.canManualPromote || !championDecision?.best?.model) return;
+    const s = await getBakeoffAutoTuneState();
     const prev = s.champion || null;
-    setBakeoffAutoTuneState({ champion: championDecision.best.model, previousChampion: prev });
-    renderBakeoffAutoTunePanel(rows, out);
+    await setBakeoffAutoTuneState({ champion: championDecision.best.model, previousChampion: prev });
+    await renderBakeoffAutoTunePanel(filteredRows, out);
   });
-  $('autotuneRollbackBtn')?.addEventListener('click', () => {
-    const s = getBakeoffAutoTuneState();
+  $('autotuneRollbackBtn')?.addEventListener('click', async () => {
+    const s = await getBakeoffAutoTuneState();
     if (!s.previousChampion) return;
-    setBakeoffAutoTuneState({ champion: s.previousChampion, previousChampion: s.champion || null });
-    renderBakeoffAutoTunePanel(rows, out);
+    await setBakeoffAutoTuneState({ champion: s.previousChampion, previousChampion: s.champion || null });
+    await renderBakeoffAutoTunePanel(filteredRows, out);
   });
-  $('autotuneNightlyBtn')?.addEventListener('click', () => {
-    const s = getBakeoffAutoTuneState();
-    setBakeoffAutoTuneState({ nightlyRetrain: !s.nightlyRetrain });
-    renderBakeoffAutoTunePanel(rows, out);
+  $('autotuneNightlyBtn')?.addEventListener('click', async () => {
+    const s = await getBakeoffAutoTuneState();
+    await setBakeoffAutoTuneState({ nightlyRetrain: !s.nightlyRetrain });
+    await renderBakeoffAutoTunePanel(filteredRows, out);
   });
   $('autotuneTrainNowBtn')?.addEventListener('click', async () => {
     const btn = $('autotuneTrainNowBtn');
@@ -13296,6 +13343,7 @@ async function loadBakeoffLeaderboard(manualData = null){
       table.innerHTML = '';
       return;
     }
+    bakeoffAutoTuneStateCache = out.autotuneState || bakeoffAutoTuneStateCache || null;
     const configuredModels = Array.from(new Set([
       ...((out.models || []).map(m => String(m).trim()).filter(Boolean)),
       ...((aiModelCatalog.ollamaModels || []).map(m => String(m).trim()).filter(Boolean)),
@@ -14099,6 +14147,7 @@ async function sendAiChat(){
       createdAt: n.createdAt
     }));
 
+    const resolvedAiModel = await resolveAutoTuneModelSelection();
     const res = await fetchLocal('./api/ask-selection', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -14117,8 +14166,8 @@ async function sendAiChat(){
           country: selectedCountry,
           meeting: selectedMeeting
         },
-        provider: selectedAiModel.provider,
-        model: selectedAiModel.model,
+        provider: resolvedAiModel.provider,
+        model: resolvedAiModel.model,
         chatHistory,
         userNotes: recentNotes
       })

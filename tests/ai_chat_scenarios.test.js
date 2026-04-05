@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const { buildSelectionFactAnswer, enforceDecisionAnswerFormat, aiAnswerRespectsSelections } = require(path.join(ROOT, 'scripts', 'frontend_server.js'));
+const { buildSelectionFactAnswer, enforceDecisionAnswerFormat, aiAnswerRespectsSelections, raceAnalysisMatchesContext } = require(path.join(ROOT, 'scripts', 'frontend_server.js'));
 
 const TENANT_ID = 'ai_chat_test';
 const tenantDir = path.join(ROOT, 'memory', 'tenants', TENANT_ID, 'frontend-data');
@@ -182,5 +182,96 @@ const a8 = buildSelectionFactAnswer('What picks do we have?', {}, finishedTenant
 assert(!a8.includes('Global Jewel'), 'Finished race R1 pick (Global Jewel) should not appear in answer');
 assert(!a8.includes('Momento'), 'Finished race R4 pick (Momento) should not appear in answer');
 assert(a8.includes('Open Horse'), 'Live race R6 pick (Open Horse) should appear in answer');
+
+// Real-world plain-English contextual prompts
+const rw1 = buildSelectionFactAnswer('Why do we like Not So Unusual here?', {
+  source: 'chat',
+  uiContext: { meeting: 'Tauherenikau' },
+  raceContext: { meeting: 'Tauherenikau', raceNumber: '7', raceName: 'Tauherenikau Race 7', anchorType: 'explicit-race' },
+}, TENANT_ID);
+assert(rw1.includes('Not So Unusual'), 'plain-English prompt should stay on requested horse');
+assert(rw1.includes('Tauherenikau'), 'plain-English prompt should stay on requested meeting');
+assert(/Race 7|R7/i.test(rw1), 'plain-English prompt should stay on requested race');
+assert(raceAnalysisMatchesContext(rw1, { raceContext: { meeting: 'Tauherenikau', raceNumber: '7' } }), 'response should remain race-context safe');
+
+const rw2 = buildSelectionFactAnswer('Talk me through this same race multi in plain english.', {
+  source: 'chat',
+  selections: [
+    { meeting: 'Tauherenikau', race: '7', selection: 'Not So Unusual' },
+    { meeting: 'Tauherenikau', race: '7', selection: 'Poukawa' }
+  ],
+  selectionCount: 2,
+}, TENANT_ID);
+assert(/Same-race multi context/i.test(rw2), 'same-race multi prompt should remain in same-race mode');
+assert(rw2.includes('Not So Unusual') && rw2.includes('Poukawa'), 'same-race multi prompt should name dragged runners');
+assert(!rw2.includes('The Espy'), 'same-race multi prompt should not drift into another race');
+
+const rw3 = buildSelectionFactAnswer('Give me the plain english read on Tauherenikau R8.', {
+  source: 'chat',
+  raceContext: { meeting: 'Tauherenikau', raceNumber: '8', raceName: 'Tauherenikau R8', anchorType: 'explicit-race' },
+}, TENANT_ID);
+assert(rw3.includes('The Espy'), 'explicit race prompt should anchor to the requested race leader');
+assert(!rw3.includes('Not So Unusual'), 'explicit R8 prompt should not drift back to R7');
+assert(raceAnalysisMatchesContext(rw3, { raceContext: { meeting: 'Tauherenikau', raceNumber: '8' } }), 'explicit R8 response should remain race-context safe');
+
+const rw4 = buildSelectionFactAnswer('What is the best bet right now and why?', {
+  source: 'chat',
+  uiContext: { meeting: 'Tauherenikau' },
+}, TENANT_ID);
+assert(rw4.includes('Not So Unusual'), 'best-bet question should resolve to current strongest contextual pick');
+assert(/Next in line:|Best current/i.test(rw4), 'best-bet question should answer in concrete selection terms');
+
+const rw5 = buildSelectionFactAnswer('Why do we like it?', {
+  source: 'chat',
+  chatHistory: [
+    { role: 'user', text: 'Give me the plain english read on Tauherenikau R7' },
+    { role: 'assistant', text: 'Tauherenikau R7 centres on Not So Unusual with Poukawa next in line.' },
+  ],
+  raceContext: { meeting: 'Tauherenikau', raceNumber: '7', raceName: 'Tauherenikau Race 7', anchorType: 'explicit-race' },
+}, TENANT_ID);
+assert(rw5.includes('Not So Unusual'), 'follow-up prompt should stay anchored to prior horse context');
+assert(!rw5.includes('The Espy'), 'follow-up prompt should not drift to another race');
+assert(raceAnalysisMatchesContext(rw5, { raceContext: { meeting: 'Tauherenikau', raceNumber: '7' } }), 'follow-up response should remain race-context safe');
+
+const rw6 = buildSelectionFactAnswer('What about this one instead?', {
+  source: 'chat',
+  chatHistory: [
+    { role: 'user', text: 'Talk me through Tauherenikau R7' },
+    { role: 'assistant', text: 'Tauherenikau R7 is led by Not So Unusual.' },
+  ],
+  raceContext: { meeting: 'Tauherenikau', raceNumber: '8', raceName: 'Tauherenikau R8', anchorType: 'explicit-race' },
+}, TENANT_ID);
+assert(rw6.includes('The Espy'), 'new explicit raceContext should override stale prior history');
+assert(!rw6.includes('Not So Unusual'), 'new explicit raceContext should suppress stale previous race leader');
+assert(raceAnalysisMatchesContext(rw6, { raceContext: { meeting: 'Tauherenikau', raceNumber: '8' } }), 'override response should remain on explicit replacement context');
+
+const intentQuestion = 'Build me a 2 race multi for tomorrow';
+assert(/\b2 race multi\b/i.test(intentQuestion), 'plain-English multi-race phrasing should be detectable in tests');
+assert(/\btomorrow\b/i.test(intentQuestion), 'tomorrow phrasing should be detectable in tests');
+
+const rw7 = buildSelectionFactAnswer('What is the best bet of the day?', {
+  source: 'chat',
+  uiContext: { meeting: 'Tauherenikau' },
+}, TENANT_ID);
+assert(rw7.includes('Not So Unusual'), 'best bet of the day should return the strongest current selection');
+assert(/Best bet/i.test(rw7), 'best bet of the day should answer explicitly');
+
+const rw8 = buildSelectionFactAnswer('What is the best bet in the next race?', {
+  source: 'chat',
+}, TENANT_ID);
+assert(/Best bet in the next race|Best bet right now|Best bet/i.test(rw8), 'next race best-bet prompt should return an explicit best-bet answer');
+
+const rw9 = buildSelectionFactAnswer('What is the best bet tomorrow?', {
+  source: 'chat',
+  day: 'tomorrow',
+  uiContext: { day: 'tomorrow' },
+}, TENANT_ID);
+assert(/tomorrow/i.test(rw9), 'tomorrow best-bet prompt should acknowledge tomorrow context');
+
+const rw10 = buildSelectionFactAnswer('What is the best bet at Tauherenikau today?', {
+  source: 'chat',
+  uiContext: { meeting: 'Tauherenikau', day: 'today' },
+}, TENANT_ID);
+assert(rw10.includes('Tauherenikau'), 'meeting-specific best-bet prompt should stay on the requested meeting');
 
 console.log('ai_chat scenarios tests passed');
