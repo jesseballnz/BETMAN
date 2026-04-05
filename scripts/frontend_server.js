@@ -2252,6 +2252,47 @@ const speedMapText = speedMap
 
 function buildSelectionFactAnswer(question, clientContext = {}, tenantId = 'default'){
   const q = String(question || '').trim().toLowerCase();
+
+  // Help: show the user what they can ask
+  if (/^\s*help\s*[?!.]?\s*$/i.test(q) || /^what can (i|you) (ask|do)/i.test(q) || /^how (do i|to) use/i.test(q)) {
+    return `BETMAN AI Chat — here's what you can ask me:
+
+🏇 Single runner
+• "Tell me about Fast Track" — model probability, edge, form summary
+• "Why do we like Not So Unusual?" — full explanation of why a pick was selected
+
+⚔️ Runner vs runner
+• "Fast Track vs Dark Horse" — head-to-head comparison with verdict
+• "Who is better, Runner A or Runner B?" — side-by-side analysis
+
+🎯 Race read
+• "What's the read for R5?" — top pick plus danger for a specific race
+• "Ellerslie R3 analysis" — detailed breakdown of a single race
+
+📊 Multi / Parlay
+• "Pick me a 2 leg multi" — best 2-leg multi from today's picks with combined odds
+• "Best double today" / "Build a treble" / "3 leg parlay" — multi construction
+• "Do we have any exotics?" — shows existing exotic suggestions (Top3, Trifecta)
+
+🏆 Top picks
+• "Who is the top pick right now?" — best current selection
+• "What picks do we have?" — overview of all current selections
+
+🌤️ Conditions & Notes
+• Add meeting notes (weather, track observations) via the Notes panel — I'll use them automatically
+• "How does the weather affect the races?" — I'll reference your meeting notes
+
+📋 General
+• "How many races today?" — overview of today's card
+• "Tell me about Ellerslie" — venue-specific analysis
+• Ask any racing question — form, pace maps, trainer/jockey patterns, market dynamics
+
+💡 Tips:
+• Drag runners from the card onto the chat to lock analysis to those selections
+• I use real data — model probabilities, odds, edge calculations, and your meeting notes
+• Ask follow-up questions — I carry context forward`;
+  }
+
   const status = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'status.json'), 'status.json'), {});
   const racesData = loadJson(resolveTenantPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json'), {});
   let suggested = Array.isArray(status.suggestedBets) ? status.suggestedBets : [];
