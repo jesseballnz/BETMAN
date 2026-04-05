@@ -2456,6 +2456,7 @@ ${simRows.length ? simRows.join('\n') : '- n/a'}
       verdict += ` Market edge is ${best.edge.toFixed(1)} pts — price is tight, proceed with caution.`;
     }
     if (sameRace && sorted.length >= 2 && sorted[0].p != null && sorted[1].p != null) {
+      // 0.92 dampener accounts for same-race negative correlation (runners compete for same positions)
       const joint = Math.max(0, (sorted[0].p * sorted[1].p / 100) * 0.92);
       verdict += `\nSame-race joint likelihood (both place): ${joint.toFixed(1)}%.`;
     }
