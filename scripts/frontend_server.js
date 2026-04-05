@@ -2562,40 +2562,65 @@ ${extra}` : base;
 
   if (q.includes('top') || q.includes('best') || q.includes('winner') || q.includes('pick')) {
     // If user is asking for a multi/exotic, let the multi handler below take priority
-    if (!(q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4'))) {
+    const isMultiIntent = q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4') || q.includes('parlay') || q.includes('double') || q.includes('treble') || q.includes('accumulator') || q.includes('acca') || q.includes('combo') || /\d[\s-]?leg/i.test(q);
+    if (!isMultiIntent) {
       const top = nonMulti[0] || suggested[0];
       const alts = nonMulti.slice(1,3).map(x => `${x.selection}`).join(', ');
       return `${explain(top)}${alts ? ` Next in line: ${alts}.` : ''}`;
     }
   }
 
-  if (q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4')) {
-    if (multis.length) {
-      // Show the best multi/exotic suggestion with full detail
+  const isMultiFallback = q.includes('multi') || q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4') || q.includes('parlay') || q.includes('double') || q.includes('treble') || q.includes('accumulator') || q.includes('acca') || q.includes('combo') || /\d[\s-]?leg/i.test(q);
+  if (isMultiFallback) {
+    // Detect how many legs the user wants (e.g. "2 leg multi", "3 leg parlay")
+    const legCountMatch = q.match(/(\d+)[\s-]?leg/i);
+    const requestedLegs = legCountMatch ? Math.max(2, Math.min(6, Number(legCountMatch[1]))) : null;
+
+    // Determine if user is actively requesting a multi to be BUILT vs asking what exotics exist.
+    // Construction signals: explicit leg count, or action verbs (pick, build, give, make, suggest, recommend, put, create)
+    // Also: specific multi type names (parlay, double, treble, accumulator, acca, combo)
+    const wantsConstruction = requestedLegs != null || /\b(?:pick|build|give|make|suggest|recommend|put|create)\b/i.test(q)
+      || q.includes('parlay') || q.includes('double') || q.includes('treble') || q.includes('accumulator') || q.includes('acca') || q.includes('combo');
+    const wantsExoticSpecifically = q.includes('trifecta') || q.includes('top2') || q.includes('top3') || q.includes('top4');
+
+    // Show existing exotics when user is asking about them (not requesting construction)
+    if ((!wantsConstruction || wantsExoticSpecifically) && multis.length) {
       const m = multis[0];
       const extras = multis.slice(1, 3).map(x => `• ${x.meeting} R${x.race} ${x.selection} (${x.type}) $${x.stake}`).join('\n');
       const base = `${m.meeting} Race ${m.race}: the leading exotic is ${m.selection} (${m.type}) at $${m.stake}. Reason: ${m.reason || 'exotic structure derived from the top probability cluster'}. This is higher variance than a straight win bet, so keep stake disciplined.`;
       return extras ? `${base}\n\nOther exotics available:\n${extras}` : base;
     }
-    // No exotic suggestions — construct a multi recommendation from top win picks across different races
+    // Construct a multi recommendation from top win picks across different races
     const raceKeys = new Set();
     const multiLegs = [];
+    const maxLegs = requestedLegs || 3;
     for (const x of nonMulti) {
       const rk = `${x.meeting}|${x.race}`;
       if (raceKeys.has(rk)) continue;
       raceKeys.add(rk);
       multiLegs.push(x);
-      if (multiLegs.length >= 3) break;
+      if (multiLegs.length >= maxLegs) break;
     }
     if (multiLegs.length >= 2) {
       const legLines = multiLegs.map((x, i) => {
         const p = parsePct(x.reason);
-        return `Leg ${i + 1}: ${x.meeting} R${x.race} ${x.selection}${p != null ? ` (${p.toFixed(1)}%)` : ''} @ $${parseOdds(x.reason) || 'n/a'}`;
+        const o = parseOdds(x.reason);
+        return `Leg ${i + 1}: ${x.meeting} R${x.race} ${x.selection}${p != null ? ` (${p.toFixed(1)}%)` : ''} @ $${Number.isFinite(o) ? o.toFixed(2) : 'n/a'}`;
       }).join('\n');
       const probs = multiLegs.map(x => parsePct(x.reason)).filter(p => p != null);
       const jointPct = probs.length >= 2 ? probs.reduce((a, b) => a * b / 100, probs.shift()) : null;
-      const jointLine = jointPct != null ? `\nCombined multi probability ≈ ${jointPct.toFixed(1)}%` : '';
-      return `Multi recommendation from today's strongest win picks across races:\n${legLines}${jointLine}\n\nThis is a ${multiLegs.length}-leg multi. Higher variance — keep stake small.`;
+      const odds = multiLegs.map(x => parseOdds(x.reason)).filter(o => Number.isFinite(o) && o > 0);
+      const combinedOdds = odds.length >= 2 ? odds.reduce((a, b) => a * b) : null;
+      const jointLine = jointPct != null ? `\nJoint win probability ≈ ${jointPct.toFixed(1)}%` : '';
+      const oddsLine = combinedOdds != null ? `\nCombined multi odds ≈ $${combinedOdds.toFixed(2)}` : '';
+      const fairOddsLine = (jointPct != null && jointPct > 0) ? `\nFair price ≈ $${(100 / jointPct).toFixed(2)}` : '';
+      const valueLine = (combinedOdds != null && jointPct != null && jointPct > 0) ? `\nValue: multi pays $${combinedOdds.toFixed(2)} vs fair $${(100 / jointPct).toFixed(2)} — ${combinedOdds > (100 / jointPct) ? 'overlay (value)' : 'underlay (no value)'}` : '';
+      return `Multi recommendation from today's strongest win picks across races:\n${legLines}${jointLine}${oddsLine}${fairOddsLine}${valueLine}\n\nThis is a ${multiLegs.length}-leg multi. Higher variance — keep stake small.`;
+    }
+    // Fall back to exotics if multi construction failed but exotics exist
+    if (multis.length) {
+      const m = multis[0];
+      return `No cross-race multi could be constructed (not enough separate race picks). However, there is an exotic available: ${m.meeting} R${m.race} ${m.selection} (${m.type}) at $${m.stake}. ${m.reason || ''}`;
     }
     return 'There are no active multi or exotic suggestions right now. If you want, I can still explain the best win selections and how they could be combined.';
   }
@@ -2843,10 +2868,14 @@ function buildAiContextSummary({
     const bits = [base];
     if (Number.isFinite(joint)) bits.push(`joint ${joint.toFixed(1)}%`);
     if (Number.isFinite(winA) && Number.isFinite(winB)) bits.push(`wins ${winA.toFixed(1)}%/${winB.toFixed(1)}%`);
+    const oddsA = Number(row.oddsA);
+    const oddsB = Number(row.oddsB);
+    if (Number.isFinite(oddsA) && Number.isFinite(oddsB)) bits.push(`odds $${oddsA.toFixed(2)}×$${oddsB.toFixed(2)}=$${(oddsA * oddsB).toFixed(2)}`);
     return bits.join(' · ');
   };
 
   lines.push(`Suggested (${suggested.length || 0}): ${summarizeList(suggested, 6, formatSuggested)}`);
+  if (jointRows?.length) lines.push(`Joint likelihoods: ${summarizeList(jointRows, 6, formatJoint)}`);
   if (interesting?.length) lines.push(`Interesting: ${summarizeList(interesting, 5, formatInteresting)}`);
   const contextMeeting = String(clientContext?.raceContext?.meeting || clientContext?.uiContext?.meeting || '').trim().toLowerCase();
   let scopedMovers = Array.isArray(marketMovers) ? marketMovers.slice() : [];
@@ -2859,8 +2888,6 @@ function buildAiContextSummary({
 
   const activityMsgs = (activity || []).filter(Boolean).slice(0, 3).map(msg => trimText(msg, 80));
   if (activityMsgs.length) lines.push(`Activity: ${activityMsgs.join(' | ')}`);
-
-  if (jointRows?.length) lines.push(`Joint likelihoods: ${summarizeList(jointRows, 3, formatJoint)}`);
 
   const raceLookup = buildRaceLookup(races);
   const explicitSelections = Array.isArray(clientContext?.selections) ? clientContext.selections.slice(0, 6) : [];
@@ -3065,6 +3092,8 @@ Rules:
 10) If the user has added meeting notes (labelled "User meeting notes" in context), incorporate those observations into your answer.
 11) If the context states there are no races at a specific venue, do NOT fabricate analysis for that venue. Clearly state there are no races there and suggest the available alternatives listed in context.
 12) If race data is scoped to a specific venue the user mentioned, anchor your answer to that venue only. Do not discuss races from other venues unless asked.
+13) For multi/parlay/double/treble questions: pick legs ONLY from the Suggested bets in context. State each leg's runner, meeting, race, odds, and win probability. Compute combined multi odds (multiply individual odds) and joint likelihood (multiply individual win probabilities / 100). If Joint likelihoods are in context, use them. Never invent figures not in context.
+14) For same-race multi or H2H questions: explain both runners with win probabilities, compute the joint likelihood for both finishing in position, and note the inherent negative correlation (two runners in the same race compete for the same positions).
 
 Style: expert punter, plain English, no fluff.`;
 
@@ -3157,7 +3186,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   const sourceTag = String(clientContext?.source || '').toLowerCase();
   const isRaceAnalysis = sourceTag === 'race-analysis';
   const isStrategy = sourceTag === 'strategy' || /\bstrategy\b/i.test(String(question || ''));
-  const isMultiRequest = !isRaceAnalysis && /\b(?:multi|h2h|head[\s-]?to[\s-]?head)\b/i.test(String(question || ''));
+  const isMultiRequest = !isRaceAnalysis && /\b(?:multi|h2h|head[\s-]?to[\s-]?head|parlay|double|treble|accumulator|acca|combo|(\d[\s-]?leg))\b/i.test(String(question || ''));
   const selections = Array.isArray(clientContext.selections) ? clientContext.selections : [];
   const hasDraggedSelections = selections.length > 0;
   const scopedSelections = hasDraggedSelections
@@ -3270,21 +3299,34 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     }
     const topPicks = [];
     for (const [, picks] of byRace.entries()) {
-      const sorted = picks.slice().sort((a, b) => Number(b.aiWinProb || 0) - Number(a.aiWinProb || 0));
-      if (sorted.length && Number.isFinite(Number(sorted[0].aiWinProb)) && Number(sorted[0].aiWinProb) > 0) {
-        topPicks.push(sorted[0]);
+      const sorted = picks.slice().sort((a, b) => {
+        const probA = Number.isFinite(Number(a.aiWinProb)) ? Number(a.aiWinProb) : (parseReasonWinProb(a.reason) || 0);
+        const probB = Number.isFinite(Number(b.aiWinProb)) ? Number(b.aiWinProb) : (parseReasonWinProb(b.reason) || 0);
+        return probB - probA;
+      });
+      if (sorted.length) {
+        const bestProb = Number.isFinite(Number(sorted[0].aiWinProb)) ? Number(sorted[0].aiWinProb) : (parseReasonWinProb(sorted[0].reason) || 0);
+        const bestOdds = parseReasonOdds(sorted[0].reason);
+        const derivedProb = bestProb > 0 ? bestProb : (Number.isFinite(bestOdds) && bestOdds > 0 ? (100 / bestOdds) : 0);
+        if (derivedProb > 0) {
+          topPicks.push({ ...sorted[0], _derivedProb: derivedProb });
+        }
       }
     }
     const multiPairs = [];
     for (let i = 0; i < topPicks.length && multiPairs.length < 8; i++) {
       for (let j = i + 1; j < topPicks.length && multiPairs.length < 8; j++) {
         const a = topPicks[i], b = topPicks[j];
-        const pA = Number(a.aiWinProb), pB = Number(b.aiWinProb);
+        const pA = a._derivedProb, pB = b._derivedProb;
         const joint = Math.max(0, Math.min(100, pA * pB / 100));
+        const oA = parseReasonOdds(a.reason);
+        const oB = parseReasonOdds(b.reason);
         multiPairs.push({
           meeting: a.meeting, race: a.race, runnerA: a.selection,
           meetingB: b.meeting, raceB: b.race, runnerB: b.selection,
           winA: Math.round(pA * 10) / 10, winB: Math.round(pB * 10) / 10,
+          oddsA: Number.isFinite(oA) ? Math.round(oA * 100) / 100 : null,
+          oddsB: Number.isFinite(oB) ? Math.round(oB * 100) / 100 : null,
           jointLikelihood: Math.round(joint * 10) / 10,
           method: 'cross-race≈pA*pB/100'
         });
@@ -3397,7 +3439,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     question,
     races: hasDraggedSelections ? liveRaces.filter(r => scopedSelections.some(s => String(r.meeting||'').trim() === s.meeting && String(r.race_number || r.race || '').trim() === s.race)) : venueScopedRaces,
     meetingProfiles: loadMeetingProfiles('today'),
-    maxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
+    maxLength: (isRaceAnalysis || isMultiRequest) ? modelProfile.contextRace : modelProfile.contextGeneral,
     venueNote
   });
 
@@ -3432,7 +3474,17 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
   } else if (isMultiRequest) {
     messages.push({
       role: 'system',
-      content: 'Multi bet construction: the user wants a multi/H2H bet built from live races. Pick legs ONLY from the Suggested bets listed in the Context Summary (these are already filtered to live races). For each leg state the runner, meeting, race, odds, and win probability EXACTLY as they appear in context. Compute the combined multi odds by multiplying individual leg odds and the joint win likelihood by multiplying individual win probabilities. If the Context Summary includes Joint likelihoods, use those figures. Do NOT invent odds, probabilities, or confidence percentages that are not in context — write "n/a" if missing.'
+      content: `Multi bet construction: the user wants a multi/parlay/double/treble built from live races.
+
+Step-by-step:
+1. Pick legs ONLY from the Suggested bets in the Context Summary (already filtered to live races). Use the highest-probability runner from each different race as a leg.
+2. For each leg, state: runner name, meeting, race number, odds, and win probability EXACTLY as they appear in context.
+3. Combined multi odds = multiply each leg's decimal odds together (e.g. $3.00 × $4.50 = $13.50).
+4. Joint win likelihood = multiply each leg's win probability / 100 (e.g. 25% × 20% / 100 = 5.0%).
+5. If the Context Summary includes pre-computed "Joint likelihoods", use those figures directly.
+6. Explain the value: is the multi paying more or less than the joint likelihood implies? (multi odds vs 100/jointPct).
+7. State the risk: if any single leg fails, the whole multi fails. Note which leg is weakest.
+8. Do NOT invent odds, probabilities, or confidence percentages not in context — write "n/a" if missing.`
     });
   }
   if (customInstructions) {
@@ -3458,8 +3510,8 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
 
   messages.push({ role: 'user', content: `Latest user question (answer this): ${question}\n\nContext Summary:\n${contextSummary}` });
 
-  const temperature = isRaceAnalysis ? modelProfile.temperatureRace : modelProfile.temperatureGeneral;
-  const maxTokens = isRaceAnalysis ? modelProfile.maxTokensRace : modelProfile.maxTokensGeneral;
+  const temperature = (isRaceAnalysis || isMultiRequest) ? modelProfile.temperatureRace : modelProfile.temperatureGeneral;
+  const maxTokens = (isRaceAnalysis || isMultiRequest) ? modelProfile.maxTokensRace : modelProfile.maxTokensGeneral;
   const fakeAiMode = String(process.env.BETMAN_FAKE_AI || '').toLowerCase() === 'true';
   if (fakeAiMode) {
     const placeholder = `[fake-ai:${effectiveModel}] ${question}`;
@@ -3468,7 +3520,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
       requestedModel: requestedModel || null,
       modelUsed: effectiveModel,
       modelAdjusted: !!requestedModel && requestedModel !== effectiveModel,
-      contextMaxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
+      contextMaxLength: (isRaceAnalysis || isMultiRequest) ? modelProfile.contextRace : modelProfile.contextGeneral,
       historyTurnsUsed: modelProfile.historyTurns,
       historyCharsUsed: modelProfile.historyChars
     };
@@ -3698,7 +3750,7 @@ async function buildSelectionAiAnswer(question, clientContext = {}, tenantId = '
     requestedModel: requestedModel || null,
     modelUsed: effectiveModel,
     modelAdjusted: !!requestedModel && requestedModel !== effectiveModel,
-    contextMaxLength: isRaceAnalysis ? modelProfile.contextRace : modelProfile.contextGeneral,
+    contextMaxLength: (isRaceAnalysis || isMultiRequest) ? modelProfile.contextRace : modelProfile.contextGeneral,
     historyTurnsUsed: modelProfile.historyTurns,
     historyCharsUsed: modelProfile.historyChars
   };
@@ -4711,7 +4763,7 @@ if (url.pathname === '/api/ask-selection') {
     }
 
     const selectionCount = Number(payload.selectionCount || 0);
-    const asksMulti = q.includes('multi') || q.includes('same race') || q.includes('same-race') || q.includes('h2h') || q.includes('head to head');
+    const asksMulti = q.includes('multi') || q.includes('same race') || q.includes('same-race') || q.includes('h2h') || q.includes('head to head') || q.includes('parlay') || q.includes('double') || q.includes('treble') || q.includes('accumulator') || q.includes('acca') || q.includes('combo') || /\d[\s-]?leg/i.test(q);
     const hasMode = q.includes('same race') || q.includes('same-race') || q.includes('h2h') || q.includes('head to head');
     const selections = Array.isArray(payload.selections) ? payload.selections : [];
     const uniqueRaces = new Set(
