@@ -176,4 +176,25 @@ assert(!a8.includes('Global Jewel'), 'Finished race R1 pick (Global Jewel) shoul
 assert(!a8.includes('Momento'), 'Finished race R4 pick (Momento) should not appear in answer');
 assert(a8.includes('Open Horse'), 'Live race R6 pick (Open Horse) should appear in answer');
 
+// Help command tests
+const helpAnswer = buildSelectionFactAnswer('help', {}, TENANT_ID);
+assert(helpAnswer.includes('BETMAN AI Chat'), 'help should show BETMAN AI Chat header');
+assert(helpAnswer.includes('Single runner'), 'help should mention single runner queries');
+assert(helpAnswer.includes('Runner vs runner'), 'help should mention runner comparison');
+assert(helpAnswer.includes('Multi'), 'help should mention multi/parlay');
+assert(helpAnswer.includes('Tips'), 'help should include tips section');
+
+const helpQuestion = buildSelectionFactAnswer('help?', {}, TENANT_ID);
+assert(helpQuestion.includes('BETMAN AI Chat'), '"help?" should trigger help');
+
+const helpAlternate = buildSelectionFactAnswer('what can I ask', {}, TENANT_ID);
+assert(helpAlternate.includes('BETMAN AI Chat'), '"what can I ask" should trigger help');
+
+const helpUsage = buildSelectionFactAnswer('how do i use this', {}, TENANT_ID);
+assert(helpUsage.includes('BETMAN AI Chat'), '"how do i use this" should trigger help');
+
+// Non-help queries should NOT trigger help
+const notHelp = buildSelectionFactAnswer('help me pick a winner', {}, TENANT_ID);
+assert(!notHelp.includes('BETMAN AI Chat'), '"help me pick" should NOT trigger help screen');
+
 console.log('ai_chat scenarios tests passed');
