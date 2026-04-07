@@ -12,7 +12,7 @@
       <div class="topbar-left">
         <div class="brand" style="display:flex;align-items:center;gap:10px">
           <img src="assets/logo.png" alt="Betman" class="brand-logo" />
-          <span class="brand-tag betman-green">Racing Signal Ops</span>
+          <span class="brand-tag betman-green"><em>Signal # Racing Ops</em></span>
         </div>
         <div class="top-status-grid">
           <div class="status-pill" id="apiStatusPublic">API Status —</div>
@@ -365,39 +365,45 @@
               </div>
             </div>
             <div id="perfLatestSnapshotTable" class="table"></div>
-            <div class="perf-block-title" data-roi-only>Returns</div>
-            <div class="perf-hint" data-roi-only>ROI = (sum of bet profits ÷ total stake). Rec odds, unit stake. Race wins don’t change ROI; only bet results do.</div>
+            <div class="perf-separation perf-separation-base" data-roi-only>
+              <div class="perf-block-title">Base Returns (Win / Odds / EW / Long)</div>
+              <div class="perf-hint">Base ROI excludes exotics. ROI = sum of base bet profits ÷ base stake. Race wins do not change ROI; only settled bet results do.</div>
+              <div class="perf-badge perf-badge-base">CORE STRATEGY RETURNS</div>
+            </div>
             <div class="perf-kpis perf-kpis-secondary" data-roi-only>
               <div class="perf-card">
                 <div class="label">ROI (Tote)</div>
                 <div id="perfRoiTote" class="value">—</div>
               </div>
               <div class="perf-card">
-                <div class="label">ROI (Rec)</div>
+                <div class="label">Base ROI (Rec)</div>
                 <div id="perfRoiRec" class="value">—</div>
               </div>
               <div class="perf-card">
-                <div class="label">ROI (Fixed)</div>
+                <div class="label">Base ROI (Fixed)</div>
                 <div id="perfRoiFixed" class="value">—</div>
               </div>
               <div class="perf-card">
-                <div class="label">ROI (SP)</div>
+                <div class="label">Base ROI (SP)</div>
                 <div id="perfRoiSp" class="value">—</div>
               </div>
               <div class="perf-card">
-                <div class="label">ROI (EW)</div>
+                <div class="label">Base ROI (EW)</div>
                 <div id="perfRoiEw" class="value">—</div>
               </div>
             </div>
-            <div class="perf-block-title">Exotics</div>
-            <div class="perf-hint">Exotics are excluded from main ROI. Hit rate shown until payouts are captured.</div>
-            <div class="perf-kpis perf-kpis-secondary">
+            <div class="perf-separation perf-separation-exotic">
+              <div class="perf-block-title">Exotics (Separate From Base ROI)</div>
+              <div class="perf-hint">Exotic performance is shown separately and is not included in Base ROI. Review exotic hit rate and exotic ROI independently.</div>
+              <div class="perf-badge perf-badge-exotic">SEPARATE EXOTIC SYSTEM — NOT INCLUDED IN BASE ROI</div>
+            </div>
+            <div class="perf-kpis perf-kpis-secondary perf-kpis-exotic">
               <div class="perf-card">
                 <div class="label">Exotic Hit Rate</div>
                 <div id="perfExoticHit" class="value">—</div>
               </div>
               <div class="perf-card" data-roi-only>
-                <div class="label">Exotic ROI</div>
+                <div class="label">Exotic ROI (Separate)</div>
                 <div id="perfExoticRoi" class="value">—</div>
               </div>
             </div>
@@ -410,7 +416,7 @@
             <div id="perfSummary" class="table"></div>
           </div>
           <div class="perf-section win">
-            <h4>30 Day Best BETMAN Strategy (Win / Odds Runner / EW)</h4>
+            <h4>30 Day Best Base Strategy (Win / Odds Runner / EW)</h4>
             <div id="perfBestStrategy" class="table"></div>
           </div>
           <div class="perf-section win">

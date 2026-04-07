@@ -14,7 +14,7 @@ TENANTS_DIR = os.path.join(MEMORY_DIR, 'tenants')
 MIN_BETS_PER_DAY = int(os.environ.get('BETMAN_MIN_DAY_BETS', '0'))
 MIN_ROI_STAKE_PER_DAY = float(os.environ.get('BETMAN_MIN_DAY_STAKE', '0'))
 MIN_ROI_COVERAGE = float(os.environ.get('BETMAN_MIN_DAY_ROI_COVERAGE', '0'))
-RECENT_DAYS = int(os.environ.get('BETMAN_RECENT_DAYS', '5'))
+RECENT_DAYS = int(os.environ.get('BETMAN_RECENT_DAYS', '30'))
 
 
 def parse_date(value):
@@ -479,10 +479,8 @@ def evaluate_bets(bets):
         total_stake = d.get('total_stake', total)
         roi_stake_base = d.get('roi_stake', total_stake)
         exotic_roi_stake = d.get('exotic_roi_stake', 0)
-        roi_stake_total = roi_stake_base + exotic_roi_stake
-        roi_rec_profit_total = d['roi_rec_profit'] + d.get('exotic_roi_profit', 0)
         roi_rec_base = (d['roi_rec_profit'] / roi_stake_base) if roi_stake_base else None
-        roi_rec = (roi_rec_profit_total / roi_stake_total) if roi_stake_total else None
+        roi_rec = roi_rec_base
         roi_sp = None
         roi_tote = None
         roi_ew = None
@@ -554,7 +552,7 @@ def evaluate_bets(bets):
         out[date] = {
             'total_bets': total,
             'total_stake': total_stake,
-            'roi_stake': roi_stake_total,
+            'roi_stake': roi_stake_base,
             'roi_stake_base': roi_stake_base,
             'win_bets': win_bets,
             'wins': wins,
@@ -642,7 +640,7 @@ def group_periods(daily, mode):
         g['races_played'] += d.get('races_played', d.get('races_run', 0))
         g['races_won'] += d.get('races_won', 0)
         if isinstance(d['roi_rec'], (int, float)):
-            g['roi_rec_profit'] += d['roi_rec'] * (d.get('roi_stake', d.get('total_stake', d.get('total_bets', 0))) or 0)
+            g['roi_rec_profit'] += d['roi_rec'] * (d.get('roi_stake_base', d.get('roi_stake', d.get('total_stake', d.get('total_bets', 0)))) or 0)
         if isinstance(d['exotic_hit_rate'], (int, float)):
             g['exotic_hits'] += d['exotic_hit_rate'] * (d.get('exotic_bets') or 0)
         g['exotic_bets'] += d.get('exotic_bets') or 0
@@ -685,8 +683,56 @@ def write_outputs(base_dir, daily, weekly, monthly, settled_bets=None):
         json.dump(weekly, f, indent=2)
     with open(os.path.join(base_dir, 'success_monthly.json'), 'w', encoding='utf-8') as f:
         json.dump(monthly, f, indent=2)
-    with open(os.path.join(base_dir, 'settled_bets.json'), 'w', encoding='utf-8') as f:
-        json.dump(settled_bets or [], f, indent=2)
+
+    settled_path = os.path.join(base_dir, 'settled_bets.json')
+    existing_settled = []
+    if os.path.exists(settled_path):
+        try:
+            with open(settled_path, 'r', encoding='utf-8') as f:
+                raw_existing = json.load(f)
+                if isinstance(raw_existing, list):
+                    existing_settled = raw_existing
+        except Exception:
+            existing_settled = []
+
+    retention_cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+
+    def row_ts(row):
+        raw = row.get('settled_at') or row.get('date') or row.get('tracked_at') or row.get('trackedAt')
+        if not raw:
+            return None
+        try:
+            if isinstance(raw, str) and len(raw) == 10 and raw[4] == '-' and raw[7] == '-':
+                return datetime.strptime(raw, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+            return datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+        except Exception:
+            return None
+
+    def key_for(row):
+        return '|'.join([
+            str(row.get('date') or '')[:10],
+            str(row.get('meeting') or '').strip().lower(),
+            str(row.get('race') or '').replace('R','').strip(),
+            str(row.get('selection') or '').strip().lower(),
+            str(row.get('type') or row.get('betType') or '').strip().lower(),
+        ])
+
+    merged = {}
+    for row in existing_settled:
+        ts = row_ts(row)
+        if ts and ts >= retention_cutoff:
+            merged[key_for(row)] = row
+    for row in (settled_bets or []):
+        ts = row_ts(row)
+        if ts and ts >= retention_cutoff:
+            merged[key_for(row)] = row
+
+    merged_rows = sorted(
+        merged.values(),
+        key=lambda r: (str(r.get('date') or r.get('settled_at') or ''), str(r.get('meeting') or ''), str(r.get('race') or ''), str(r.get('selection') or ''))
+    )
+    with open(settled_path, 'w', encoding='utf-8') as f:
+        json.dump(merged_rows, f, indent=2)
 
 
 def sync_to_db(tenant_id):

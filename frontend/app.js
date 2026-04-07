@@ -544,6 +544,8 @@ function detectClientPlatform(){
 let racesCache = [];
 let selectedRace = null;
 let selectedRaceKey = null;
+let raceLookupByKey = new Map();
+let raceLookupByIdentity = new Map();
 
 let confidenceSignalThreshold = 40;
 let confidenceBaseStakeUnit = 1;
@@ -3425,6 +3427,43 @@ function refreshMeetingOptions(allRows, extraMeetings=[], fullRows=null){
 }
 
 
+function setRaceLookupIndexes(rows = []){
+  const byKey = new Map();
+  const byIdentity = new Map();
+  (rows || []).forEach(race => {
+    if (!race) return;
+    const raceKey = String(race.key || '').trim();
+    if (raceKey) byKey.set(raceKey, race);
+    const meetingKey = normalizeMeetingKey(race.meeting);
+    const raceNumber = normalizeRaceNumberValue(race.race_number || race.race);
+    if (!meetingKey || !raceNumber) return;
+    const countryKey = normalizeCountryKey(race.country);
+    byIdentity.set(`${meetingKey}|${raceNumber}|${countryKey}`, race);
+    if (countryKey) byIdentity.set(`${meetingKey}|${raceNumber}|`, race);
+  });
+  raceLookupByKey = byKey;
+  raceLookupByIdentity = byIdentity;
+}
+
+function getRaceFromCollection(collection, target = {}){
+  if (!Array.isArray(collection) || !collection.length || !target) return null;
+  const targetKey = String(target.key || '').trim();
+  if (targetKey) {
+    const byKeyHit = collection.find(r => String(r?.key || '').trim() === targetKey);
+    if (byKeyHit) return byKeyHit;
+  }
+  return collection.find(r => raceIdentityMatches(r, target)) || null;
+}
+
+function updateSelectedRaceCard(){
+  const scroller = $('racesScroller');
+  if (!scroller) return;
+  const selectedKey = String(selectedRaceKey || '').trim();
+  scroller.querySelectorAll('.race-card').forEach(card => {
+    card.classList.toggle('selected', !!selectedKey && String(card.dataset.key || '').trim() === selectedKey);
+  });
+}
+
 function applyScopedRaces(allRaces){
   const cleanRaces = (allRaces || []).slice();
   const upcomingCutoff = Date.now() - 5 * 60 * 1000;
@@ -3470,6 +3509,7 @@ function applyScopedRaces(allRaces){
   const statusExtras = currentStatusMeetings();
   refreshMeetingOptions(byCountry, statusExtras, cleanRaces);
   racesCache = byCountry;
+  setRaceLookupIndexes(racesCache);
   strategyRaceModelCache.clear();
   renderMeetingList(racesCache);
   return racesCache;
@@ -3652,12 +3692,12 @@ async function loadAllRacesUnfiltered(){
 async function findRaceForButton(meeting, raceNum, country = ''){
   const target = { meeting, raceNumber: raceNum, country };
   if (!racesCache.length) await loadRaces();
-  let race = racesCache.find(r => raceIdentityMatches(r, target));
+  let race = getRaceFromCache(meeting, raceNum, country);
   if (race) return race;
 
   // fallback: the card may be from another country than current filter
   const all = await loadAllRacesUnfiltered();
-  race = all.find(r => raceIdentityMatches(r, target));
+  race = getRaceFromCollection(all, target);
   return race || null;
 }
 
@@ -6078,12 +6118,13 @@ function formatRaceCountdown(target){
 
 function lookupRace(meeting, raceNumber, country = ''){
   const target = { meeting, raceNumber, country };
-  const finder = collection => (collection || []).find(r => raceIdentityMatches(r, target)) || null;
-  return finder(racesCache) || finder(lastRacesSnapshot) || null;
+  return getRaceFromCache(target.meeting, target.raceNumber, target.country)
+    || getRaceFromCollection(lastRacesSnapshot, target)
+    || null;
 }
 
 function buildJumpCell(meeting, raceNumber, fallback){
-  const race = (racesCache || []).find(x => String(x.meeting || '').trim().toLowerCase() === String(meeting || '').trim().toLowerCase() && String(x.race_number || '') === String(raceNumber || '').replace(/^R/i,'').trim());
+  const race = getRaceFromCache(meeting, raceNumber);
   const raw = race?.advertised_start ?? race?.start_time_nz;
   if (!raw) {
     const missing = fallback ? `Jumps in ${fallback}` : 'Jumps in —';
@@ -8069,10 +8110,14 @@ function renderPerformanceSummary(daily){
     </table>
     <div class="perf-summary-meta">
       <div>Bet Mix — Win: <b>${fmtPct(winBetPct)}</b> · Odds: <b>${fmtPct(oddsBetPct)}</b> · EW: <b>${fmtPct(ewBetPct)}</b></div>
-      <div>ROI Line — Rec: <b>${fmtRoi(roiRec)}</b> · SP: <b>${fmtRoi(roiSp)}</b> · Tote: <b>${fmtRoiZero(roiTote)}</b></div>
+      <div>Base ROI Line — Rec: <b>${fmtRoi(roiRec)}</b> · SP: <b>${fmtRoi(roiSp)}</b> · Tote: <b>${fmtRoiZero(roiTote)}</b></div>
     </div>
     <div class="perf-summary-meta">
-      <div>Net Rec P/L: <b>${fmtUnits(agg.roi_rec_profit)}</b></div>
+      <div>Base Rec P/L: <b>${fmtUnits(agg.roi_rec_profit)}</b></div>
+      <div>Exotic P/L: <b>${fmtUnits(agg.exotic_profit)}</b></div>
+      <div>Combined P/L: <b>${fmtUnits((agg.roi_rec_profit || 0) + (agg.exotic_profit || 0))}</b></div>
+    </div>
+    <div class="perf-summary-meta">
       <div>Avg Bets/Day: <b>${Number.isFinite(avgBets) ? avgBets.toFixed(1) : '—'}</b></div>
       <div>Win Hits: <b>${agg.wins}</b></div>
     </div>`;
@@ -8193,7 +8238,7 @@ function renderBestStrategy(daily){
   }
 
   const netRec = best && Number.isFinite(best.roiRec) ? (best.roiRec * best.bets) : null;
-  const subtitle = showRoi ? '⭐ marks best by Rec return' : '⭐ marks best by win rate';
+  const subtitle = showRoi ? '⭐ marks best by base Rec return. Exotics are excluded from strategy ranking.' : '⭐ marks best by win rate';
   el.innerHTML = `
     <table class="perf-table">
       <thead>
@@ -8208,8 +8253,8 @@ function renderBestStrategy(daily){
     </table>
     <div class="perf-summary-meta">${subtitle}</div>
     ${showRoi && best ? `<div class="perf-summary-meta">
-      <div>Net Rec P/L: <b>${fmtUnits(netRec)}</b></div>
-      <div>Avg ROI/Bet: <b>${fmtRoi(best.roiRec)}</b></div>
+      <div>Base Rec P/L: <b>${fmtUnits(netRec)}</b></div>
+      <div>Avg Base ROI/Bet: <b>${fmtRoi(best.roiRec)}</b></div>
     </div>` : ''}`;
 }
 
@@ -9353,14 +9398,16 @@ $('pickAiMulti4Btn')?.addEventListener('click', async ()=> openAIMultiPreview(4)
 
 async function selectRace(key, fallbackMeeting = null, fallbackRace = null){
   if (!racesCache.length) await loadRaces();
-  await loadTrackedBetsCache();
-  let race = key ? racesCache.find(r=>r.key === key) : null;
+  if (!trackedBetsCacheLoadedAt) {
+    loadTrackedBetsCache().catch(() => null);
+  }
+  let race = key ? getRaceFromCache(fallbackMeeting, fallbackRace, '', key) : null;
   if (!race && fallbackMeeting) {
     race = getRaceFromCache(fallbackMeeting, fallbackRace);
   }
   if (!race && (key || fallbackMeeting)) {
     const all = await loadAllRacesUnfiltered();
-    race = (all || []).find(r => raceIdentityMatches(r, { key, meeting: fallbackMeeting, raceNumber: fallbackRace }));
+    race = getRaceFromCollection(all, { key, meeting: fallbackMeeting, raceNumber: fallbackRace });
   }
   if (!race) return;
   const cutoff = Date.now() - 5 * 60 * 1000;
@@ -9378,7 +9425,7 @@ async function selectRace(key, fallbackMeeting = null, fallbackRace = null){
     country: race.country || ''
   });
 
-  const resolvedRace = (racesCache || []).find(r => raceIdentityMatches(r, race))
+  const resolvedRace = getRaceFromCache(race.meeting, race.race_number || race.race, race.country || '', race.key)
     || (fallbackMeeting ? getRaceFromCache(fallbackMeeting, fallbackRace, race.country || '') : null)
     || race;
 
@@ -9412,7 +9459,7 @@ async function selectRace(key, fallbackMeeting = null, fallbackRace = null){
   clearAiAnswerPanel();
   renderCachedAiAnalysisIfPresent(selectedRace);
   refreshAiAnalyseButtonState();
-  renderRaces(racesCache);
+  updateSelectedRaceCard();
   renderInteresting(latestInterestingRows || []);
   renderMarketMovers(latestMarketMovers || []);
 }
@@ -9437,6 +9484,7 @@ function refreshSelectedRaceAnalysis(){
   if (!renderCachedAiAnalysisIfPresent(selectedRace)) {
     clearAiAnswerPanel();
   }
+  updateSelectedRaceCard();
 }
 
 
@@ -9767,13 +9815,15 @@ async function alignSelectionUniverse(target = {}){
   }
   if (countryChanged || meetingChanged) persistMeetingLock();
 
-  const hasRaceInCache = (racesCache || []).some(r => raceIdentityMatches(r, target));
-  if (!racesCache.length || countryChanged || meetingChanged || !hasRaceInCache) {
+  const targetRaceNumber = target.race_number || target.race || target.raceNumber;
+  const hasRaceInCache = !!getRaceFromCache(target.meeting, targetRaceNumber, target.country, target.key);
+  if (!racesCache.length || countryChanged || !hasRaceInCache) {
     await loadRaces();
   }
 
   if (targetMeeting) {
-    const canonicalMeeting = (racesCache || []).find(r => normalizeMeetingKey(r.meeting) === normalizeMeetingKey(targetMeeting))?.meeting;
+    const canonicalMeeting = getRaceFromCache(target.meeting, targetRaceNumber, target.country, target.key)?.meeting
+      || (racesCache || []).find(r => normalizeMeetingKey(r.meeting) === normalizeMeetingKey(targetMeeting))?.meeting;
     const resolvedMeeting = canonicalMeeting || selectedMeeting || targetMeeting;
     selectedMeeting = resolvedMeeting;
     const meetingSel = $('meetingSelect');
@@ -9865,10 +9915,16 @@ function buildAiRaceKey(race){
   return [base, dateStamp, startStamp].filter(Boolean).join('|') || base;
 }
 
-function getRaceFromCache(meeting, raceNumber, country = ''){
-  const key = buildRaceCacheKey(meeting, raceNumber);
-  if (!key) return null;
-  return (racesCache || []).find(r => buildRaceCacheKey(r.meeting, r.race_number) === key && (!country || !r.country || normalizeCountryKey(r.country) === normalizeCountryKey(country))) || null;
+function getRaceFromCache(meeting, raceNumber, country = '', key = ''){
+  const keyText = String(key || '').trim();
+  if (keyText && raceLookupByKey.has(keyText)) return raceLookupByKey.get(keyText) || null;
+  const meetingKey = normalizeMeetingKey(meeting);
+  const raceKey = normalizeRaceNumberValue(raceNumber);
+  if (!meetingKey || !raceKey) return null;
+  const countryKey = normalizeCountryKey(country);
+  return raceLookupByIdentity.get(`${meetingKey}|${raceKey}|${countryKey}`)
+    || raceLookupByIdentity.get(`${meetingKey}|${raceKey}|`)
+    || null;
 }
 
 function findRunnerFromCache(meeting, raceNumber, runnerName){
@@ -10554,6 +10610,8 @@ function buildAIMultiPlan(race, legCount = 2){
   const raceKey = `${String(race.meeting)}|${String(race.race_number)}`;
 
   const parseWinOdds = (row) => {
+    const direct = Number(row?.odds);
+    if (Number.isFinite(direct) && direct > 0) return direct;
     const fromReason = parseOddsFromReason(row?.reason);
     if (Number.isFinite(fromReason) && fromReason > 0) return fromReason;
     const fromProb = Number(row?.aiWinProb);
@@ -10561,27 +10619,67 @@ function buildAIMultiPlan(race, legCount = 2){
     return NaN;
   };
 
-  // Leg 1: selected race top Win suggestion if available, else market favourite of selected race.
-  const leg1Suggested = upcomingWinRows.find(x => `${x.meeting}|${x.race}` === raceKey);
-  let leg1 = null;
-  if (leg1Suggested) {
-    const o = parseWinOdds(leg1Suggested);
-    leg1 = { meeting: leg1Suggested.meeting, race: leg1Suggested.race, selection: leg1Suggested.selection, odds: Number.isFinite(o) ? o : null };
-  } else {
-    const fav = (race.runners || []).filter(r => Number(r.odds) > 0).sort((a,b)=>Number(a.odds)-Number(b.odds))[0];
-    if (fav) leg1 = { meeting: race.meeting, race: race.race_number, selection: runnerLabel(fav), odds: Number(fav.odds) };
+  const buildFallbackLegFromRace = (raceRow) => {
+    const runners = Array.isArray(raceRow?.runners) ? raceRow.runners : [];
+    const ranked = runners
+      .map((r) => {
+        const odds = Number(r?.odds);
+        const modelProbRaw = Number(r?.aiWinProb ?? r?.win_p ?? r?.modelProb ?? r?.model_win_pct);
+        const modelProb = Number.isFinite(modelProbRaw) ? (modelProbRaw <= 1 ? modelProbRaw * 100 : modelProbRaw) : NaN;
+        const implied = Number.isFinite(odds) && odds > 0 ? (100 / odds) : NaN;
+        const edge = Number.isFinite(modelProb) && Number.isFinite(implied) ? (modelProb - implied) : NaN;
+        return {
+          selection: runnerLabel(r),
+          odds,
+          modelProb,
+          edge,
+        };
+      })
+      .filter((r) => r.selection && Number.isFinite(r.odds) && r.odds > 0)
+      .sort((a, b) => {
+        const edgeDiff = (Number.isFinite(b.edge) ? b.edge : -999) - (Number.isFinite(a.edge) ? a.edge : -999);
+        if (edgeDiff) return edgeDiff;
+        const modelDiff = (Number.isFinite(b.modelProb) ? b.modelProb : -999) - (Number.isFinite(a.modelProb) ? a.modelProb : -999);
+        if (modelDiff) return modelDiff;
+        return a.odds - b.odds;
+      });
+    const top = ranked[0];
+    if (!top) return null;
+    return {
+      meeting: raceRow.meeting,
+      race: raceRow.race_number || raceRow.race,
+      selection: top.selection,
+      odds: top.odds,
+      jumpsIn: raceRow.jumpsIn || raceRow.jumpTime || ''
+    };
+  };
+
+  const candidateByRace = new Map();
+  for (const row of upcomingWinRows) {
+    const odds = parseWinOdds(row);
+    if (!(Number.isFinite(odds) && odds > 0)) continue;
+    const key = `${row.meeting}|${row.race}`;
+    const existing = candidateByRace.get(key);
+    const next = { meeting: row.meeting, race: row.race, selection: row.selection, odds, jumpsIn: row.jumpsIn || '' };
+    if (!existing || odds < existing.odds) candidateByRace.set(key, next);
   }
+
+  for (const raceRow of (racesCache || [])) {
+    if (!raceRow || !selectionIsUpcoming({ jumpsIn: raceRow.jumpsIn || raceRow.jumpTime || '', jumpTime: raceRow.jumpTime })) continue;
+    const key = `${raceRow.meeting}|${raceRow.race_number || raceRow.race}`;
+    if (candidateByRace.has(key)) continue;
+    const fallback = buildFallbackLegFromRace(raceRow);
+    if (fallback) candidateByRace.set(key, fallback);
+  }
+
+  let leg1 = candidateByRace.get(raceKey) || buildFallbackLegFromRace(race);
   if (!leg1 || !(Number(leg1.odds) > 0)) return null;
 
   const usedRaces = new Set([`${leg1.meeting}|${leg1.race}`]);
   const legs = [leg1];
 
-  const candidates = upcomingWinRows
+  const candidates = Array.from(candidateByRace.values())
     .filter(x => !usedRaces.has(`${x.meeting}|${x.race}`))
-    .map(x => {
-      const o = parseWinOdds(x);
-      return { meeting: x.meeting, race: x.race, selection: x.selection, odds: Number.isFinite(o) ? o : null, jumpsIn: x.jumpsIn || '' };
-    })
     .filter(x => Number(x.odds) > 0)
     .sort((a,b) => jumpsInToMinutes(a.jumpsIn) - jumpsInToMinutes(b.jumpsIn));
 

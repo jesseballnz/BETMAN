@@ -382,9 +382,17 @@ function buildTrackedHistoryRows(principal = {}, trackedRows = [], settledRows =
     selection: row.selection,
     type: row.betType || row.type,
   })));
+  const retentionMs = 14 * 24 * 60 * 60 * 1000;
+  const cutoffMs = Date.now() - retentionMs;
+  const withinRetention = (row) => {
+    const raw = row?.settled_at || row?.settledAt || row?.tracked_at || row?.trackedAt || row?.date || null;
+    const ts = raw ? new Date(raw).getTime() : NaN;
+    return Number.isFinite(ts) && ts >= cutoffMs;
+  };
 
   return visibleSettledRows
     .filter((row) => hasTrackedHistoryLineage(row))
+    .filter((row) => withinRetention(row))
     .filter((row) => !trackedKeys.has(buildSettledBetKey(row)))
     .map((row) => ({
       id: `history:${buildSettledBetKey(row)}`,

@@ -9,6 +9,7 @@ const { createApiHandler, generateApiKey: genApiKey } = require('./betman_api');
 const { buildRaceResultIndex, resolveTrackedBet, buildVisibleSettledRows, buildTrackedHistoryRows } = require('./tracked_bet_matching');
 const { prunePulseTargetingAgainstRaces } = require('./pulse_targeting_semantics');
 const { assertRuntimeConfig } = require('./runtime_config');
+const { resolveSafePath } = require('./safe_path');
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   try { dns.setDefaultResultOrder('ipv4first'); } catch {}
@@ -374,6 +375,65 @@ function saveBakeoffAutoTuneState(tenantId = 'default', payload = {}, principal 
   return next;
 }
 
+function pickBakeoffWeightedModel(weights = []) {
+  const clean = Array.isArray(weights)
+    ? weights
+        .map((w) => ({ model: String(w?.model || '').trim(), weight: Number(w?.weight || 0) }))
+        .filter((w) => w.model && Number.isFinite(w.weight) && w.weight > 0)
+    : [];
+  if (!clean.length) return null;
+  let r = Math.random();
+  for (const entry of clean) {
+    r -= entry.weight;
+    if (r <= 0) return entry.model;
+  }
+  return clean[0]?.model || null;
+}
+
+function resolveServerAutoTuneSelection(tenantId = 'default', payload = {}) {
+  const state = loadBakeoffAutoTuneState(tenantId);
+  const requestedModel = String(payload?.model || '').trim();
+  const requestedProvider = String(payload?.provider || '').trim().toLowerCase();
+  const autoTuneMode = String(payload?.autoTuneMode || '').trim().toLowerCase();
+  const manualLock = payload?.manualLock === true || autoTuneMode === 'manual-lock';
+  if (manualLock && requestedModel) {
+    return {
+      provider: requestedProvider || inferProviderForModel(requestedModel) || resolveAiProvider(),
+      model: requestedModel,
+      source: 'manual-lock'
+    };
+  }
+  if (!state?.enabled) {
+    return {
+      provider: requestedProvider || inferProviderForModel(requestedModel) || resolveAiProvider(),
+      model: requestedModel,
+      source: requestedModel ? 'manual' : 'default'
+    };
+  }
+  if (state.useWeighted && Array.isArray(state.weights) && state.weights.length) {
+    const weightedModel = pickBakeoffWeightedModel(state.weights);
+    if (weightedModel) {
+      return {
+        provider: inferProviderForModel(weightedModel) || requestedProvider || resolveAiProvider(),
+        model: weightedModel,
+        source: 'weighted'
+      };
+    }
+  }
+  if (state.champion) {
+    return {
+      provider: inferProviderForModel(state.champion) || requestedProvider || resolveAiProvider(),
+      model: state.champion,
+      source: 'champion'
+    };
+  }
+  return {
+    provider: requestedProvider || inferProviderForModel(requestedModel) || resolveAiProvider(),
+    model: requestedModel,
+    source: requestedModel ? 'manual' : 'default'
+  };
+}
+
 function normalizeTenantId(v){
   const raw = String(v || 'default').trim();
   const clean = raw.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -696,9 +756,7 @@ function send(res, code, body, type='text/plain', req=null, extraHeaders = null)
 }
 
 function safePath(p){
-  const full = path.normalize(path.join(root, p));
-  if (!full.startsWith(root)) return null;
-  return full;
+  return resolveSafePath(root, p);
 }
 
 function appendJson(filePath, payload){
@@ -4763,6 +4821,19 @@ const server = http.createServer(async (req, res)=>{
     return res.end(fs.readFileSync(p));
   }
 
+  if (req.method === 'GET' && (url.pathname === '/why1' || url.pathname === '/why1.html')) {
+    const p = safePath('/why1.html');
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
+    return res.end(fs.readFileSync(p));
+  }
+
+  if (req.method === 'GET' && /^\/why(?:[2-9]|10)(?:\.html)?$/.test(url.pathname)) {
+    const page = url.pathname.endsWith('.html') ? url.pathname : `${url.pathname}.html`;
+    const p = safePath(page);
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
+    return res.end(fs.readFileSync(p));
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/login') {
     let body='';
     req.on('data', c=>body+=c);
@@ -5778,8 +5849,9 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
 
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
     const isRaceAnalysis = String(payload?.source || '').toLowerCase() === 'race-analysis';
-    const requestedProvider = String(payload?.provider || '').trim().toLowerCase();
-    const requestedModel = String(payload?.model || '').trim();
+    const resolvedAutoTune = resolveServerAutoTuneSelection(tenantId, payload);
+    const requestedProvider = String(resolvedAutoTune?.provider || payload?.provider || '').trim().toLowerCase();
+    const requestedModel = String(resolvedAutoTune?.model || payload?.model || '').trim();
     const raceCacheKey = AI_CACHE_ENABLED ? extractRaceCacheKeyFromPayload(payload) : null;
     let raceCacheState = null;
     if (AI_CACHE_ENABLED && raceCacheKey && isRaceAnalysis) {
@@ -5850,7 +5922,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       payload?.raceContext?.meeting || payload?.meeting || '',
       payload?.raceContext?.raceNumber || payload?.race || ''
     ) || payload?.raceContext || null;
-    const effectivePayload = inferredRaceContext
+    const effectivePayload = (inferredRaceContext
       ? Object.assign({}, payload, {
           raceContext: Object.assign({}, payload?.raceContext || {}, {
             meeting: inferredRaceContext.meeting,
@@ -5859,7 +5931,11 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
             anchorType: inferredRaceContext.anchorType || payload?.raceContext?.anchorType || 'explicit-race'
           })
         })
-      : payload;
+      : Object.assign({}, payload));
+
+    if (requestedProvider) effectivePayload.provider = requestedProvider;
+    if (requestedModel) effectivePayload.model = requestedModel;
+    if (resolvedAutoTune?.source) effectivePayload.autoTuneResolvedSource = resolvedAutoTune.source;
 
     let aiMeta = null;
     try {
@@ -5909,8 +5985,8 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
           mode: 'auth_error',
           answer: 'OpenAI is configured but the server API key is invalid. Update OPENAI_API_KEY on the BETMAN server to use OpenAI models.',
           provider: aiProvider,
-          modelRequested: String(payload?.model || '').trim() || null,
-          modelUsed: String(payload?.model || '').trim() || null,
+          modelRequested: String(effectivePayload?.model || '').trim() || null,
+          modelUsed: String(effectivePayload?.model || '').trim() || null,
           modelAdjusted: false,
           fallbackReason
         });
@@ -5921,7 +5997,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
           mode: 'model_error',
           answer: 'The selected OpenAI model is not allowed by BETMAN. Choose an allowed model from the selector.',
           provider: aiProvider,
-          modelRequested: String(payload?.model || '').trim() || null,
+          modelRequested: String(effectivePayload?.model || '').trim() || null,
           modelUsed: null,
           modelAdjusted: false,
           fallbackReason
@@ -5966,7 +6042,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         mode,
         question,
         provider: aiProvider,
-        modelRequested: aiMeta?.requestedModel || (String(payload?.model || '').trim() || null),
+        modelRequested: aiMeta?.requestedModel || (String(effectivePayload?.model || '').trim() || null),
         modelUsed: aiMeta?.modelUsed || null,
         modelAdjusted: !!aiMeta?.modelAdjusted,
         contextMaxLength: aiMeta?.contextMaxLength || null,
@@ -6002,8 +6078,8 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       mode,
       provider: aiProvider,
       openAiBillable: aiProvider === 'openai' ? !OPENAI_COMPLIMENTARY_GLOBAL : false,
-      modelRequested: aiMeta?.requestedModel || (String(payload?.model || '').trim() || null),
-      modelUsed: aiMeta?.modelUsed || String(payload?.model || '').trim() || null,
+      modelRequested: aiMeta?.requestedModel || (String(effectivePayload?.model || '').trim() || null),
+      modelUsed: aiMeta?.modelUsed || String(effectivePayload?.model || '').trim() || null,
       modelAdjusted: !!aiMeta?.modelAdjusted,
       contextMaxLength: aiMeta?.contextMaxLength ?? fallbackContextMeta,
       historyTurnsUsed: aiMeta?.historyTurnsUsed ?? fallbackTurnsMeta,
@@ -6276,7 +6352,9 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
             apiKeyCreatedAt: nowIso,
             apiKeyPreview: storedKey.keyPreview
           };
-          const adminKeys = [...(authState.adminApiKeys || [])];
+          const adminKeys = (authState.adminApiKeys || []).map((key) =>
+            key?.active !== false ? { ...key, active: false, revokedAt: key.revokedAt || nowIso } : key,
+          );
           adminKeys.push(storedKey);
           saveAuthState({ username: authState.username, password: authState.password, users: authState.users || [], adminMeta, adminApiKeys: adminKeys });
           return okJson(res, { ok: true, apiKey, createdAt: nowIso, keyPreview: storedKey.keyPreview }, 200, req, noStoreHeaders());
@@ -6285,7 +6363,9 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         const users = [...(authState.users || [])];
         const idx = users.findIndex(u => normalizeUsername(u.username) === normalizeUsername(principal?.username));
         if (idx < 0) return okJson(res, { ok: false, error: 'user_not_found' }, 404);
-        const userKeys = [...(users[idx].apiKeys || [])];
+        const userKeys = (users[idx].apiKeys || []).map((key) =>
+          key?.active !== false ? { ...key, active: false, revokedAt: key.revokedAt || nowIso } : key,
+        );
         userKeys.push(storedKey);
         users[idx] = {
           ...users[idx],
@@ -6390,9 +6470,17 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
       const isAdminUser = normalizeUsername(targetUser) === normalizeUsername(authState.username);
       if (isAdminUser) {
         if (!principal.isAdmin) return okJson(res, { ok: false, error: 'forbidden' }, 403);
-        const adminKeys = authState.adminApiKeys || [];
+        const adminKeys = (authState.adminApiKeys || []).map((key) =>
+          key?.active !== false ? { ...key, active: false, revokedAt: key.revokedAt || createdAtIso } : key,
+        );
         adminKeys.push(storedKey);
-        saveAuthState({ ...authState, adminApiKeys: adminKeys });
+        const adminMeta = {
+          ...(authState.adminMeta || {}),
+          apiKeyHash: storedKey.secretHash,
+          apiKeyCreatedAt: createdAtIso,
+          apiKeyPreview: storedKey.keyPreview,
+        };
+        saveAuthState({ ...authState, adminMeta, adminApiKeys: adminKeys });
       } else {
         const users = [...(authState.users || [])];
         const idx = users.findIndex(u => normalizeUsername(u.username) === normalizeUsername(targetUser));
@@ -6400,9 +6488,18 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
         if (!principal.isAdmin && normalizeUsername(principal.username) !== normalizeUsername(targetUser)) {
           return okJson(res, { ok: false, error: 'forbidden' }, 403);
         }
-        const userKeys = users[idx].apiKeys || [];
+        const userKeys = (users[idx].apiKeys || []).map((key) =>
+          key?.active !== false ? { ...key, active: false, revokedAt: key.revokedAt || createdAtIso } : key,
+        );
         userKeys.push(storedKey);
-        users[idx] = { ...users[idx], apiKeys: userKeys };
+        users[idx] = {
+          ...users[idx],
+          apiKeyHash: storedKey.secretHash,
+          apiKeyCreatedAt: createdAtIso,
+          apiKeyPreview: storedKey.keyPreview,
+          apiKeys: userKeys,
+          updatedAt: createdAtIso,
+        };
         saveAuthState({ ...authState, users });
       }
 
@@ -6881,30 +6978,53 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const settledPath = resolveTenantOwnedPathById(tenantId, path.join(process.cwd(), 'frontend', 'data', 'settled_bets.json'), 'settled_bets.json');
     const username = normalizeUsername(principal.username || 'unknown');
     const privateTenantScope = isPrivateTenantPrincipal(principal);
+    const normalizeUserKey = (value) => {
+      const raw = String(value || '').trim();
+      return raw.includes('@') ? raw.toLowerCase() : raw;
+    };
 
     const allTracked = Array.isArray(loadJson(trackedPath, [])) ? loadJson(trackedPath, []) : [];
     const settled = Array.isArray(loadJson(settledPath, [])) ? loadJson(settledPath, []) : [];
     const raceResultIndex = buildRaceResultIndex(settled);
-    const liveContext = buildTrackedBetLiveContext(tenantId);
+    let liveContext = { raceMap: new Map(), runnerMap: new Map(), moverMap: new Map(), suggestedMap: new Map() };
+    try {
+      liveContext = buildTrackedBetLiveContext(tenantId);
+    } catch (error) {
+      console.error('[tracked-bets] live context unavailable:', error?.message || error);
+    }
 
     if (req.method === 'GET') {
-      const visibleTracked = filterTrackedRowsForPrincipal(allTracked, principal);
-      const visibleResolved = visibleTracked
-        .map(row => resolveTrackedBet(row, settled, raceResultIndex))
-        .sort((a,b) => String(b.trackedAt || '').localeCompare(String(a.trackedAt || '')));
-      const recoveredHistory = buildTrackedHistoryRows(principal, visibleResolved, settled, raceResultIndex);
-      const mine = [...visibleResolved, ...recoveredHistory]
-        .map(row => enrichTrackedBetWithCurrentOdds(row, liveContext))
-        .sort((a,b) => String(b.settledAt || b.trackedAt || '').localeCompare(String(a.settledAt || a.trackedAt || '')));
-      if (JSON.stringify(visibleResolved) !== JSON.stringify(visibleTracked)) {
-        if (privateTenantScope) {
-          writeJson(trackedPath, visibleResolved);
-        } else {
-          const others = allTracked.filter(row => normalizeUsername(row.username || '') !== username);
-          writeJson(trackedPath, [...others, ...visibleResolved]);
+      try {
+        const visibleTracked = filterTrackedRowsForPrincipal(allTracked, principal);
+        const visibleResolved = visibleTracked
+          .map(row => resolveTrackedBet(row, settled, raceResultIndex))
+          .sort((a,b) => String(b.trackedAt || '').localeCompare(String(a.trackedAt || '')));
+        const recoveredHistory = buildTrackedHistoryRows(principal, visibleResolved, settled, raceResultIndex);
+        const mine = [...visibleResolved, ...recoveredHistory]
+          .map(row => enrichTrackedBetWithCurrentOdds(row, liveContext))
+          .sort((a,b) => String(b.settledAt || b.trackedAt || '').localeCompare(String(a.settledAt || a.trackedAt || '')));
+
+        const visibleResolvedById = new Map(visibleResolved.map(row => [String(row.id), row]));
+        const persistedTracked = allTracked.map(row => {
+          const resolved = visibleResolvedById.get(String(row.id));
+          return resolved ? { ...row, ...resolved, id: row.id, username: row.username } : row;
+        });
+
+        if (JSON.stringify(persistedTracked) !== JSON.stringify(allTracked)) {
+          if (privateTenantScope) {
+            writeJson(trackedPath, persistedTracked);
+          } else {
+            const visibleUsernames = new Set(visibleTracked.map(row => normalizeUserKey(row.username || '')));
+            const visibleIds = new Set(visibleTracked.map(row => String(row.id)));
+            const others = allTracked.filter(row => !visibleIds.has(String(row.id)) && !visibleUsernames.has(normalizeUserKey(row.username || '')));
+            writeJson(trackedPath, [...others, ...visibleResolved]);
+          }
         }
+        return okJson(res, { ok: true, trackedBets: mine }, 200, req);
+      } catch (error) {
+        console.error('[tracked-bets] GET failed:', error?.stack || error?.message || error);
+        return okJson(res, { ok: false, error: 'tracked_bets_unavailable', message: 'Tracked bets are temporarily unavailable.' }, 500, req);
       }
-      return okJson(res, { ok: true, trackedBets: mine }, 200, req);
     }
 
     if (req.method === 'POST') {
@@ -7068,7 +7188,7 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
 
 let shutdownInProgress = false;
 
-async function shutdownServer(signal = 'unknown') {
+async function shutdownServer(signal = 'unknown', exitCode = 0) {
   if (shutdownInProgress) return;
   shutdownInProgress = true;
   console.log(`[runtime] received ${signal}; starting graceful shutdown`);
@@ -7081,6 +7201,7 @@ async function shutdownServer(signal = 'unknown') {
 
   try {
     await new Promise((resolve) => {
+      if (!server.listening) return resolve();
       server.close(() => resolve());
     });
     if (pgPool) {
@@ -7092,7 +7213,7 @@ async function shutdownServer(signal = 'unknown') {
     }
     clearTimeout(forceTimer);
     console.log('[runtime] graceful shutdown complete');
-    process.exit(0);
+    process.exit(exitCode);
   } catch (err) {
     clearTimeout(forceTimer);
     console.error('[runtime] shutdown failed:', err?.message || err);
@@ -7100,14 +7221,23 @@ async function shutdownServer(signal = 'unknown') {
   }
 }
 
-process.on('SIGTERM', () => { shutdownServer('SIGTERM'); });
-process.on('SIGINT', () => { shutdownServer('SIGINT'); });
+process.on('SIGTERM', () => { shutdownServer('SIGTERM', 0); });
+process.on('SIGINT', () => { shutdownServer('SIGINT', 0); });
 process.on('unhandledRejection', (reason) => {
   console.error('[runtime] unhandledRejection', reason);
 });
 process.on('uncaughtException', (err) => {
   console.error('[runtime] uncaughtException', err);
-  shutdownServer('uncaughtException');
+  shutdownServer('uncaughtException', 1);
+});
+
+server.on('error', (err) => {
+  if (err?.code === 'EADDRINUSE') {
+    console.error(`[runtime] port ${port} already in use; assuming BETMAN is already running and exiting without restart churn`);
+    return shutdownServer('EADDRINUSE', 0);
+  }
+  console.error('[runtime] server error', err);
+  shutdownServer('server_error', 1);
 });
 
 if (require.main === module) {
@@ -7138,5 +7268,6 @@ module.exports = {
   inferTemporalRaceAtVenue,
   formatStatsCompact,
   isLiveRaceEntry,
-  FINISHED_RACE_STATUSES
+  FINISHED_RACE_STATUSES,
+  safePath
 };
