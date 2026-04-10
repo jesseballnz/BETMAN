@@ -86,6 +86,8 @@ const HTTP_BASIC_PROMPT = String(process.env.BETMAN_HTTP_BASIC_PROMPT || 'false'
 const sessions = new Map();
 const signupChallenges = new Map();
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || process.env.BETMAN_STRIPE_WEBHOOK_SECRET || '';
+const BETMAN_CONTENT_BASE_URL = String(process.env.BETMAN_CONTENT_BASE_URL || 'http://127.0.0.1:4310').replace(/\/$/, '');
+const BETMAN_CONTENT_AUDIO_ALLOWED_USER = 'test@betman.co.nz';
 let lastPollCacheTs = 0;
 let lastPollCacheKey = '';
 let lastPerformancePollTs = 0;
@@ -451,6 +453,9 @@ function tenantDataPath(tenantId, filename){
 function effectiveTenantId(principal){
   if (!principal) return 'default';
   if (principal.effectiveTenantId) return principal.effectiveTenantId;
+  const apiTenant = normalizeTenantId(principal.apiTenantId || '');
+  if (apiTenant && apiTenant !== 'default') return apiTenant;
+  if (apiTenant === 'default') return 'default';
   const base = normalizeTenantId(principal.tenantId || 'default');
   if (base !== 'default') return base;
   if (principal.isAdmin) return 'default';
@@ -1165,6 +1170,78 @@ function normalizeEmail(v){
   return String(v || '').trim().toLowerCase();
 }
 
+function canManageBetmanContentAudio(principal){
+  return normalizeUsername(principal?.username || '') === BETMAN_CONTENT_AUDIO_ALLOWED_USER;
+}
+
+async function readJsonRequestBody(req){
+  return await new Promise((resolve) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 1024 * 1024) {
+        try { req.destroy(); } catch {}
+      }
+    });
+    req.on('end', () => {
+      if (!body) return resolve({});
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        resolve(null);
+      }
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
+async function proxyBetmanContentAudio(req, res, targetPath, options = {}){
+  const principal = req.authPrincipal;
+  if (!canManageBetmanContentAudio(principal)) {
+    return okJson(res, {
+      ok: false,
+      error: 'forbidden',
+      message: `BETMAN audio control is restricted to ${BETMAN_CONTENT_AUDIO_ALLOWED_USER}`
+    }, 403, req);
+  }
+
+  try {
+    const upstream = await fetch(`${BETMAN_CONTENT_BASE_URL}${targetPath}`, {
+      method: options.method || 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+
+    let payload = null;
+    try {
+      payload = await upstream.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!upstream.ok) {
+      return okJson(res, {
+        ok: false,
+        error: 'betman_content_upstream_error',
+        status: upstream.status,
+        message: payload?.error || payload?.message || `BETMAN_Content request failed (${upstream.status})`
+      }, upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502, req);
+    }
+
+    return okJson(res, payload || { ok: true }, 200, req, noStoreHeaders());
+  } catch (err) {
+    console.error('betman_content_audio_proxy_failed', targetPath, err?.message || err);
+    return okJson(res, {
+      ok: false,
+      error: 'betman_content_unavailable',
+      message: 'BETMAN_Content audio service is unavailable'
+    }, 502, req);
+  }
+}
+
 const PROTECTED_BETMAN_USERNAMES = new Set(
   String(process.env.BETMAN_PROTECTED_ACCOUNTS || '')
     .split(',')
@@ -1317,7 +1394,14 @@ function validateCredentials(username, password){
   const apiKeyMatches = found.apiKeyHash && hashed === found.apiKeyHash;
   if (!passwordValid && !apiKeyMatches) return null;
   const role = found.role || 'user';
-  const principal = { username: found.username, role, isAdmin: role === 'admin', source: 'users', tenantId: normalizeTenantId(found.tenantId || 'default') };
+  const principal = {
+    username: found.username,
+    role,
+    isAdmin: role === 'admin',
+    source: 'users',
+    tenantId: normalizeTenantId(found.tenantId || 'default'),
+    apiTenantId: found.apiTenantId ? normalizeTenantId(found.apiTenantId) : null,
+  };
   principal.effectiveTenantId = effectiveTenantId(principal);
   return principal;
 }
@@ -1345,6 +1429,7 @@ function findPrincipalByApiKey(apiKey){
       isAdmin: role === 'admin',
       source: 'api_key',
       tenantId: normalizeTenantId(foundUser.tenantId || 'default'),
+      apiTenantId: foundUser.apiTenantId ? normalizeTenantId(foundUser.apiTenantId) : null,
       planType: foundUser.planType || 'single'
     };
     principal.effectiveTenantId = effectiveTenantId(principal);
@@ -4821,18 +4906,6 @@ const server = http.createServer(async (req, res)=>{
     return res.end(fs.readFileSync(p));
   }
 
-  if (req.method === 'GET' && (url.pathname === '/why1' || url.pathname === '/why1.html')) {
-    const p = safePath('/why1.html');
-    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
-    return res.end(fs.readFileSync(p));
-  }
-
-  if (req.method === 'GET' && /^\/why(?:[2-9]|10)(?:\.html)?$/.test(url.pathname)) {
-    const page = url.pathname.endsWith('.html') ? url.pathname : `${url.pathname}.html`;
-    const p = safePath(page);
-    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
-    return res.end(fs.readFileSync(p));
-  }
 
   if (req.method === 'POST' && url.pathname === '/api/login') {
     let body='';
@@ -5244,6 +5317,24 @@ const server = http.createServer(async (req, res)=>{
   }
 
   if (!requireAuth(req, res)) return;
+
+  if (req.method === 'GET' && url.pathname === '/api/betman-content/audio/status') {
+    return proxyBetmanContentAudio(req, res, '/api/dj/status');
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/betman-content/audio/toggle') {
+    const payload = await readJsonRequestBody(req);
+    if (payload === null) {
+      return okJson(res, { ok: false, error: 'invalid_json' }, 400, req);
+    }
+    return proxyBetmanContentAudio(req, res, '/api/dj/toggle', {
+      method: 'POST',
+      body: {
+        djName: String(payload?.djName || 'BETMAN UI').trim() || 'BETMAN UI',
+        stream: String(payload?.stream || 'upcoming').trim() || 'upcoming'
+      }
+    });
+  }
 
   // Race analysis cache endpoints (GET)
   if (req.method === 'GET' && url.pathname === '/api/race-analysis/list') {

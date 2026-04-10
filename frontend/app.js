@@ -49,6 +49,7 @@ let returnRoiChart = null;
 let analysisEdgeChart = null;
 let analysisMonteChart = null;
 let currentUserDisplayName = 'User';
+let currentAuthenticatedUser = '';
 let authStateRefreshPromise = null;
 let latestStrategyContext = { picks: [], stats: null, type: 'win', meeting: '—', aiSummaryHtml: '' };
 const STRATEGY_AI_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -4981,9 +4982,8 @@ function renderSuggested(rows){
     if (r.interesting && !inheritedInteresting.length) tagPool.push(`<span class='tag ew'>interesting</span>`);
     if (t === 'top4') tagPool.push(`<span class='tag top4'>TOP4</span>`);
     if (tier === 'bet_now') tagPool.push(`<span class='tag strong'>BET NOW</span>`);
-    else if (tier === 'queue') tagPool.push(`<span class='tag value'>QUEUE</span>`);
     else if (tier === 'watchlist') tagPool.push(`<span class='tag ew'>WATCH</span>`);
-    else tagPool.push(`<span class='tag'>BLOCKED</span>`);
+    else if (tier === 'blocked') tagPool.push(`<span class='tag'>BLOCKED</span>`);
     tagPool.push(...inheritedInteresting, ...moverTags);
     const seenTags = new Set();
     const tags = tagPool.filter(tag => {
@@ -14509,6 +14509,7 @@ async function loadAuthenticatedUser(){
     const u = String(cfg?.currentUser || '').trim();
     const first = String(cfg?.currentUserFirstName || cfg?.firstName || cfg?.profile?.firstName || '').trim();
     const last = String(cfg?.currentUserLastName || cfg?.lastName || cfg?.profile?.lastName || '').trim();
+    currentAuthenticatedUser = u.toLowerCase();
     currentUserDisplayName = [first, last].filter(Boolean).join(' ').trim() || u || 'User';
     isAdminUser = !!cfg?.isAdmin;
     pulseEligible = !!cfg?.pulseEligible;
@@ -14519,6 +14520,7 @@ async function loadAuthenticatedUser(){
   } catch {
     isAdminUser = false;
     pulseEligible = false;
+    currentAuthenticatedUser = '';
     currentUserDisplayName = 'User';
     el.textContent = 'Authenticated User —';
     apiKeyEligible = false;
@@ -14538,7 +14540,65 @@ async function loadAuthenticatedUser(){
   updateApiKeyPanel();
   if (!pulseEligible && activePage === 'pulse') setActivePage('workspace');
   if (!isAdminUser && (activePage === 'bakeoff' || activePage === 'performance')) setActivePage('workspace');
+  updateBetmanContentAudioButton();
 }
+
+async function refreshBetmanContentAudioStatus(){
+  const btn = $('betmanContentAudioBtn');
+  if (!btn || currentAuthenticatedUser !== 'test@betman.co.nz') return;
+  try {
+    const res = await fetchLocal('./api/betman-content/audio/status', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`BETMAN audio status failed (${res.status})`);
+    const out = await res.json();
+    const onAir = !!out?.dj?.onAir;
+    btn.textContent = onAir ? 'Stop BETMAN Audio' : 'Start BETMAN Audio';
+    btn.dataset.onAir = onAir ? '1' : '0';
+    btn.title = onAir ? 'Audio stream is on' : 'Audio stream is off';
+    btn.disabled = false;
+  } catch {
+    btn.textContent = 'BETMAN Audio Unavailable';
+    btn.dataset.onAir = '0';
+    btn.disabled = true;
+  }
+}
+
+function updateBetmanContentAudioButton(){
+  const btn = $('betmanContentAudioBtn');
+  if (!btn) return;
+  const allowed = currentAuthenticatedUser === 'test@betman.co.nz';
+  if (!allowed) {
+    btn.disabled = true;
+    btn.textContent = currentAuthenticatedUser
+      ? 'BETMAN Audio (test@betman.co.nz only)'
+      : 'BETMAN Audio (sign in required)';
+    btn.title = 'Audio control restricted to test@betman.co.nz';
+    return;
+  }
+  btn.disabled = false;
+  refreshBetmanContentAudioStatus();
+}
+
+async function toggleBetmanContentAudio(){
+  const btn = $('betmanContentAudioBtn');
+  if (!btn || currentAuthenticatedUser !== 'test@betman.co.nz') return;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Working…';
+  try {
+    const res = await fetchLocal('./api/betman-content/audio/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ djName: 'BETMAN UI', stream: 'upcoming' }),
+    });
+    if (!res.ok) throw new Error(`BETMAN audio toggle failed (${res.status})`);
+    await refreshBetmanContentAudioStatus();
+  } catch (err) {
+    console.error('betman_content_audio_toggle_failed', err);
+    btn.textContent = original;
+    btn.disabled = false;
+    setTimeout(() => refreshBetmanContentAudioStatus(), 1200);
+  }
+ }
 
 async function renderAuthPulseSettingsPanel(){
   const root = $('authPulseSettingsBody');
@@ -15059,6 +15119,10 @@ $('authSaveBtn')?.addEventListener('click', saveAuthFromModal);
 $('createUserBtn')?.addEventListener('click', createAuthUser);
 $('changeUserPasswordBtn')?.addEventListener('click', changeAuthUserPassword);
 $('deleteUserBtn')?.addEventListener('click', deleteAuthUser);
+$('betmanContentAudioBtn')?.addEventListener('click', ()=>{
+  toggleBetmanContentAudio();
+});
+
 $('logoutBtn')?.addEventListener('click', async ()=>{
   try { await fetchLocal('./api/logout', { cache: 'no-store' }); } catch {}
   window.location.href = `/login?logout=1&ts=${Date.now()}`;

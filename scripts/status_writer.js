@@ -956,10 +956,10 @@ const prevSnap = prevStatus?.marketOddsSnapshot || {};
 const prevSeen = prevStatus?.marketMoverSeen || {};
 const prevHistory = prevStatus?.marketOddsHistory || {};
 const prevOpening = prevStatus?.marketOddsOpening || {};
-const nextSeen = { ...prevSeen };
+const nextSeen = {};
 const nextSnap = {};
 const nextHistory = {};
-const nextOpening = { ...prevOpening };
+const nextOpening = {};
 const movers = [];
 const moverWatch = [];
 const MOVER_THRESHOLD_PCT = 1.5; // catch earlier moves
@@ -1109,6 +1109,19 @@ status.marketMoverSeen = nextSeen;
 status.marketOddsSnapshot = nextSnap;
 status.marketOddsHistory = nextHistory;
 status.marketOddsOpening = nextOpening;
+
+const statusFreshness = {
+  generatedAt: new Date().toISOString(),
+  sourceStateUpdatedAt: state?.ts || null,
+  marketMoversSnapshotCount: Object.keys(nextSnap).length,
+  marketMoversSeenCount: Object.keys(nextSeen).length,
+  marketMoversHistoryCount: Object.keys(nextHistory).length,
+  marketMoversOpeningCount: Object.keys(nextOpening).length,
+};
+status.freshness = {
+  ...(status.freshness && typeof status.freshness === 'object' ? status.freshness : {}),
+  ...statusFreshness,
+};
 
 const trackedBetsPath = isDefaultTenant ? path.join(ROOT, 'frontend', 'data', 'tracked_bets.json') : path.join(tenantDataDir, 'tracked_bets.json');
 const trackedBetsRaw = loadJson(trackedBetsPath, []);

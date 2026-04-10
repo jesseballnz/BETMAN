@@ -122,19 +122,17 @@ console.log('  ✓ generateApiKey produces unique prefixed keys');
   const req1 = { headers: { 'x-api-key': 'bm_test123' } };
   assert.strictEqual(extractApiKey(req1, url), 'bm_test123');
 
-  const url2 = new URL('http://localhost/api/v1/races?api_key=bm_query456');
-  const req2 = { headers: {} };
-  assert.strictEqual(extractApiKey(req2, url2), 'bm_query456');
+  const req2 = { headers: { authorization: 'Bearer bm_bearer456' } };
+  assert.strictEqual(extractApiKey(req2, url), 'bm_bearer456');
 
-  const req3 = { headers: { 'x-api-key': 'bm_header' } };
-  const url3 = new URL('http://localhost/api/v1/races?api_key=bm_query');
-  assert.strictEqual(extractApiKey(req3, url3), 'bm_header');
+  const req3 = { headers: { 'x-api-key': 'bm_header', authorization: 'Bearer bm_bearer' } };
+  assert.strictEqual(extractApiKey(req3, url), 'bm_header');
 
   const req4 = { headers: {} };
-  const url4 = new URL('http://localhost/api/v1/races');
+  const url4 = new URL('http://localhost/api/v1/races?api_key=bm_query_ignored');
   assert.strictEqual(extractApiKey(req4, url4), null);
 }
-console.log('  ✓ extractApiKey handles header, query param, precedence, and missing key');
+console.log('  ✓ extractApiKey handles header, bearer token, precedence, and ignores query params');
 
 // 3. Rate limiting
 {
@@ -635,6 +633,52 @@ asyncTests.push((async () => {
   console.log('  ✓ interesting-runners endpoint excludes finished races');
 })());
 
+// 21d. apiTenantId can grant a private service account access to the shared default feed
+asyncTests.push((async () => {
+  const testKey = generateApiKey();
+  const handler = makeHandler({
+    getAuthState: () => ({
+      username: 'admin', password: 'pass', adminApiKeys: [], users: [{
+        username: 'BETMAN_Content', password: 'pw', tenantId: 'acct_betman_content', apiTenantId: 'default', planType: 'single',
+        apiKeys: [buildKeyRecord(testKey, { label: 'Content', active: true })]
+      }]
+    }),
+    loadJson: (p, f) => {
+      if (p.includes(path.join('frontend', 'data', 'status.json'))) {
+        return {
+          updatedAt: '2026-04-09T00:00:00Z',
+          suggestedBets: [{ meeting: 'Ellerslie', race: '4', selection: 'Shared Feed Runner', type: 'Win' }],
+          interestingRunners: [{ meeting: 'Ellerslie', race: '5', runner: 'Shared Watch Runner', odds: 9 }],
+        };
+      }
+      if (p.includes(path.join('frontend', 'data', 'races.json'))) {
+        return { races: [{ meeting: 'Ellerslie', race_number: '5', race_status: 'Open' }] };
+      }
+      if (p.includes(path.join('memory', 'tenants', 'acct_betman_content'))) {
+        throw new Error(`private tenant file should not be read: ${p}`);
+      }
+      return f;
+    },
+    resolveTenantPathById: (tenantId, defaultPath, filename) => defaultPath,
+  });
+
+  const suggestedReq = fakeReq('GET', '/api/v1/suggested-bets', { 'x-api-key': testKey });
+  const suggestedRes = fakeRes();
+  await handler(suggestedReq, suggestedRes, new URL('http://localhost/api/v1/suggested-bets'));
+  assert.strictEqual(suggestedRes.statusCode, 200);
+  const suggestedParsed = JSON.parse(suggestedRes.body);
+  assert.strictEqual(suggestedParsed.count, 1);
+  assert.strictEqual(suggestedParsed.all[0].selection, 'Shared Feed Runner');
+
+  const runnersReq = fakeReq('GET', '/api/v1/interesting-runners', { 'x-api-key': testKey });
+  const runnersRes = fakeRes();
+  await handler(runnersReq, runnersRes, new URL('http://localhost/api/v1/interesting-runners'));
+  assert.strictEqual(runnersRes.statusCode, 200);
+  const runnersParsed = JSON.parse(runnersRes.body);
+  assert.deepStrictEqual(runnersParsed.interestingRunners.map((row) => row.runner), ['Shared Watch Runner']);
+  console.log('  ✓ apiTenantId lets a private service account read the shared default feed');
+})());
+
 // 21b. tracked-bets endpoint settles losing tracked win bets from winner-only race results
 asyncTests.push((async () => {
   const testKey = generateApiKey();
@@ -769,7 +813,39 @@ asyncTests.push((async () => {
   console.log('  ✓ tracked-bets POST duplicate scope respects principal visibility');
 })());
 
-// 22d. api-key auth accepts plus-addressed email users
+// 22d. tracked-bets POST converts write failures into a 500 JSON response instead of hanging
+asyncTests.push((async () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'betman-api-tracked-write-'));
+  const blockingPath = path.join(tmpRoot, 'memory', 'tenants', 'acct_blocked');
+  fs.mkdirSync(path.dirname(blockingPath), { recursive: true });
+  fs.writeFileSync(blockingPath, 'not-a-directory');
+
+  const handler = makeHandler({
+    rootDir: tmpRoot,
+    loadJson: (p, f) => {
+      if (p.includes('tracked_bets.json')) return [];
+      if (p.includes('settled_bets.json')) return [];
+      return f;
+    },
+    getSessionPrincipal: () => ({ username: 'blocked@test.com', tenantId: 'acct_blocked', effectiveTenantId: 'acct_blocked' }),
+  });
+  const req = fakePostReq('/api/v1/tracked-bets', {
+    meeting: 'Newcastle',
+    race: '1',
+    selection: 'Cavalry',
+    betType: 'Win',
+    odds: 4.4,
+  });
+  const res = fakeRes();
+  const url = new URL('http://localhost/api/v1/tracked-bets');
+  await handler(req, res, url);
+  await new Promise(r => setTimeout(r, 25));
+  assert.strictEqual(res.statusCode, 500);
+  assert.strictEqual(JSON.parse(res.body).error, 'tracked_bets_write_failed');
+  console.log('  ✓ tracked-bets POST returns 500 JSON on write failure');
+})());
+
+// 22e. api-key auth accepts plus-addressed email users
 asyncTests.push((async () => {
   const plusKey = generateApiKey();
   const handler = makeHandler({
@@ -838,6 +914,44 @@ asyncTests.push((async () => {
   assert.strictEqual(savedState.users[0].apiKeys.length, 1);
   assert.strictEqual(savedState.users[0].apiKeys[0].label, 'Lowercase target');
   console.log('  ✓ admin key creation matches mixed-case target emails');
+})());
+
+// 22g. /api/v1/keys rotation rejects the old key and accepts the new key
+asyncTests.push((async () => {
+  const originalKey = generateApiKey();
+  let state = {
+    username: 'admin',
+    password: 'pass',
+    users: [],
+    adminApiKeys: [buildKeyRecord(originalKey, { label: 'Original admin key', active: true })]
+  };
+  const handler = makeHandler({
+    getAuthState: () => state,
+    saveAuthState: (next) => { state = next; }
+  });
+
+  const rotateReq = fakePostReq('/api/v1/keys', { label: 'Rotated admin key' }, { 'x-api-key': originalKey });
+  const rotateRes = fakeRes();
+  await handler(rotateReq, rotateRes, new URL('http://localhost/api/v1/keys'));
+  await new Promise(r => setTimeout(r, 25));
+  assert.strictEqual(rotateRes.statusCode, 201);
+  const rotated = JSON.parse(rotateRes.body);
+  assert.ok(rotated.key, 'rotation should return the new key once');
+  const newKey = rotated.key;
+  assert.notStrictEqual(newKey, originalKey, 'rotation should mint a distinct key');
+
+  const oldReq = fakeReq('GET', '/api/v1/me', { 'x-api-key': originalKey });
+  const oldRes = fakeRes();
+  await handler(oldReq, oldRes, new URL('http://localhost/api/v1/me'));
+  assert.strictEqual(oldRes.statusCode, 401);
+  assert.strictEqual(JSON.parse(oldRes.body).error, 'invalid_api_key');
+
+  const newReq = fakeReq('GET', '/api/v1/me', { 'x-api-key': newKey });
+  const newRes = fakeRes();
+  await handler(newReq, newRes, new URL('http://localhost/api/v1/me'));
+  assert.strictEqual(newRes.statusCode, 200);
+  assert.strictEqual(JSON.parse(newRes.body).user.username, 'admin');
+  console.log('  ✓ /api/v1/keys rotation invalidates the old key and accepts the new key');
 })());
 
 // 23. Models endpoint

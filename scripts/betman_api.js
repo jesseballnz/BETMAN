@@ -619,6 +619,7 @@ function createApiHandler(deps) {
         role: u.role || 'user',
         isAdmin: (u.role || 'user') === 'admin',
         tenantId: u.tenantId || 'default',
+        apiTenantId: u.apiTenantId || null,
         planType: u.planType || 'single',
         apiKeys: normalizeApiKeyList(u.apiKeys)
       }))
@@ -634,6 +635,8 @@ function createApiHandler(deps) {
             role: user.role,
             isAdmin: user.isAdmin,
             tenantId: user.tenantId,
+            apiTenantId: user.apiTenantId || null,
+            effectiveTenantId: user.apiTenantId || user.tenantId,
             planType: user.planType || (user.isAdmin ? 'admin' : 'single'),
             source: 'api_key'
           }
@@ -716,7 +719,7 @@ function createApiHandler(deps) {
   }
 
   function effectiveTenantId(principal) {
-    return normalizeTenantId(principal?.effectiveTenantId || principal?.tenantId || 'default');
+    return normalizeTenantId(principal?.effectiveTenantId || principal?.apiTenantId || principal?.tenantId || 'default');
   }
 
   function resolveTenantOwnedDataPath(tenantId = 'default', filename) {
@@ -1097,7 +1100,18 @@ function createApiHandler(deps) {
         .sort((a, b) => String(b.settledAt || b.trackedAt || '').localeCompare(String(a.settledAt || a.trackedAt || '')));
 
       if (req.method === 'GET') {
-        if (JSON.stringify(visibleTracked) !== JSON.stringify(resolved)) {
+        const trackedShapeChanged = visibleTracked.length !== resolved.length || visibleTracked.some((row, idx) => {
+          const next = resolved[idx] || {};
+          return String(row?.id || '') !== String(next?.id || '') ||
+            String(row?.meeting || '') !== String(next?.meeting || '') ||
+            String(row?.race || '') !== String(next?.race || '') ||
+            String(row?.selection || '') !== String(next?.selection || '') ||
+            String(row?.raceStatus || '') !== String(next?.raceStatus || '') ||
+            String(row?.jumpsIn || '') !== String(next?.jumpsIn || '') ||
+            Number(row?.minsToJump) !== Number(next?.minsToJump) ||
+            String(row?.raceStartTime || '') !== String(next?.raceStartTime || '');
+        });
+        if (trackedShapeChanged) {
           if (privateTenantScope) {
             fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
             fs.writeFileSync(trackedPath, JSON.stringify(resolved, null, 2));
@@ -1114,38 +1128,43 @@ function createApiHandler(deps) {
         let body = '';
         req.on('data', c => body += c);
         req.on('end', () => {
-          let payload = {};
-          try { payload = body ? JSON.parse(body) : {}; } catch {}
-          const next = {
-            id: `${Date.now()}-${Math.random().toString(36).slice(2,9)}`,
-            username: principal.username,
-            createdBy: principal.username,
-            trackedBy: principal.username,
-            meeting: payload.meeting,
-            race: String(payload.race || ''),
-            selection: payload.selection,
-            betType: payload.betType || payload.type || 'Win',
-            odds: payload.odds ?? null,
-            entryOdds: payload.entryOdds ?? payload.odds ?? null,
-            stake: payload.stake ?? null,
-            jumpsIn: payload.jumpsIn ?? null,
-            note: payload.note ?? null,
-            source: payload.source || 'manual',
-            priorityRank: Number.isFinite(Number(payload.priorityRank)) ? Number(payload.priorityRank) : null,
-            trackedAt: new Date().toISOString(),
-            status: 'active',
-            result: 'pending',
-            settledAt: null,
-            ...normalizeTrackedMultiPayload(payload),
-          };
-          if (!next.meeting || !next.race || !next.selection) return apiError(req, res, 400, 'invalid_payload', 'meeting, race, and selection are required.', rateInfo);
-          const duplicate = findTrackedDuplicate(filterTrackedRowsForPrincipal(trackedRows, principal), next);
-          if (duplicate) {
-            return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: resolveTrackedBet(duplicate, settledRows, raceResultIndex), duplicate: true }, 200, rateInfo);
+          try {
+            let payload = {};
+            try { payload = body ? JSON.parse(body) : {}; } catch {}
+            const next = {
+              id: `${Date.now()}-${Math.random().toString(36).slice(2,9)}`,
+              username: principal.username,
+              createdBy: principal.username,
+              trackedBy: principal.username,
+              meeting: payload.meeting,
+              race: String(payload.race || ''),
+              selection: payload.selection,
+              betType: payload.betType || payload.type || 'Win',
+              odds: payload.odds ?? null,
+              entryOdds: payload.entryOdds ?? payload.odds ?? null,
+              stake: payload.stake ?? null,
+              jumpsIn: payload.jumpsIn ?? null,
+              note: payload.note ?? null,
+              source: payload.source || 'manual',
+              priorityRank: Number.isFinite(Number(payload.priorityRank)) ? Number(payload.priorityRank) : null,
+              trackedAt: new Date().toISOString(),
+              status: 'active',
+              result: 'pending',
+              settledAt: null,
+              ...normalizeTrackedMultiPayload(payload),
+            };
+            if (!next.meeting || !next.race || !next.selection) return apiError(req, res, 400, 'invalid_payload', 'meeting, race, and selection are required.', rateInfo);
+            const duplicate = findTrackedDuplicate(filterTrackedRowsForPrincipal(trackedRows, principal), next);
+            if (duplicate) {
+              return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: resolveTrackedBet(duplicate, settledRows, raceResultIndex), duplicate: true }, 200, rateInfo);
+            }
+            fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
+            fs.writeFileSync(trackedPath, JSON.stringify([next, ...trackedRows], null, 2));
+            return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: next }, 200, rateInfo);
+          } catch (error) {
+            console.error('[api/v1/tracked-bets] POST failed:', error?.stack || error?.message || error);
+            return apiError(req, res, 500, 'tracked_bets_write_failed', 'Tracked bets could not be saved right now.', rateInfo);
           }
-          fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
-          fs.writeFileSync(trackedPath, JSON.stringify([next, ...trackedRows], null, 2));
-          return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: next }, 200, rateInfo);
         });
         return true;
       }
@@ -1163,24 +1182,29 @@ function createApiHandler(deps) {
         let body = '';
         req.on('data', c => body += c);
         req.on('end', () => {
-          let payload = {};
-          try { payload = body ? JSON.parse(body) : {}; } catch {}
-          const updated = trackedRows.map((row) => {
-            if (String(row.id) !== trackedId) return row;
-            if (!privateTenantScope && !principal.isAdmin && normalize(row.username) !== normalize(principal.username)) return row;
-            return {
-              ...row,
-              ...payload,
-              priorityRank: payload.priorityRank === null || payload.priorityRank === undefined
-                ? row.priorityRank ?? null
-                : (Number.isFinite(Number(payload.priorityRank)) ? Number(payload.priorityRank) : row.priorityRank ?? null),
-              id: row.id,
-              username: row.username,
-            };
-          });
-          fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
-          fs.writeFileSync(trackedPath, JSON.stringify(updated, null, 2));
-          return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: updated.find((r) => String(r.id) === trackedId) || null }, 200, rateInfo);
+          try {
+            let payload = {};
+            try { payload = body ? JSON.parse(body) : {}; } catch {}
+            const updated = trackedRows.map((row) => {
+              if (String(row.id) !== trackedId) return row;
+              if (!privateTenantScope && !principal.isAdmin && normalize(row.username) !== normalize(principal.username)) return row;
+              return {
+                ...row,
+                ...payload,
+                priorityRank: payload.priorityRank === null || payload.priorityRank === undefined
+                  ? row.priorityRank ?? null
+                  : (Number.isFinite(Number(payload.priorityRank)) ? Number(payload.priorityRank) : row.priorityRank ?? null),
+                id: row.id,
+                username: row.username,
+              };
+            });
+            fs.mkdirSync(path.dirname(trackedPath), { recursive: true });
+            fs.writeFileSync(trackedPath, JSON.stringify(updated, null, 2));
+            return apiJson(req, res, { ok: true, api_version: API_VERSION, trackedBet: updated.find((r) => String(r.id) === trackedId) || null }, 200, rateInfo);
+          } catch (error) {
+            console.error('[api/v1/tracked-bets] PATCH failed:', error?.stack || error?.message || error);
+            return apiError(req, res, 500, 'tracked_bets_write_failed', 'Tracked bets could not be updated right now.', rateInfo);
+          }
         });
         return true;
       }
@@ -1744,7 +1768,10 @@ function createApiHandler(deps) {
               apiError(req, res, 403, 'forbidden', 'Cannot create keys for admin account.', rateInfo);
               return resolve(true);
             }
-            const adminKeys = normalizeApiKeyList(state.adminApiKeys || []);
+            const revokedAt = createdAtIso;
+            const adminKeys = normalizeApiKeyList(state.adminApiKeys || []).map((key) =>
+              key.active !== false ? { ...key, active: false, revokedAt: key.revokedAt || revokedAt } : key,
+            );
             adminKeys.push(storedKey);
             persistAuthState({ ...state, adminApiKeys: adminKeys });
           } else {
@@ -1754,7 +1781,10 @@ function createApiHandler(deps) {
               apiError(req, res, 404, 'user_not_found', `User "${targetUser}" not found.`, rateInfo);
               return resolve(true);
             }
-            const userKeys = normalizeApiKeyList(users[idx].apiKeys || []);
+            const revokedAt = createdAtIso;
+            const userKeys = normalizeApiKeyList(users[idx].apiKeys || []).map((key) =>
+              key.active !== false ? { ...key, active: false, revokedAt: key.revokedAt || revokedAt } : key,
+            );
             userKeys.push(storedKey);
             users[idx] = { ...users[idx], apiKeys: userKeys };
             persistAuthState({ ...state, users });

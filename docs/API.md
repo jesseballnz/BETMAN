@@ -173,7 +173,9 @@ Returns API version and product information.
 
 ### Authenticated Endpoints
 
-All of the following require a valid API key.
+All of the following require either:
+- a valid API key, or
+- an authenticated BETMAN session when accessed via the frontend server.
 
 ---
 

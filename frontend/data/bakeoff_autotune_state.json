@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "autoPromote": false,
+  "useWeighted": true,
+  "nightlyRetrain": false,
+  "champion": "llama3.1:8b",
+  "previousChampion": null,
+  "weights": [
+    {
+      "model": "gpt-4o-mini",
+      "score": 99,
+      "weight": 1
+    }
+  ],
+  "updatedAt": "2026-04-06T21:52:17.617Z",
+  "updatedBy": "smoke-test"
+}

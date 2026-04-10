@@ -1,0 +1,805 @@
+{
+  "generatedAt": "2026-04-09T17:36:04.380727+00:00",
+  "wins": [
+    {
+      "date": "2026-03-29",
+      "meeting": "Armidale",
+      "race": "7",
+      "selection": "Mad Harry",
+      "type": "odds_runner",
+      "odds": 101.0,
+      "profit": 100.0,
+      "stake": 1.0,
+      "result": "win"
+    },
+    {
+      "date": "2026-04-05",
+      "meeting": "Penola",
+      "race": "1",
+      "selection": "The Big Wheel",
+      "type": "odds_runner",
+      "odds": 92.1,
+      "profit": 91.1,
+      "stake": 1.0,
+      "result": "win"
+    },
+    {
+      "date": "2026-04-09",
+      "meeting": "Cairns",
+      "race": "8",
+      "selection": "Sweet Candy",
+      "type": "odds_runner",
+      "odds": 91.0,
+      "profit": 90.0,
+      "stake": 1.0,
+      "result": "win"
+    },
+    {
+      "date": "2026-04-03",
+      "meeting": "Ascot",
+      "race": "10",
+      "selection": "Dark Looks",
+      "type": "odds_runner",
+      "odds": 41.0,
+      "profit": 40.0,
+      "stake": 1.0,
+      "result": "win"
+    },
+    {
+      "date": "2026-04-05",
+      "meeting": "Penola",
+      "race": "4",
+      "selection": "Petit Eagle",
+      "type": "odds_runner",
+      "odds": 35.4,
+      "profit": 34.4,
+      "stake": 1.0,
+      "result": "win"
+    }
+  ],
+  "alerts": [
+    {
+      "timestamp": "2026-04-09T08:29:47.013Z",
+      "meeting": "Geraldton",
+      "race": "8",
+      "runner": "Now Showing",
+      "reason": "Now Showing 21.00 \u2192 41.00 (95.2%)",
+      "severity": "critical",
+      "score": 505.0,
+      "minsToJump": 0.0,
+      "status": "live",
+      "action": "RECHECK_SIGNAL",
+      "betmanRole": "interesting",
+      "movePct": 95.2
+    },
+    {
+      "timestamp": "2026-04-09T07:30:10.684Z",
+      "meeting": "Geraldton",
+      "race": "6",
+      "runner": "Karlstad",
+      "reason": "Karlstad 81.00 \u2192 151.00 (86.4%)",
+      "severity": "critical",
+      "score": 505.0,
+      "minsToJump": 0.0,
+      "status": "live",
+      "action": "WATCH_MARKET",
+      "betmanRole": "market",
+      "movePct": 86.4
+    },
+    {
+      "timestamp": "2026-04-09T07:15:00.277Z",
+      "meeting": "Pakenham",
+      "race": "1",
+      "runner": "Blue Jeans Talk",
+      "reason": "Blue Jeans Talk 19.01 \u2192 34.00 (78.9%)",
+      "severity": "critical",
+      "score": 505.0,
+      "minsToJump": 0.0,
+      "status": "live",
+      "action": "RECHECK_SIGNAL",
+      "betmanRole": "interesting",
+      "movePct": 78.9
+    },
+    {
+      "timestamp": "2026-04-09T07:10:12.708Z",
+      "meeting": "Gosford",
+      "race": "8",
+      "runner": "Capital Dancer",
+      "reason": "Capital Dancer 9.50 \u2192 15.00 (57.9%)",
+      "severity": "critical",
+      "score": 502.9,
+      "minsToJump": 0.0,
+      "status": "live",
+      "action": "WATCH_MARKET",
+      "betmanRole": "market",
+      "movePct": 57.9
+    },
+    {
+      "timestamp": "2026-04-09T08:29:47.013Z",
+      "meeting": "Geraldton",
+      "race": "8",
+      "runner": "Cateran",
+      "reason": "Cateran 5.00 \u2192 7.50 (50.0%)",
+      "severity": "critical",
+      "score": 495.0,
+      "minsToJump": 0.0,
+      "status": "live",
+      "action": "WATCH_MARKET",
+      "betmanRole": "market",
+      "movePct": 50.0
+    },
+    {
+      "timestamp": "2026-04-09T08:29:47.013Z",
+      "meeting": "Geraldton",
+      "race": "8",
+      "runner": "Archenemy",
+      "reason": "Archenemy 7.50 \u2192 11.00 (46.7%)",
+      "severity": "critical",
+      "score": 491.7,
+      "minsToJump": 0.0,
+      "status": "live",
+      "action": "RECHECK_SIGNAL",
+      "betmanRole": "interesting",
+      "movePct": 46.7
+    }
+  ],
+  "upcomingEdges": [
+    {
+      "meeting": "Launceston",
+      "race": "3",
+      "selection": "Khaleesi's Dream / Symphony Queen / Knights Reign",
+      "type": "trifecta",
+      "signalScore": 84.0,
+      "aiWinProb": 85.0,
+      "jumpsInMin": 903.0,
+      "reason": "Anchor top pick in first, box 2nd/3rd \u00b7 in 903m",
+      "country": "AUS"
+    },
+    {
+      "meeting": "Gold Coast",
+      "race": "2",
+      "selection": "Certify / Tszyuya / Namara",
+      "type": "trifecta",
+      "signalScore": 77.0,
+      "aiWinProb": 81.9,
+      "jumpsInMin": 865.0,
+      "reason": "Anchor top pick in first, box 2nd/3rd \u00b7 in 865m",
+      "country": "AUS"
+    },
+    {
+      "meeting": "Launceston",
+      "race": "7",
+      "selection": "Hartman / Hurricane Ketut / Sandual",
+      "type": "trifecta",
+      "signalScore": 75.0,
+      "aiWinProb": 80.1,
+      "jumpsInMin": 1023.0,
+      "reason": "Anchor top pick in first, box 2nd/3rd \u00b7 in 1023m",
+      "country": "AUS"
+    },
+    {
+      "meeting": "Launceston",
+      "race": "1",
+      "selection": "Lawrenny Boys / The Real Man / Laramana",
+      "type": "trifecta",
+      "signalScore": 69.0,
+      "aiWinProb": 78.9,
+      "jumpsInMin": 843.0,
+      "reason": "Anchor top pick in first, box 2nd/3rd \u00b7 in 843m",
+      "country": "AUS"
+    },
+    {
+      "meeting": "Cranbourne",
+      "race": "6",
+      "selection": "Catwalk Icon / Persian Caviar / Eco Force",
+      "type": "trifecta",
+      "signalScore": 69.0,
+      "aiWinProb": 76.7,
+      "jumpsInMin": 970.0,
+      "reason": "Anchor top pick in first, box 2nd/3rd \u00b7 in 970m",
+      "country": "AUS"
+    },
+    {
+      "meeting": "Cranbourne",
+      "race": "2",
+      "selection": "Jetsetter Jack / Fastobullet / Iftihar",
+      "type": "trifecta",
+      "signalScore": 69.0,
+      "aiWinProb": 73.0,
+      "jumpsInMin": 850.0,
+      "reason": "Anchor top pick in first, box 2nd/3rd \u00b7 in 850m",
+      "country": "AUS"
+    }
+  ],
+  "interestingRunners": [
+    {
+      "meeting": "Wellington",
+      "race": "2",
+      "runner": "Frosty The Showman",
+      "odds": 67.0,
+      "eta": "in 594m",
+      "minsToJump": 594.0,
+      "reason": "watchlist long-odds",
+      "country": "AUS",
+      "score": 60
+    },
+    {
+      "meeting": "Gatton",
+      "race": "4",
+      "runner": "Vain Rossi",
+      "odds": 46.0,
+      "eta": "in 601m",
+      "minsToJump": 601.0,
+      "reason": "watchlist long-odds",
+      "country": "AUS",
+      "score": 56.0
+    },
+    {
+      "meeting": "Waverley",
+      "race": "6",
+      "runner": "Sunny",
+      "odds": 41.0,
+      "eta": "in 578m",
+      "minsToJump": 578.0,
+      "reason": "watchlist long-odds",
+      "country": "NZ",
+      "score": 51.0
+    },
+    {
+      "meeting": "Tamworth",
+      "race": "6",
+      "runner": "Knife's Edge",
+      "odds": 35.0,
+      "eta": "in 720m",
+      "minsToJump": 720.0,
+      "reason": "watchlist long-odds",
+      "country": "AUS",
+      "score": 45.0
+    },
+    {
+      "meeting": "Wellington",
+      "race": "7",
+      "runner": "There She Goes",
+      "odds": 35.0,
+      "eta": "in 774m",
+      "minsToJump": 774.0,
+      "reason": "watchlist long-odds",
+      "country": "AUS",
+      "score": 45.0
+    },
+    {
+      "meeting": "Waverley",
+      "race": "4",
+      "runner": "Nodoubtaboutit",
+      "odds": 34.0,
+      "eta": "in 503m",
+      "minsToJump": 503.0,
+      "reason": "watchlist long-odds",
+      "country": "NZ",
+      "score": 44.0
+    }
+  ],
+  "marketMovers": [],
+  "liveRaceRadar": [
+    {
+      "meeting": "Waverley",
+      "race": "6",
+      "name": "STEPHEN MARSH - MARSH RACING MAIDEN",
+      "start": "15:13:00 NZST",
+      "status": "Open",
+      "hasLiveSignal": false,
+      "score": 20
+    },
+    {
+      "meeting": "Waverley",
+      "race": "4",
+      "name": "ANDREW FORSMAN RACING MAIDEN",
+      "start": "13:58:00 NZST",
+      "status": "Open",
+      "hasLiveSignal": false,
+      "score": 20
+    },
+    {
+      "meeting": "Tamworth",
+      "race": "6",
+      "name": "Kce Civil Contractors Mornington Prelude Hcp",
+      "start": "17:35:00 NZST",
+      "status": "Open",
+      "hasLiveSignal": false,
+      "score": 20
+    },
+    {
+      "meeting": "Gatton",
+      "race": "4",
+      "name": "Hec Freeman & Bill Faulker Maiden Hcp",
+      "start": "15:36:00 NZST",
+      "status": "Open",
+      "hasLiveSignal": false,
+      "score": 20
+    },
+    {
+      "meeting": "Waverley",
+      "race": "8",
+      "name": "BILL THURLOW/SAM O\u2019MALLEY RACING",
+      "start": "16:22:00 NZST",
+      "status": "Open",
+      "hasLiveSignal": false,
+      "score": 5
+    }
+  ],
+  "queue": [
+    {
+      "kind": "win-highlight",
+      "headline": "BETMAN found a winner at Armidale R7",
+      "short": "Mad Harry landed at $101.00 for +100.0u.",
+      "post": "BETMAN flagged Mad Harry in Armidale R7. It landed at $101.00 for +100.0u. Clear race context, faster signal handling, better race-day execution. Try BETMAN.",
+      "cta": "Try BETMAN",
+      "meeting": "Armidale",
+      "race": "7",
+      "selection": "Mad Harry"
+    },
+    {
+      "kind": "signal-proof",
+      "headline": "BETMAN Pulse surfaced a CRITICAL signal",
+      "short": "Geraldton R8 \u2014 Now Showing",
+      "post": "BETMAN Pulse surfaced a critical signal for Now Showing in Geraldton R8. Reason: Now Showing 21.00 \u2192 41.00 (95.2%). Pulse is built to focus attention when timing matters.",
+      "cta": "See how BETMAN works",
+      "meeting": "Geraldton",
+      "race": "8",
+      "runner": "Now Showing"
+    },
+    {
+      "kind": "upcoming-edge",
+      "headline": "Upcoming edge \u2014 Launceston R3",
+      "short": "Khaleesi's Dream / Symphony Queen / Knights Reign (trifecta) \u00b7 85.0% model confidence.",
+      "post": "BETMAN has Launceston R3 on the radar: Khaleesi's Dream / Symphony Queen / Knights Reign via trifecta with model confidence around 85.0% and signal score 84.0.",
+      "cta": "Open the race board",
+      "meeting": "Launceston",
+      "race": "3",
+      "selection": "Khaleesi's Dream / Symphony Queen / Knights Reign"
+    },
+    {
+      "kind": "interesting-runner",
+      "headline": "Interesting runner \u2014 Wellington R2",
+      "short": "Frosty The Showman at $67.00.",
+      "post": "Frosty The Showman is on the BETMAN watchlist in Wellington R2 at $67.00. Reason: watchlist long-odds.",
+      "cta": "Review runner profile",
+      "meeting": "Wellington",
+      "race": "2",
+      "runner": "Frosty The Showman"
+    },
+    {
+      "kind": "live-race-radar",
+      "headline": "Live race radar \u2014 Waverley R6",
+      "short": "STEPHEN MARSH - MARSH RACING MAIDEN \u00b7 15:13:00 NZST.",
+      "post": "Waverley R6 is on live radar: STEPHEN MARSH - MARSH RACING MAIDEN at 15:13:00 NZST. BETMAN keeps race context, movers, and signals in one view.",
+      "cta": "View live radar",
+      "meeting": "Waverley",
+      "race": "6",
+      "selection": "STEPHEN MARSH - MARSH RACING MAIDEN"
+    },
+    {
+      "kind": "win-highlight",
+      "headline": "BETMAN found a winner at Penola R1",
+      "short": "The Big Wheel landed at $92.10 for +91.1u.",
+      "post": "BETMAN flagged The Big Wheel in Penola R1. It landed at $92.10 for +91.1u. Clear race context, faster signal handling, better race-day execution. Try BETMAN.",
+      "cta": "Try BETMAN",
+      "meeting": "Penola",
+      "race": "1",
+      "selection": "The Big Wheel"
+    },
+    {
+      "kind": "signal-proof",
+      "headline": "BETMAN Pulse surfaced a CRITICAL signal",
+      "short": "Geraldton R6 \u2014 Karlstad",
+      "post": "BETMAN Pulse surfaced a critical signal for Karlstad in Geraldton R6. Reason: Karlstad 81.00 \u2192 151.00 (86.4%). Pulse is built to focus attention when timing matters.",
+      "cta": "See how BETMAN works",
+      "meeting": "Geraldton",
+      "race": "6",
+      "runner": "Karlstad"
+    },
+    {
+      "kind": "upcoming-edge",
+      "headline": "Upcoming edge \u2014 Gold Coast R2",
+      "short": "Certify / Tszyuya / Namara (trifecta) \u00b7 81.9% model confidence.",
+      "post": "BETMAN has Gold Coast R2 on the radar: Certify / Tszyuya / Namara via trifecta with model confidence around 81.9% and signal score 77.0.",
+      "cta": "Open the race board",
+      "meeting": "Gold Coast",
+      "race": "2",
+      "selection": "Certify / Tszyuya / Namara"
+    },
+    {
+      "kind": "interesting-runner",
+      "headline": "Interesting runner \u2014 Gatton R4",
+      "short": "Vain Rossi at $46.00.",
+      "post": "Vain Rossi is on the BETMAN watchlist in Gatton R4 at $46.00. Reason: watchlist long-odds.",
+      "cta": "Review runner profile",
+      "meeting": "Gatton",
+      "race": "4",
+      "runner": "Vain Rossi"
+    },
+    {
+      "kind": "live-race-radar",
+      "headline": "Live race radar \u2014 Waverley R4",
+      "short": "ANDREW FORSMAN RACING MAIDEN \u00b7 13:58:00 NZST.",
+      "post": "Waverley R4 is on live radar: ANDREW FORSMAN RACING MAIDEN at 13:58:00 NZST. BETMAN keeps race context, movers, and signals in one view.",
+      "cta": "View live radar",
+      "meeting": "Waverley",
+      "race": "4",
+      "selection": "ANDREW FORSMAN RACING MAIDEN"
+    },
+    {
+      "kind": "win-highlight",
+      "headline": "BETMAN found a winner at Cairns R8",
+      "short": "Sweet Candy landed at $91.00 for +90.0u.",
+      "post": "BETMAN flagged Sweet Candy in Cairns R8. It landed at $91.00 for +90.0u. Clear race context, faster signal handling, better race-day execution. Try BETMAN.",
+      "cta": "Try BETMAN",
+      "meeting": "Cairns",
+      "race": "8",
+      "selection": "Sweet Candy"
+    },
+    {
+      "kind": "signal-proof",
+      "headline": "BETMAN Pulse surfaced a CRITICAL signal",
+      "short": "Pakenham R1 \u2014 Blue Jeans Talk",
+      "post": "BETMAN Pulse surfaced a critical signal for Blue Jeans Talk in Pakenham R1. Reason: Blue Jeans Talk 19.01 \u2192 34.00 (78.9%). Pulse is built to focus attention when timing matters.",
+      "cta": "See how BETMAN works",
+      "meeting": "Pakenham",
+      "race": "1",
+      "runner": "Blue Jeans Talk"
+    },
+    {
+      "kind": "upcoming-edge",
+      "headline": "Upcoming edge \u2014 Launceston R7",
+      "short": "Hartman / Hurricane Ketut / Sandual (trifecta) \u00b7 80.1% model confidence.",
+      "post": "BETMAN has Launceston R7 on the radar: Hartman / Hurricane Ketut / Sandual via trifecta with model confidence around 80.1% and signal score 75.0.",
+      "cta": "Open the race board",
+      "meeting": "Launceston",
+      "race": "7",
+      "selection": "Hartman / Hurricane Ketut / Sandual"
+    },
+    {
+      "kind": "interesting-runner",
+      "headline": "Interesting runner \u2014 Waverley R6",
+      "short": "Sunny at $41.00.",
+      "post": "Sunny is on the BETMAN watchlist in Waverley R6 at $41.00. Reason: watchlist long-odds.",
+      "cta": "Review runner profile",
+      "meeting": "Waverley",
+      "race": "6",
+      "runner": "Sunny"
+    },
+    {
+      "kind": "live-race-radar",
+      "headline": "Live race radar \u2014 Tamworth R6",
+      "short": "Kce Civil Contractors Mornington Prelude Hcp \u00b7 17:35:00 NZST.",
+      "post": "Tamworth R6 is on live radar: Kce Civil Contractors Mornington Prelude Hcp at 17:35:00 NZST. BETMAN keeps race context, movers, and signals in one view.",
+      "cta": "View live radar",
+      "meeting": "Tamworth",
+      "race": "6",
+      "selection": "Kce Civil Contractors Mornington Prelude Hcp"
+    }
+  ],
+  "composition": {
+    "totalItems": 15,
+    "byKind": {
+      "win-highlight": 3,
+      "signal-proof": 3,
+      "upcoming-edge": 3,
+      "interesting-runner": 3,
+      "live-race-radar": 3
+    },
+    "byMeeting": {
+      "Armidale": 1,
+      "Geraldton": 2,
+      "Launceston": 2,
+      "Wellington": 1,
+      "Waverley": 3,
+      "Penola": 1,
+      "Gold Coast": 1,
+      "Gatton": 1,
+      "Cairns": 1,
+      "Pakenham": 1,
+      "Tamworth": 1
+    }
+  },
+  "drafts": {
+    "winHighlights": [
+      {
+        "kind": "win-highlight",
+        "headline": "BETMAN found a winner at Armidale R7",
+        "short": "Mad Harry landed at $101.00 for +100.0u.",
+        "post": "BETMAN flagged Mad Harry in Armidale R7. It landed at $101.00 for +100.0u. Clear race context, faster signal handling, better race-day execution. Try BETMAN.",
+        "cta": "Try BETMAN",
+        "meeting": "Armidale",
+        "race": "7",
+        "selection": "Mad Harry"
+      },
+      {
+        "kind": "win-highlight",
+        "headline": "BETMAN found a winner at Penola R1",
+        "short": "The Big Wheel landed at $92.10 for +91.1u.",
+        "post": "BETMAN flagged The Big Wheel in Penola R1. It landed at $92.10 for +91.1u. Clear race context, faster signal handling, better race-day execution. Try BETMAN.",
+        "cta": "Try BETMAN",
+        "meeting": "Penola",
+        "race": "1",
+        "selection": "The Big Wheel"
+      },
+      {
+        "kind": "win-highlight",
+        "headline": "BETMAN found a winner at Cairns R8",
+        "short": "Sweet Candy landed at $91.00 for +90.0u.",
+        "post": "BETMAN flagged Sweet Candy in Cairns R8. It landed at $91.00 for +90.0u. Clear race context, faster signal handling, better race-day execution. Try BETMAN.",
+        "cta": "Try BETMAN",
+        "meeting": "Cairns",
+        "race": "8",
+        "selection": "Sweet Candy"
+      },
+      {
+        "kind": "win-highlight",
+        "headline": "BETMAN found a winner at Ascot R10",
+        "short": "Dark Looks landed at $41.00 for +40.0u.",
+        "post": "BETMAN flagged Dark Looks in Ascot R10. It landed at $41.00 for +40.0u. Clear race context, faster signal handling, better race-day execution. Try BETMAN.",
+        "cta": "Try BETMAN",
+        "meeting": "Ascot",
+        "race": "10",
+        "selection": "Dark Looks"
+      },
+      {
+        "kind": "win-highlight",
+        "headline": "BETMAN found a winner at Penola R4",
+        "short": "Petit Eagle landed at $35.40 for +34.4u.",
+        "post": "BETMAN flagged Petit Eagle in Penola R4. It landed at $35.40 for +34.4u. Clear race context, faster signal handling, better race-day execution. Try BETMAN.",
+        "cta": "Try BETMAN",
+        "meeting": "Penola",
+        "race": "4",
+        "selection": "Petit Eagle"
+      }
+    ],
+    "signalProof": [
+      {
+        "kind": "signal-proof",
+        "headline": "BETMAN Pulse surfaced a CRITICAL signal",
+        "short": "Geraldton R8 \u2014 Now Showing",
+        "post": "BETMAN Pulse surfaced a critical signal for Now Showing in Geraldton R8. Reason: Now Showing 21.00 \u2192 41.00 (95.2%). Pulse is built to focus attention when timing matters.",
+        "cta": "See how BETMAN works",
+        "meeting": "Geraldton",
+        "race": "8",
+        "runner": "Now Showing"
+      },
+      {
+        "kind": "signal-proof",
+        "headline": "BETMAN Pulse surfaced a CRITICAL signal",
+        "short": "Geraldton R6 \u2014 Karlstad",
+        "post": "BETMAN Pulse surfaced a critical signal for Karlstad in Geraldton R6. Reason: Karlstad 81.00 \u2192 151.00 (86.4%). Pulse is built to focus attention when timing matters.",
+        "cta": "See how BETMAN works",
+        "meeting": "Geraldton",
+        "race": "6",
+        "runner": "Karlstad"
+      },
+      {
+        "kind": "signal-proof",
+        "headline": "BETMAN Pulse surfaced a CRITICAL signal",
+        "short": "Pakenham R1 \u2014 Blue Jeans Talk",
+        "post": "BETMAN Pulse surfaced a critical signal for Blue Jeans Talk in Pakenham R1. Reason: Blue Jeans Talk 19.01 \u2192 34.00 (78.9%). Pulse is built to focus attention when timing matters.",
+        "cta": "See how BETMAN works",
+        "meeting": "Pakenham",
+        "race": "1",
+        "runner": "Blue Jeans Talk"
+      },
+      {
+        "kind": "signal-proof",
+        "headline": "BETMAN Pulse surfaced a CRITICAL signal",
+        "short": "Gosford R8 \u2014 Capital Dancer",
+        "post": "BETMAN Pulse surfaced a critical signal for Capital Dancer in Gosford R8. Reason: Capital Dancer 9.50 \u2192 15.00 (57.9%). Pulse is built to focus attention when timing matters.",
+        "cta": "See how BETMAN works",
+        "meeting": "Gosford",
+        "race": "8",
+        "runner": "Capital Dancer"
+      },
+      {
+        "kind": "signal-proof",
+        "headline": "BETMAN Pulse surfaced a CRITICAL signal",
+        "short": "Geraldton R8 \u2014 Cateran",
+        "post": "BETMAN Pulse surfaced a critical signal for Cateran in Geraldton R8. Reason: Cateran 5.00 \u2192 7.50 (50.0%). Pulse is built to focus attention when timing matters.",
+        "cta": "See how BETMAN works",
+        "meeting": "Geraldton",
+        "race": "8",
+        "runner": "Cateran"
+      },
+      {
+        "kind": "signal-proof",
+        "headline": "BETMAN Pulse surfaced a CRITICAL signal",
+        "short": "Geraldton R8 \u2014 Archenemy",
+        "post": "BETMAN Pulse surfaced a critical signal for Archenemy in Geraldton R8. Reason: Archenemy 7.50 \u2192 11.00 (46.7%). Pulse is built to focus attention when timing matters.",
+        "cta": "See how BETMAN works",
+        "meeting": "Geraldton",
+        "race": "8",
+        "runner": "Archenemy"
+      }
+    ],
+    "upcomingEdges": [
+      {
+        "kind": "upcoming-edge",
+        "headline": "Upcoming edge \u2014 Launceston R3",
+        "short": "Khaleesi's Dream / Symphony Queen / Knights Reign (trifecta) \u00b7 85.0% model confidence.",
+        "post": "BETMAN has Launceston R3 on the radar: Khaleesi's Dream / Symphony Queen / Knights Reign via trifecta with model confidence around 85.0% and signal score 84.0.",
+        "cta": "Open the race board",
+        "meeting": "Launceston",
+        "race": "3",
+        "selection": "Khaleesi's Dream / Symphony Queen / Knights Reign"
+      },
+      {
+        "kind": "upcoming-edge",
+        "headline": "Upcoming edge \u2014 Gold Coast R2",
+        "short": "Certify / Tszyuya / Namara (trifecta) \u00b7 81.9% model confidence.",
+        "post": "BETMAN has Gold Coast R2 on the radar: Certify / Tszyuya / Namara via trifecta with model confidence around 81.9% and signal score 77.0.",
+        "cta": "Open the race board",
+        "meeting": "Gold Coast",
+        "race": "2",
+        "selection": "Certify / Tszyuya / Namara"
+      },
+      {
+        "kind": "upcoming-edge",
+        "headline": "Upcoming edge \u2014 Launceston R7",
+        "short": "Hartman / Hurricane Ketut / Sandual (trifecta) \u00b7 80.1% model confidence.",
+        "post": "BETMAN has Launceston R7 on the radar: Hartman / Hurricane Ketut / Sandual via trifecta with model confidence around 80.1% and signal score 75.0.",
+        "cta": "Open the race board",
+        "meeting": "Launceston",
+        "race": "7",
+        "selection": "Hartman / Hurricane Ketut / Sandual"
+      },
+      {
+        "kind": "upcoming-edge",
+        "headline": "Upcoming edge \u2014 Launceston R1",
+        "short": "Lawrenny Boys / The Real Man / Laramana (trifecta) \u00b7 78.9% model confidence.",
+        "post": "BETMAN has Launceston R1 on the radar: Lawrenny Boys / The Real Man / Laramana via trifecta with model confidence around 78.9% and signal score 69.0.",
+        "cta": "Open the race board",
+        "meeting": "Launceston",
+        "race": "1",
+        "selection": "Lawrenny Boys / The Real Man / Laramana"
+      },
+      {
+        "kind": "upcoming-edge",
+        "headline": "Upcoming edge \u2014 Cranbourne R6",
+        "short": "Catwalk Icon / Persian Caviar / Eco Force (trifecta) \u00b7 76.7% model confidence.",
+        "post": "BETMAN has Cranbourne R6 on the radar: Catwalk Icon / Persian Caviar / Eco Force via trifecta with model confidence around 76.7% and signal score 69.0.",
+        "cta": "Open the race board",
+        "meeting": "Cranbourne",
+        "race": "6",
+        "selection": "Catwalk Icon / Persian Caviar / Eco Force"
+      },
+      {
+        "kind": "upcoming-edge",
+        "headline": "Upcoming edge \u2014 Cranbourne R2",
+        "short": "Jetsetter Jack / Fastobullet / Iftihar (trifecta) \u00b7 73.0% model confidence.",
+        "post": "BETMAN has Cranbourne R2 on the radar: Jetsetter Jack / Fastobullet / Iftihar via trifecta with model confidence around 73.0% and signal score 69.0.",
+        "cta": "Open the race board",
+        "meeting": "Cranbourne",
+        "race": "2",
+        "selection": "Jetsetter Jack / Fastobullet / Iftihar"
+      }
+    ],
+    "interestingRunners": [
+      {
+        "kind": "interesting-runner",
+        "headline": "Interesting runner \u2014 Wellington R2",
+        "short": "Frosty The Showman at $67.00.",
+        "post": "Frosty The Showman is on the BETMAN watchlist in Wellington R2 at $67.00. Reason: watchlist long-odds.",
+        "cta": "Review runner profile",
+        "meeting": "Wellington",
+        "race": "2",
+        "runner": "Frosty The Showman"
+      },
+      {
+        "kind": "interesting-runner",
+        "headline": "Interesting runner \u2014 Gatton R4",
+        "short": "Vain Rossi at $46.00.",
+        "post": "Vain Rossi is on the BETMAN watchlist in Gatton R4 at $46.00. Reason: watchlist long-odds.",
+        "cta": "Review runner profile",
+        "meeting": "Gatton",
+        "race": "4",
+        "runner": "Vain Rossi"
+      },
+      {
+        "kind": "interesting-runner",
+        "headline": "Interesting runner \u2014 Waverley R6",
+        "short": "Sunny at $41.00.",
+        "post": "Sunny is on the BETMAN watchlist in Waverley R6 at $41.00. Reason: watchlist long-odds.",
+        "cta": "Review runner profile",
+        "meeting": "Waverley",
+        "race": "6",
+        "runner": "Sunny"
+      },
+      {
+        "kind": "interesting-runner",
+        "headline": "Interesting runner \u2014 Tamworth R6",
+        "short": "Knife's Edge at $35.00.",
+        "post": "Knife's Edge is on the BETMAN watchlist in Tamworth R6 at $35.00. Reason: watchlist long-odds.",
+        "cta": "Review runner profile",
+        "meeting": "Tamworth",
+        "race": "6",
+        "runner": "Knife's Edge"
+      },
+      {
+        "kind": "interesting-runner",
+        "headline": "Interesting runner \u2014 Wellington R7",
+        "short": "There She Goes at $35.00.",
+        "post": "There She Goes is on the BETMAN watchlist in Wellington R7 at $35.00. Reason: watchlist long-odds.",
+        "cta": "Review runner profile",
+        "meeting": "Wellington",
+        "race": "7",
+        "runner": "There She Goes"
+      },
+      {
+        "kind": "interesting-runner",
+        "headline": "Interesting runner \u2014 Waverley R4",
+        "short": "Nodoubtaboutit at $34.00.",
+        "post": "Nodoubtaboutit is on the BETMAN watchlist in Waverley R4 at $34.00. Reason: watchlist long-odds.",
+        "cta": "Review runner profile",
+        "meeting": "Waverley",
+        "race": "4",
+        "runner": "Nodoubtaboutit"
+      }
+    ],
+    "marketMovers": [],
+    "liveRaceRadar": [
+      {
+        "kind": "live-race-radar",
+        "headline": "Live race radar \u2014 Waverley R6",
+        "short": "STEPHEN MARSH - MARSH RACING MAIDEN \u00b7 15:13:00 NZST.",
+        "post": "Waverley R6 is on live radar: STEPHEN MARSH - MARSH RACING MAIDEN at 15:13:00 NZST. BETMAN keeps race context, movers, and signals in one view.",
+        "cta": "View live radar",
+        "meeting": "Waverley",
+        "race": "6",
+        "selection": "STEPHEN MARSH - MARSH RACING MAIDEN"
+      },
+      {
+        "kind": "live-race-radar",
+        "headline": "Live race radar \u2014 Waverley R4",
+        "short": "ANDREW FORSMAN RACING MAIDEN \u00b7 13:58:00 NZST.",
+        "post": "Waverley R4 is on live radar: ANDREW FORSMAN RACING MAIDEN at 13:58:00 NZST. BETMAN keeps race context, movers, and signals in one view.",
+        "cta": "View live radar",
+        "meeting": "Waverley",
+        "race": "4",
+        "selection": "ANDREW FORSMAN RACING MAIDEN"
+      },
+      {
+        "kind": "live-race-radar",
+        "headline": "Live race radar \u2014 Tamworth R6",
+        "short": "Kce Civil Contractors Mornington Prelude Hcp \u00b7 17:35:00 NZST.",
+        "post": "Tamworth R6 is on live radar: Kce Civil Contractors Mornington Prelude Hcp at 17:35:00 NZST. BETMAN keeps race context, movers, and signals in one view.",
+        "cta": "View live radar",
+        "meeting": "Tamworth",
+        "race": "6",
+        "selection": "Kce Civil Contractors Mornington Prelude Hcp"
+      },
+      {
+        "kind": "live-race-radar",
+        "headline": "Live race radar \u2014 Gatton R4",
+        "short": "Hec Freeman & Bill Faulker Maiden Hcp \u00b7 15:36:00 NZST.",
+        "post": "Gatton R4 is on live radar: Hec Freeman & Bill Faulker Maiden Hcp at 15:36:00 NZST. BETMAN keeps race context, movers, and signals in one view.",
+        "cta": "View live radar",
+        "meeting": "Gatton",
+        "race": "4",
+        "selection": "Hec Freeman & Bill Faulker Maiden Hcp"
+      },
+      {
+        "kind": "live-race-radar",
+        "headline": "Live race radar \u2014 Waverley R8",
+        "short": "BILL THURLOW/SAM O\u2019MALLEY RACING \u00b7 16:22:00 NZST.",
+        "post": "Waverley R8 is on live radar: BILL THURLOW/SAM O\u2019MALLEY RACING at 16:22:00 NZST. BETMAN keeps race context, movers, and signals in one view.",
+        "cta": "View live radar",
+        "meeting": "Waverley",
+        "race": "8",
+        "selection": "BILL THURLOW/SAM O\u2019MALLEY RACING"
+      }
+    ],
+    "dailyRecap": {
+      "kind": "daily-recap",
+      "date": "2026-04-09",
+      "headline": "BETMAN daily recap \u2014 2026-04-09",
+      "post": "2026-04-09: 90 wins from 471 bets, win rate 4.4%, base ROI 52.2%. Highlights: Mad Harry landed at $101.00 for +100.0u. | Geraldton R8 \u2014 Now Showing | Khaleesi's Dream / Symphony Queen / Knights Reign (trifecta) \u00b7 85.0% model confidence.",
+      "cta": "Try BETMAN"
+    }
+  }
+}

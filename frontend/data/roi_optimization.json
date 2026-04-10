@@ -1,11 +1,11 @@
 {
   "tenantId": "default",
   "baseline": {
-    "bets": 0,
+    "bets": 4,
     "wins": 0,
-    "win_rate": null,
-    "profit": 0.0,
-    "roi": null
+    "win_rate": 0.0,
+    "profit": -4.0,
+    "roi": -1.0
   },
   "best": null,
   "notes": "baseline excludes exotics; optimized filters use p= and odds only; small-sample risk if min_bets drops."

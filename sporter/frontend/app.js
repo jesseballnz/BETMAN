@@ -23,6 +23,7 @@ let selectedSport = localStorage.getItem('sporterSelectedSport') || 'ALL';
 let betWindowHours = Number(localStorage.getItem('sporterBetWindowHours')) || 12;
 let selectedEventId = null;
 let edgeMode = localStorage.getItem('sporterEdgeMode') || 'overlay';
+let drawerFocusReturn = null;
 if (!EDGE_MODES.includes(edgeMode)) edgeMode = 'overlay';
 
 sportFilterEl.value = selectedSport;
@@ -584,8 +585,15 @@ function openEventDrawer(evt){
     selectedEventId = null;
     drawerEl.classList.remove('open');
     drawerEl.setAttribute('aria-hidden', 'true');
+    if (drawerFocusReturn?.isConnected && !drawerFocusReturn.hasAttribute('disabled')) {
+      try { drawerFocusReturn.focus({ preventScroll: true }); } catch {}
+    }
+    drawerFocusReturn = null;
     renderMarket();
     return;
+  }
+  if (!drawerEl.classList.contains('open')) {
+    drawerFocusReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   }
   selectedEventId = evt.id;
   drawerEl.classList.add('open');
@@ -603,6 +611,9 @@ function openEventDrawer(evt){
   drawerBooks.innerHTML = buildBookTable(evt);
   drawerProps.innerHTML = buildPropsList(evt);
   renderMarket();
+  requestAnimationFrame(() => {
+    try { drawerCloseBtn?.focus({ preventScroll: true }); } catch {}
+  });
 }
 
 function syncDrawer(){
