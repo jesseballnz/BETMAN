@@ -969,6 +969,16 @@ function createApiHandler(deps) {
             sire: r.sire || null,
             dam: r.dam || null,
             damSire: r.dam_sire || null,
+            silk_url_64x64: r.silk_url_64x64 || null,
+            silk_url_128x128: r.silk_url_128x128 || null,
+            alt_silk_url_64x64: r.alt_silk_url_64x64 || null,
+            alt_silk_url_128x128: r.alt_silk_url_128x128 || null,
+            silk_colours: r.silk_colours || null,
+            silkUrl64x64: r.silk_url_64x64 || null,
+            silkUrl128x128: r.silk_url_128x128 || null,
+            altSilkUrl64x64: r.alt_silk_url_64x64 || null,
+            altSilkUrl128x128: r.alt_silk_url_128x128 || null,
+            silkColours: r.silk_colours || null,
             stats: r.stats || null
           }))
         }
