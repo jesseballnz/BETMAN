@@ -209,6 +209,33 @@ function initTheme(){
   applyTheme(saved);
 }
 
+let betmanRadioWindow = null;
+
+function getBetmanContentRadioUrl(){
+  const host = window.location.hostname || '127.0.0.1';
+  return `http://${host}:4310/radio/live`;
+}
+
+function updateBetmanContentAudioButton(){
+  const btn = $('betmanContentAudioBtn');
+  if (!btn) return;
+  btn.disabled = false;
+  btn.textContent = 'Open BETMAN Radio';
+  btn.title = getBetmanContentRadioUrl();
+}
+
+function openBetmanContentAudioWindow(){
+  const url = getBetmanContentRadioUrl();
+  if (betmanRadioWindow && !betmanRadioWindow.closed) {
+    try {
+      betmanRadioWindow.location.href = url;
+      betmanRadioWindow.focus();
+      return;
+    } catch {}
+  }
+  betmanRadioWindow = window.open(url, 'betman-radio-live', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
+  if (!betmanRadioWindow) window.open(url, '_blank', 'noopener,noreferrer');
+}
 
 function inferProviderFromModel(model){
   const m = String(model || '').toLowerCase();
@@ -11306,6 +11333,10 @@ $('themeToggleBtn')?.addEventListener('click', ()=>{
   const current = document.body.getAttribute('data-theme') || 'dark';
   applyTheme(current === 'dark' ? 'light' : 'dark');
 });
+$('betmanContentAudioBtn')?.addEventListener('click', ()=>{
+  openBetmanContentAudioWindow();
+});
+updateBetmanContentAudioButton();
 function openHelpDrawer(title, body){
   let drawer = $('mobileHelpDrawer');
   if (!drawer) {
