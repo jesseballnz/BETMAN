@@ -673,8 +673,10 @@ function createApiHandler(deps) {
       return null;
     }
     // rate limit
-    const limit = record.keyRecord.rateLimit || DEFAULT_RATE_LIMIT;
+    const defaultLimit = record.keyRecord.rateLimit || DEFAULT_RATE_LIMIT;
     const window = record.keyRecord.rateWindow || DEFAULT_RATE_WINDOW;
+    const relaxedAlertsRoute = /^\/api\/v1\/alerts-(feed|history)$/.test(String(url?.pathname || ''));
+    const limit = relaxedAlertsRoute ? Math.max(defaultLimit, 600) : defaultLimit;
     const check = rateCheck(rawKey, limit, window);
     const rateInfo = { limit, remaining: check.remaining, window, retryAfter: check.retryAfter };
     if (!check.allowed) {
