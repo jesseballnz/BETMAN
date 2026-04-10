@@ -14543,62 +14543,35 @@ async function loadAuthenticatedUser(){
   updateBetmanContentAudioButton();
 }
 
-async function refreshBetmanContentAudioStatus(){
-  const btn = $('betmanContentAudioBtn');
-  if (!btn || currentAuthenticatedUser !== 'test@betman.co.nz') return;
-  try {
-    const res = await fetchLocal('./api/betman-content/audio/status', { cache: 'no-store' });
-    if (!res.ok) throw new Error(`BETMAN audio status failed (${res.status})`);
-    const out = await res.json();
-    const onAir = !!out?.dj?.onAir;
-    btn.textContent = onAir ? 'Stop BETMAN Audio' : 'Start BETMAN Audio';
-    btn.dataset.onAir = onAir ? '1' : '0';
-    btn.title = onAir ? 'Audio stream is on' : 'Audio stream is off';
-    btn.disabled = false;
-  } catch {
-    btn.textContent = 'BETMAN Audio Unavailable';
-    btn.dataset.onAir = '0';
-    btn.disabled = true;
-  }
+let betmanRadioWindow = null;
+
+function getBetmanContentRadioUrl(){
+  const host = window.location.hostname || '127.0.0.1';
+  return `http://${host}:4310/radio/live`;
 }
 
 function updateBetmanContentAudioButton(){
   const btn = $('betmanContentAudioBtn');
   if (!btn) return;
-  const allowed = currentAuthenticatedUser === 'test@betman.co.nz';
-  if (!allowed) {
-    btn.disabled = true;
-    btn.textContent = currentAuthenticatedUser
-      ? 'BETMAN Audio (test@betman.co.nz only)'
-      : 'BETMAN Audio (sign in required)';
-    btn.title = 'Audio control restricted to test@betman.co.nz';
-    return;
-  }
   btn.disabled = false;
-  refreshBetmanContentAudioStatus();
+  btn.textContent = 'Open BETMAN Radio';
+  btn.title = getBetmanContentRadioUrl();
 }
 
-async function toggleBetmanContentAudio(){
-  const btn = $('betmanContentAudioBtn');
-  if (!btn || currentAuthenticatedUser !== 'test@betman.co.nz') return;
-  const original = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Working…';
-  try {
-    const res = await fetchLocal('./api/betman-content/audio/toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ djName: 'BETMAN UI', stream: 'upcoming' }),
-    });
-    if (!res.ok) throw new Error(`BETMAN audio toggle failed (${res.status})`);
-    await refreshBetmanContentAudioStatus();
-  } catch (err) {
-    console.error('betman_content_audio_toggle_failed', err);
-    btn.textContent = original;
-    btn.disabled = false;
-    setTimeout(() => refreshBetmanContentAudioStatus(), 1200);
+function openBetmanContentAudioWindow(){
+  const url = getBetmanContentRadioUrl();
+  if (betmanRadioWindow && !betmanRadioWindow.closed) {
+    try {
+      betmanRadioWindow.location.href = url;
+      betmanRadioWindow.focus();
+      return;
+    } catch {}
   }
- }
+  betmanRadioWindow = window.open(url, 'betman-radio-live', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
+  if (!betmanRadioWindow) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
 
 async function renderAuthPulseSettingsPanel(){
   const root = $('authPulseSettingsBody');
@@ -15120,7 +15093,7 @@ $('createUserBtn')?.addEventListener('click', createAuthUser);
 $('changeUserPasswordBtn')?.addEventListener('click', changeAuthUserPassword);
 $('deleteUserBtn')?.addEventListener('click', deleteAuthUser);
 $('betmanContentAudioBtn')?.addEventListener('click', ()=>{
-  toggleBetmanContentAudio();
+  openBetmanContentAudioWindow();
 });
 
 $('logoutBtn')?.addEventListener('click', async ()=>{
