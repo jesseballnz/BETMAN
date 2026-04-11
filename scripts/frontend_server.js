@@ -1242,30 +1242,6 @@ async function proxyBetmanContentAudio(req, res, targetPath, options = {}){
   }
 }
 
-async function proxyBetmanContentBinary(req, res, targetPath){
-  try {
-    const upstream = await fetch(`${BETMAN_CONTENT_BASE_URL}${targetPath}`, {
-      method: 'GET',
-      headers: {
-        Accept: '*/*'
-      }
-    });
-
-    const buffer = Buffer.from(await upstream.arrayBuffer());
-    const headers = {
-      'Content-Type': upstream.headers.get('content-type') || 'application/octet-stream',
-      'Content-Length': String(buffer.length),
-      'Cache-Control': upstream.headers.get('cache-control') || 'no-store'
-    };
-    res.writeHead(upstream.status, headers);
-    res.end(buffer);
-  } catch (err) {
-    console.error('betman_content_binary_proxy_failed', targetPath, err?.message || err);
-    res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('BETMAN_Content proxy unavailable');
-  }
-}
-
 const PROTECTED_BETMAN_USERNAMES = new Set(
   String(process.env.BETMAN_PROTECTED_ACCOUNTS || '')
     .split(',')
@@ -5338,10 +5314,6 @@ const server = http.createServer(async (req, res)=>{
       note: healthy ? 'public smoke healthy' : 'public smoke missing, stale, or failing',
       ts: new Date().toISOString()
     }, healthy ? 200 : 503);
-  }
-
-  if (req.method === 'GET' && (url.pathname === '/radio/live' || url.pathname === '/radio/live.m3u' || url.pathname === '/radio/current.m4a' || url.pathname.startsWith('/radio/'))) {
-    return proxyBetmanContentBinary(req, res, url.pathname);
   }
 
   if (!requireAuth(req, res)) return;

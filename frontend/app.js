@@ -14546,7 +14546,8 @@ async function loadAuthenticatedUser(){
 let betmanRadioWindow = null;
 
 function getBetmanContentRadioUrl(){
-  return `${window.location.origin}/radio/live`;
+  const host = window.location.hostname || '127.0.0.1';
+  return `http://${host}:4310/radio/live`;
 }
 
 function updateBetmanContentAudioButton(){
