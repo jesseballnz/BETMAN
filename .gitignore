@@ -34,3 +34,12 @@ __pycache__/
 betcha-poll-state-*.json
 frontend/data/status.json
 frontend/data/races.json
+
+# local process / cron artifacts
+*.pid
+.cron_logs/
+.cron_runs/
+logs/
+tmp_*.js
+tmp_*.py
+tmp_*.sh
