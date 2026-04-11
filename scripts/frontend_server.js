@@ -6838,21 +6838,17 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
     const limitRaw = toInt(url.searchParams.get('limit'), 200);
     const offset = toInt(url.searchParams.get('offset'), 0);
     const tenantId = req.authPrincipal?.effectiveTenantId || 'default';
-    const datedPath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', `races-${date}.json`), `races-${date}.json`);
-    const fallbackPath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json');
-    const racesFile = (date && datedPath && fs.existsSync(datedPath)) ? datedPath : fallbackPath;
-    const fileStamp = fs.existsSync(racesFile) ? (fs.statSync(racesFile).mtimeMs || 0) : 0;
-    const cacheKey = buildRaceListCacheKey({ date, country, meeting, limit: limitRaw, offset, version: fileStamp });
-    const cached = getCachedRaceList(cacheKey);
-    if (cached) return okJson(res, cached);
 
-    const data = loadJson(racesFile, { races: [], date: date || null, updatedAt: null });
-
-    let rows = Array.isArray(data.races) ? data.races : [];
-    if ((!rows.length || meeting) && date) {
-      try {
-        const histDir = path.join(process.cwd(), 'data', 'tab', date);
-        const archived = [];
+    function loadRaceRowsForDate(targetDate) {
+      const datedPath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', `races-${targetDate}.json`), `races-${targetDate}.json`);
+      const fallbackPath = resolveTenantPath(req, path.join(process.cwd(), 'frontend', 'data', 'races.json'), 'races.json');
+      const racesFile = (targetDate && datedPath && fs.existsSync(datedPath)) ? datedPath : fallbackPath;
+      const data = loadJson(racesFile, { races: [], date: targetDate || null, updatedAt: null });
+      let rows = Array.isArray(data.races) ? data.races : [];
+      if ((!rows.length || meeting) && targetDate) {
+        try {
+          const histDir = path.join(process.cwd(), 'data', 'tab', targetDate);
+          const archived = [];
         const walk = (dir) => {
           if (!fs.existsSync(dir)) return;
           for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -6929,20 +6925,49 @@ if (url.pathname === '/api/ask-selection' || url.pathname === '/api/ask-betman')
             }
           }
         };
-        walk(histDir);
-        if (archived.length) rows = archived;
-      } catch {}
+          walk(histDir);
+          if (archived.length) rows = archived;
+        } catch {}
+      }
+      return { data, rows, racesFile };
     }
+
+    let effectiveDate = date;
+    let loaded = loadRaceRowsForDate(effectiveDate);
+    let rows = loaded.rows;
+
     if (country) rows = rows.filter(r => normalizePulseCountry(r.country) === country);
     if (meeting) rows = rows.filter(r => String(r.meeting || '').trim().toLowerCase() === meeting);
+
+    if (!rows.length && country === 'HK' && date) {
+      const prev = new Date(`${date}T00:00:00`);
+      if (!isNaN(prev)) {
+        prev.setDate(prev.getDate() - 1);
+        const prevDate = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}-${String(prev.getDate()).padStart(2,'0')}`;
+        const altLoaded = loadRaceRowsForDate(prevDate);
+        let altRows = altLoaded.rows;
+        altRows = altRows.filter(r => normalizePulseCountry(r.country) === 'HK');
+        if (meeting) altRows = altRows.filter(r => String(r.meeting || '').trim().toLowerCase() === meeting);
+        if (altRows.length) {
+          effectiveDate = prevDate;
+          loaded = altLoaded;
+          rows = altRows;
+        }
+      }
+    }
+
+    const fileStamp = fs.existsSync(loaded.racesFile) ? (fs.statSync(loaded.racesFile).mtimeMs || 0) : 0;
+    const cacheKey = buildRaceListCacheKey({ date: effectiveDate, country, meeting, limit: limitRaw, offset, version: fileStamp });
+    const cached = getCachedRaceList(cacheKey);
+    if (cached) return okJson(res, cached);
 
     const total = rows.length;
     const limit = limitRaw > 0 ? limitRaw : total;
     const sliceEnd = limit > 0 ? (offset + limit) : undefined;
     rows = rows.slice(offset, sliceEnd);
     const payload = {
-      date: data.date || date || null,
-      updatedAt: data.updatedAt || null,
+      date: loaded.data.date || effectiveDate || null,
+      updatedAt: loaded.data.updatedAt || null,
       total,
       offset,
       limit,
