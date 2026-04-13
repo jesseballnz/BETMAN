@@ -1,0 +1,37 @@
+{
+  "version": "v2",
+  "headline": "The Man Who Beat the Market",
+  "subheadline": "Story-led signal layer for BETMAN home and radio surfaces.",
+  "currentStoryId": "bill-benter",
+  "ctaLabel": "Play story",
+  "radioTabLabel": "BETMAN Radio",
+  "modules": [
+    "Signals",
+    "Pulse",
+    "Strategy",
+    "AutoBet"
+  ],
+  "stories": [
+    {
+      "id": "bill-benter",
+      "title": "The Man Who Beat the Market",
+      "audioPackRef": "/data/radio/story-pack-v2.json#bill-benter",
+      "signal": "He didn’t watch races. He modelled them.",
+      "supports": ["today-races", "market-movers", "pulse"]
+    },
+    {
+      "id": "market-movers",
+      "title": "How the market moves before the result",
+      "audioPackRef": "/data/radio/story-pack-v2.json#market-movers",
+      "signal": "Follow movement, not noise.",
+      "supports": ["market-movers", "pulse", "today-races"]
+    },
+    {
+      "id": "biggest-loss",
+      "title": "The $200M lesson",
+      "audioPackRef": "/data/radio/story-pack-v2.json#biggest-loss",
+      "signal": "Discipline beats emotion.",
+      "supports": ["strategy", "tracked-bets", "today-races"]
+    }
+  ]
+}

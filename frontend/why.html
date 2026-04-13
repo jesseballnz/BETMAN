@@ -136,6 +136,7 @@
       </div>
       <div class="topbar-links">
         <a class="topbar-link" href="/landing">Back to BETMAN</a>
+        <a id="betmanRadioLink" class="topbar-link" href="#" target="_blank" rel="noopener">BETMAN Radio</a>
       </div>
     </header>
 
@@ -199,6 +200,13 @@
   </div>
 
   <script>
+    const betmanRadioLink = document.getElementById('betmanRadioLink');
+    if (betmanRadioLink) {
+      const host = window.location.hostname || '127.0.0.1';
+      betmanRadioLink.href = `http://${host}:4310/radio/live?autoplay=1`;
+      betmanRadioLink.title = betmanRadioLink.href;
+    }
+
     (async ()=>{
       try {
         const res = await fetch('/api/pricing', { credentials: 'same-origin' });

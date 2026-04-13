@@ -15,6 +15,7 @@
       </div>
       <div class="topbar-links">
         <a class="topbar-link" href="/why">Why BETMAN?</a>
+        <a id="betmanRadioLink" class="topbar-link" href="#" target="_blank" rel="noopener">BETMAN Radio</a>
       </div>
     </header>
 
@@ -198,6 +199,13 @@
         tick = (tick + 1) % racePhotoPool.length;
         applyPhotos();
       }, 9000);
+    }
+
+    const betmanRadioLink = document.getElementById('betmanRadioLink');
+    if (betmanRadioLink) {
+      const host = window.location.hostname || '127.0.0.1';
+      betmanRadioLink.href = `http://${host}:4310/radio/live?autoplay=1`;
+      betmanRadioLink.title = betmanRadioLink.href;
     }
 
     document.getElementById('loginForm').addEventListener('submit', (e)=>{ e.preventDefault(); doLogin(); });

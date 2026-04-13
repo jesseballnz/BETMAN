@@ -14547,7 +14547,7 @@ let betmanRadioWindow = null;
 
 function getBetmanContentRadioUrl(){
   const host = window.location.hostname || '127.0.0.1';
-  return `http://${host}:4310/radio/live`;
+  return `http://${host}:4310/radio/live?autoplay=1`;
 }
 
 function updateBetmanContentAudioButton(){
